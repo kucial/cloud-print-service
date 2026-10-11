@@ -1,5 +1,5 @@
 // Package job implements dispatch: validation, idempotency, per-printer FIFO, retry.
-package job
+package store
 
 import (
 	"context"

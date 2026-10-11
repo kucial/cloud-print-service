@@ -19,6 +19,7 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/observ"
 	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kongkx/cloud-print-service/internal/store"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
 
@@ -61,7 +62,7 @@ func main() {
 	}
 	defer mgr.Close()
 
-	store := job.NewMemoryStore() // MVP: process-local. See db/schema.sql for the Postgres store.
+	store := store.NewMemoryStore() // MVP: process-local. See db/schema.sql for the Postgres store.
 
 	js := job.NewService(job.Config{
 		QueueSize:           cfg.QueueSizePerPrinter,

@@ -12,13 +12,14 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/observ"
+	"github.com/kongkx/cloud-print-service/internal/store"
 )
 
 type harness struct {
 	svc   *Service
 	mgr   *fleet.Manager
 	bus   *observ.Bus
-	st    *MemoryStore
+	st    *store.MemoryStore
 	specs []domain.Printer
 }
 
@@ -31,7 +32,7 @@ func newHarness(t *testing.T, specs ...domain.Printer) *harness {
 		t.Fatalf("manager: %v", err)
 	}
 	t.Cleanup(mgr.Close)
-	st := NewMemoryStore()
+	st := store.NewMemoryStore()
 	svc := NewService(Config{
 		QueueSize: 5, MaxAttempts: 3, ConfirmTimeout: 300 * time.Millisecond,
 		BaseBackoff: time.Millisecond, QueueTTL: time.Minute,
@@ -104,8 +105,8 @@ func TestIdempotencyPreventsDuplicateLabels(t *testing.T) {
 
 	// Same external_id, different payload -> conflict, never a second label.
 	req.ZPL = "^XA^FDBIFFERENT^FS^XZ"
-	if _, _, err := h.svc.Submit(ctx, req); !errors.Is(err, ErrConflict) {
-		t.Fatalf("expected ErrConflict, got %v", err)
+	if _, _, err := h.svc.Submit(ctx, req); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected store.ErrConflict, got %v", err)
 	}
 
 	// Different client reusing the same external_id is a different document.
@@ -248,10 +249,10 @@ func TestTenantIsolation(t *testing.T) {
 	j, _, _ := h.svc.Submit(context.Background(), SubmitRequest{
 		ClientID: "erp", PrinterID: "p1", ExternalID: "iso-1", ZPL: "^XA^FDa^FS^XZ",
 	})
-	if _, err := h.svc.Get(context.Background(), "wms", j.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := h.svc.Get(context.Background(), "wms", j.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("cross-tenant read must be NotFound, got %v", err)
 	}
-	if _, err := h.svc.Cancel(context.Background(), "wms", j.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := h.svc.Cancel(context.Background(), "wms", j.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("cross-tenant cancel must be NotFound, got %v", err)
 	}
 }
@@ -281,7 +282,7 @@ func TestFIFOOrderPerPrinter(t *testing.T) {
 	for _, id := range ids {
 		waitState(t, h.svc, id, domain.JobPrinted)
 	}
-	jobs, err := h.st.ListJobs(context.Background(), Filter{PrinterID: "p1"})
+	jobs, err := h.st.ListJobs(context.Background(), store.Filter{PrinterID: "p1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +408,7 @@ func TestRejectWhenNotUsable(t *testing.T) {
 	mgr.ProbeAll(context.Background())
 
 	svc := NewService(Config{QueueSize: 2, MaxAttempts: 1, ConfirmTimeout: 50 * time.Millisecond,
-		MaxPayloadSize: 4096, RejectWhenNotUsable: true}, NewMemoryStore(), mgr, b, log, observ.NewMetrics())
+		MaxPayloadSize: 4096, RejectWhenNotUsable: true}, store.NewMemoryStore(), mgr, b, log, observ.NewMetrics())
 	defer svc.Stop()
 
 	_, _, err = svc.Submit(context.Background(), SubmitRequest{

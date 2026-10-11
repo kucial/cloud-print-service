@@ -15,6 +15,7 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/observ"
+	"github.com/kongkx/cloud-print-service/internal/store"
 )
 
 var (
@@ -57,19 +58,19 @@ type Config struct {
 // Service owns dispatch. One worker goroutine per printer gives FIFO ordering per
 // device and independent failure domains per device.
 type Service struct {
-	cfg   Config
-	store Store
-	mgr   *fleet.Manager
-	bus   *observ.Bus
-	log   *slog.Logger
-	met   *observ.Registry
+	cfg Config
+	st  store.Store
+	mgr *fleet.Manager
+	bus *observ.Bus
+	log *slog.Logger
+	met *observ.Registry
 
 	mu      sync.Mutex
 	queues  map[string]chan string
 	running map[string]context.CancelFunc
 }
 
-func NewService(cfg Config, store Store, mgr *fleet.Manager, b *observ.Bus, log *slog.Logger, met *observ.Registry) *Service {
+func NewService(cfg Config, st store.Store, mgr *fleet.Manager, b *observ.Bus, log *slog.Logger, met *observ.Registry) *Service {
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = 50
 	}
@@ -89,7 +90,7 @@ func NewService(cfg Config, store Store, mgr *fleet.Manager, b *observ.Bus, log 
 		cfg.MaxPayloadSize = 1 << 20
 	}
 	return &Service{
-		cfg: cfg, store: store, mgr: mgr, bus: b, log: log, met: met,
+		cfg: cfg, st: st, mgr: mgr, bus: b, log: log, met: met,
 		queues:  map[string]chan string{},
 		running: map[string]context.CancelFunc{},
 	}
@@ -97,7 +98,7 @@ func NewService(cfg Config, store Store, mgr *fleet.Manager, b *observ.Bus, log 
 
 // Start re-queues jobs that were mid-flight when the process died.
 func (s *Service) Start(ctx context.Context) error {
-	n, err := s.store.RequeueUnfinished(ctx)
+	n, err := s.st.RequeueUnfinished(ctx)
 	if err != nil {
 		return fmt.Errorf("requeue unfinished jobs: %w", err)
 	}
@@ -111,7 +112,7 @@ func (s *Service) Start(ctx context.Context) error {
 // replayQueued re-dispatches jobs that were accepted but never started. Safe because a
 // `queued` job provably sent zero bytes.
 func (s *Service) replayQueued(ctx context.Context) {
-	jobs, err := s.store.ListJobs(ctx, Filter{State: string(domain.JobQueued), Limit: 1000})
+	jobs, err := s.st.ListJobs(ctx, store.Filter{State: string(domain.JobQueued), Limit: 1000})
 	if err != nil {
 		return
 	}
@@ -122,7 +123,7 @@ func (s *Service) replayQueued(ctx context.Context) {
 	}
 }
 
-func (s *Service) Store() Store { return s.store }
+func (s *Service) Store() store.Store { return s.st }
 
 // Submit validates, deduplicates and enqueues a job. The bool result reports a replay:
 // the caller got an existing job back instead of a new label.
@@ -173,12 +174,12 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 	sum := sha256.Sum256(payload)
 
 	// Idempotency: same (client, external_id) => same job, no second label.
-	if existing, err := s.store.GetByExternal(ctx, req.ClientID, externalID); err == nil {
+	if existing, err := s.st.GetByExternal(ctx, req.ClientID, externalID); err == nil {
 		if existing.PayloadSHA != hex.EncodeToString(sum[:]) {
-			return nil, false, fmt.Errorf("%w: external_id %q was already used with a different payload", ErrConflict, externalID)
+			return nil, false, fmt.Errorf("%w: external_id %q was already used with a different payload", store.ErrConflict, externalID)
 		}
 		return existing, true, nil
-	} else if !errors.Is(err, ErrNotFound) {
+	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, false, err
 	}
 
@@ -197,9 +198,9 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		IdempotencyKey: req.IdempotencyKey,
 		QueuedAt:       time.Now().UTC(),
 	}
-	if err := s.store.CreateJob(ctx, job); err != nil {
+	if err := s.st.CreateJob(ctx, job); err != nil {
 		// Lost a race with a concurrent identical submit: return the winner.
-		if existing, gerr := s.store.GetByExternal(ctx, req.ClientID, externalID); gerr == nil {
+		if existing, gerr := s.st.GetByExternal(ctx, req.ClientID, externalID); gerr == nil {
 			return existing, true, nil
 		}
 		return nil, false, err
@@ -306,7 +307,7 @@ func (s *Service) worker(ctx context.Context, printerID string, q chan string) {
 // produced zero bytes on the driver.
 func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	j, err := s.store.GetJob(loadCtx, jobID)
+	j, err := s.st.GetJob(loadCtx, jobID)
 	cancel()
 	if err != nil {
 		return
@@ -328,7 +329,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	j.Attempts = 0
 	// Persist before touching the printer: the boot reaper resolves anything left in
 	// `sending`, and the API must be able to show in-flight work.
-	if err := s.store.UpdateJob(loadCtx, j); err != nil {
+	if err := s.st.UpdateJob(loadCtx, j); err != nil {
 		s.log.Error("failed to mark job sending", "job_id", j.ID, "err", err)
 	}
 	s.transition(j, domain.JobSending, "")
@@ -354,7 +355,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 		switch {
 		case sendErr == nil:
 			at.Result = "ok"
-			_ = s.store.AddAttempt(ctx, at)
+			_ = s.st.AddAttempt(ctx, at)
 			sendOK = true
 			lastErr = ""
 
@@ -362,7 +363,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 			// Ambiguous: part of a label reached the driver. Never auto-retry.
 			at.Result = "partial_write"
 			at.Error = sendErr.Error()
-			_ = s.store.AddAttempt(ctx, at)
+			_ = s.st.AddAttempt(ctx, at)
 			j.PartialWrite = true
 			j.LastError = sendErr.Error()
 			now := time.Now().UTC()
@@ -375,7 +376,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 			// Zero bytes on the printer: retrying is safe.
 			at.Result = "write_error"
 			at.Error = sendErr.Error()
-			_ = s.store.AddAttempt(ctx, at)
+			_ = s.st.AddAttempt(ctx, at)
 			lastErr = sendErr.Error()
 			if attempt == s.cfg.MaxAttempts {
 				break
@@ -411,7 +412,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 		return
 	}
 	j.LastError = "bytes sent but no confirmation observed within " + s.cfg.ConfirmTimeout.String()
-	_ = s.store.AddAttempt(ctx, &domain.Attempt{
+	_ = s.st.AddAttempt(ctx, &domain.Attempt{
 		JobID: j.ID, AttemptNo: j.Attempts, StartedAt: now, FinishedAt: &now,
 		Result: "unconfirmed", BytesSent: bytesSent,
 	})
@@ -481,7 +482,7 @@ func (s *Service) finish(ctx context.Context, j *domain.Job, state domain.JobSta
 		now := time.Now().UTC()
 		j.FinishedAt = &now
 	}
-	if err := s.store.UpdateJob(ctx, j); err != nil {
+	if err := s.st.UpdateJob(ctx, j); err != nil {
 		s.log.Error("failed to persist job", "job_id", j.ID, "err", err)
 	}
 	s.transition(j, state, j.LastError)
@@ -509,12 +510,12 @@ func (s *Service) transition(j *domain.Job, state domain.JobState, msg string) {
 
 // Get returns a job, scoped to the owning client (cross-client access is 404).
 func (s *Service) Get(ctx context.Context, clientID, id string) (*domain.Job, error) {
-	j, err := s.store.GetJob(ctx, id)
+	j, err := s.st.GetJob(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if clientID != "" && j.ClientID != clientID {
-		return nil, ErrNotFound
+		return nil, store.ErrNotFound
 	}
 	return j, nil
 }
@@ -530,7 +531,7 @@ func (s *Service) Cancel(ctx context.Context, clientID, id string) (*domain.Job,
 		j.State = domain.JobCancelled
 		now := time.Now().UTC()
 		j.FinishedAt = &now
-		if err := s.store.UpdateJob(ctx, j); err != nil {
+		if err := s.st.UpdateJob(ctx, j); err != nil {
 			return nil, err
 		}
 		s.transition(j, domain.JobCancelled, "")
@@ -543,25 +544,25 @@ func (s *Service) Cancel(ctx context.Context, clientID, id string) (*domain.Job,
 			cancel()
 		}
 		j.LastError = "cancel requested while sending"
-		_ = s.store.UpdateJob(ctx, j)
+		_ = s.st.UpdateJob(ctx, j)
 		return j, nil
 	default:
 		return j, fmt.Errorf("%w: job is %s", ErrNotCancellable, j.State)
 	}
 }
 
-func (s *Service) List(ctx context.Context, f Filter) ([]domain.Job, error) {
+func (s *Service) List(ctx context.Context, f store.Filter) ([]domain.Job, error) {
 	if f.Limit <= 0 || f.Limit > 200 {
 		f.Limit = 50
 	}
-	return s.store.ListJobs(ctx, f)
+	return s.st.ListJobs(ctx, f)
 }
 
 func (s *Service) Attempts(ctx context.Context, clientID, jobID string) ([]domain.Attempt, error) {
 	if _, err := s.Get(ctx, clientID, jobID); err != nil {
 		return nil, err
 	}
-	return s.store.Attempts(ctx, jobID)
+	return s.st.Attempts(ctx, jobID)
 }
 
 // Stop cancels all workers and flushes queue-depth gauges.

@@ -17,6 +17,7 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/observ"
 	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kongkx/cloud-print-service/internal/store"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
 
@@ -218,7 +219,7 @@ func (s *Server) listPrinterJobs(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "printer_not_found", "unknown printer "+id)
 		return
 	}
-	jobs, err := s.jobs.List(r.Context(), job.Filter{
+	jobs, err := s.jobs.List(r.Context(), store.Filter{
 		ClientID: ClientFrom(r.Context()).ID, PrinterID: id,
 		Limit: intParam(r, "limit", 20),
 	})
@@ -437,7 +438,7 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := job.Filter{
+	f := store.Filter{
 		ClientID:   ClientFrom(r.Context()).ID,
 		PrinterID:  q.Get("printer_id"),
 		State:      q.Get("state"),
@@ -584,7 +585,7 @@ func writeJobErr(w http.ResponseWriter, err error) {
 		// Caller may retry later or fail over: this is backpressure, not a bad request.
 		w.Header().Set("Retry-After", "2")
 		writeErr(w, http.StatusServiceUnavailable, "queue_full", err.Error(), nil)
-	case errors.Is(err, job.ErrConflict):
+	case errors.Is(err, store.ErrConflict):
 		writeErr(w, http.StatusConflict, "idempotency_conflict", err.Error(), nil)
 	case errors.Is(err, job.ErrInvalidRequest):
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error(), nil)

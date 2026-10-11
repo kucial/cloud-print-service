@@ -20,6 +20,7 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/httpapi"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/observ"
+	"github.com/kongkx/cloud-print-service/internal/store"
 	"github.com/kongkx/cloud-print-service/internal/token"
 	"github.com/kongkx/cloud-print-service/internal/virtual"
 )
@@ -81,7 +82,7 @@ func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 	// Sync (inside NewManager) already starts one poller per printer; calling
 	// StartPolling here would double-probe every device.
 
-	store := job.NewMemoryStore()
+	store := store.NewMemoryStore()
 	f.job = job.NewService(job.Config{
 		QueueSize: 20, MaxAttempts: 3, ConfirmTimeout: 2 * time.Second,
 		BaseBackoff: 20 * time.Millisecond, MaxPayloadSize: 1 << 20,

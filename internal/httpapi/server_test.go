@@ -18,6 +18,7 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/observ"
 	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kongkx/cloud-print-service/internal/store"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
 
@@ -36,7 +37,7 @@ func newTestServer(t *testing.T, specs ...domain.Printer) *httptest.Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(mgr.Close)
-	store := job.NewMemoryStore()
+	store := store.NewMemoryStore()
 	met := observ.NewMetrics()
 	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 2, ConfirmTimeout: 200 * time.Millisecond,
 		BaseBackoff: time.Millisecond, MaxPayloadSize: 4096}, store, mgr, b, log, met)
@@ -71,7 +72,7 @@ func newTestServerWith(t *testing.T, web WebConfig, specs ...domain.Printer) *ht
 		t.Fatal(err)
 	}
 	t.Cleanup(mgr.Close)
-	store := job.NewMemoryStore()
+	store := store.NewMemoryStore()
 	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 1, ConfirmTimeout: 100 * time.Millisecond,
 		MaxPayloadSize: 4096}, store, mgr, b, log, observ.NewMetrics())
 	t.Cleanup(svc.Stop)
@@ -97,7 +98,7 @@ func newTestServerNoRenderer(t *testing.T) *httpServer {
 		t.Fatal(err)
 	}
 	t.Cleanup(mgr.Close)
-	svc := job.NewService(job.Config{QueueSize: 1, MaxAttempts: 1}, job.NewMemoryStore(), mgr, b, log, observ.NewMetrics())
+	svc := job.NewService(job.Config{QueueSize: 1, MaxAttempts: 1}, store.NewMemoryStore(), mgr, b, log, observ.NewMetrics())
 	t.Cleanup(svc.Stop)
 	tok := token.NewService(token.NewMemoryStore(), time.Hour)
 	auth := NewAuth(map[string]KeySpec{opsKey: {ClientID: "ops", Role: "admin"}}, tok, 0, 0, observ.NewMetrics())
