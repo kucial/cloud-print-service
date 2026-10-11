@@ -159,20 +159,18 @@ func TestZebraCancelClearsPrinting(t *testing.T) {
 	if _, err := z.Send(ctx, []byte("^XA^FDlong^FS^XZ")); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := z.Status(ctx); st.State != domain.StatePrinting {
+	// The virtual printer records the label asynchronously, so poll for the state
+	// rather than assume it has already happened.
+	if !waitPrinterState(ctx, z, domain.StatePrinting, 2*time.Second) {
+		st, _ := z.Status(ctx)
 		t.Fatalf("expected printing before cancel, got %q", st.State)
 	}
 	if err := z.Cancel(ctx); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if st, _ := z.Status(ctx); st.State == domain.StateIdle {
-			return // cancel took effect
-		}
-		time.Sleep(20 * time.Millisecond)
+	if !waitPrinterState(ctx, z, domain.StateIdle, 2*time.Second) {
+		t.Fatal("printer stayed in printing state after ~JA")
 	}
-	t.Fatal("printer stayed in printing state after ~JA")
 }
 
 func TestZebraOfflineIsReportedNotGuessed(t *testing.T) {

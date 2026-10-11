@@ -16,9 +16,9 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/config"
 	"github.com/kongkx/cloud-print-service/internal/driver"
+	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/printer"
 	"github.com/kongkx/cloud-print-service/internal/render"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
@@ -49,7 +49,7 @@ func main() {
 	met := metrics.New()
 
 	// Fleet. Drivers are opened lazily; status is polled in the background.
-	mgr, err := printer.NewManager(cfg.Printers, log, b, printer.ManagerOpts{
+	mgr, err := fleet.NewManager(cfg.Printers, log, b, fleet.ManagerOpts{
 		PollInterval: cfg.StatusPollInterval.D(),
 		StaleAfter:   cfg.StatusStaleAfter.D(),
 		DialTimeout:  cfg.PrinterDialTimeout.D(),

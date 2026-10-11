@@ -11,13 +11,13 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/printer"
 )
 
 type harness struct {
 	svc   *Service
-	mgr   *printer.Manager
+	mgr   *fleet.Manager
 	bus   *bus.Bus
 	st    *MemoryStore
 	specs []domain.Printer
@@ -27,7 +27,7 @@ func newHarness(t *testing.T, specs ...domain.Printer) *harness {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
-	mgr, err := printer.NewManager(specs, log, b, printer.ManagerOpts{PollInterval: time.Minute})
+	mgr, err := fleet.NewManager(specs, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
 	if err != nil {
 		t.Fatalf("manager: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestRejectWhenNotUsable(t *testing.T) {
 	specs := []domain.Printer{mockPrinter("out", &domain.MockCfg{State: "media_out"})}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
-	mgr, err := printer.NewManager(specs, log, b, printer.ManagerOpts{PollInterval: time.Minute})
+	mgr, err := fleet.NewManager(specs, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}

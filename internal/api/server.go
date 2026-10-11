@@ -14,15 +14,15 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/printer"
 	"github.com/kongkx/cloud-print-service/internal/render"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
 
 type Server struct {
-	mgr      *printer.Manager
+	mgr      *fleet.Manager
 	jobs     *job.Service
 	bus      *bus.Bus
 	log      *slog.Logger
@@ -38,7 +38,7 @@ type Server struct {
 }
 
 // New builds the API server. auth may be nil in tests to disable authentication.
-func New(mgr *printer.Manager, js *job.Service, b *bus.Bus, auth *Auth, tok *token.Service,
+func New(mgr *fleet.Manager, js *job.Service, b *bus.Bus, auth *Auth, tok *token.Service,
 	log *slog.Logger, met *metrics.Registry, maxBatch int, maxPayload int64) *Server {
 	return &Server{mgr: mgr, jobs: js, bus: b, auth: auth, tokens: tok, log: log, met: met,
 		maxBatch: maxBatch, maxPayload: maxPayload, startedAt: time.Now()}
@@ -116,7 +116,7 @@ func errorHandler(err error) http.Handler {
 }
 
 func (s *Server) listPrinters(w http.ResponseWriter, r *http.Request) {
-	f := printer.Filter{
+	f := fleet.Filter{
 		Site:  r.URL.Query().Get("site"),
 		Model: r.URL.Query().Get("model"),
 	}
@@ -144,7 +144,7 @@ func (s *Server) bulkStatus(w http.ResponseWriter, r *http.Request) {
 	if len(ids) > 0 {
 		items = s.mgr.ViewsByIDs(ids)
 	} else {
-		items = s.mgr.List(printer.Filter{
+		items = s.mgr.List(fleet.Filter{
 			Site:  q.Get("site"),
 			Model: q.Get("model"),
 		})
@@ -448,7 +448,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		topics[t] = true
 	}
 	if len(topics) == 0 {
-		topics["printer.status"] = true
+		topics["fleet.status"] = true
 		topics["job.state"] = true
 	}
 	printerFilter := map[string]bool{}
@@ -519,7 +519,7 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
-	for _, v := range s.mgr.List(printer.Filter{}) {
+	for _, v := range s.mgr.List(fleet.Filter{}) {
 		age := 0.0
 		if !v.Status.ObservedAt.IsZero() {
 			age = time.Since(v.Status.ObservedAt).Seconds()

@@ -14,8 +14,8 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/printer"
 )
 
 var (
@@ -60,7 +60,7 @@ type Config struct {
 type Service struct {
 	cfg   Config
 	store Store
-	mgr   *printer.Manager
+	mgr   *fleet.Manager
 	bus   *bus.Bus
 	log   *slog.Logger
 	met   *metrics.Registry
@@ -70,7 +70,7 @@ type Service struct {
 	running map[string]context.CancelFunc
 }
 
-func NewService(cfg Config, store Store, mgr *printer.Manager, b *bus.Bus, log *slog.Logger, met *metrics.Registry) *Service {
+func NewService(cfg Config, store Store, mgr *fleet.Manager, b *bus.Bus, log *slog.Logger, met *metrics.Registry) *Service {
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = 50
 	}
@@ -423,7 +423,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 
 // confirm waits for the printer to leave the printing state. It is evidence, not proof:
 // absence of a reply is reported as `sent_unknown`, never silently as success.
-func (s *Service) confirm(ctx context.Context, p *printer.Printer) bool {
+func (s *Service) confirm(ctx context.Context, p *fleet.Printer) bool {
 	deadline := time.Now().Add(s.cfg.ConfirmTimeout)
 	for time.Now().Before(deadline) {
 		st, err := p.Status(ctx)

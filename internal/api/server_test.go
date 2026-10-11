@@ -15,9 +15,9 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/printer"
 	"github.com/kongkx/cloud-print-service/internal/render"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
@@ -32,7 +32,7 @@ func newTestServer(t *testing.T, specs ...domain.Printer) *httptest.Server {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
-	mgr, err := printer.NewManager(specs, log, b, printer.ManagerOpts{PollInterval: time.Minute})
+	mgr, err := fleet.NewManager(specs, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func newTestServerWith(t *testing.T, web WebConfig, specs ...domain.Printer) *ht
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
-	mgr, err := printer.NewManager(specs, log, b, printer.ManagerOpts{PollInterval: time.Minute})
+	mgr, err := fleet.NewManager(specs, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func newTestServerNoRenderer(t *testing.T) *httpServer {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
-	mgr, err := printer.NewManager(nil, log, b, printer.ManagerOpts{PollInterval: time.Minute})
+	mgr, err := fleet.NewManager(nil, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}

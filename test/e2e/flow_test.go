@@ -19,9 +19,9 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
+	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/printer"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
 
@@ -30,7 +30,7 @@ const (
 	labelBody      = "^XA^CI28^FO40,40^A0N,40,40^FDOK-88213^FS^FO40,100^BCN,100,Y,N,N^FD1234567890^FS^XZ"
 )
 
-type fleet struct {
+type harness struct {
 	t   *testing.T
 	srv *httptest.Server
 	vps map[string]*fakeprinter.Printer
@@ -38,14 +38,14 @@ type fleet struct {
 	tok *token.Service
 	bus *bus.Bus
 	met *metrics.Registry
-	mgr *printer.Manager
+	mgr *fleet.Manager
 }
 
 // newFleet starts one virtual printer per spec plus the service in front of them.
-func newFleet(t *testing.T, specs ...domain.Printer) *fleet {
+func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	f := &fleet{t: t, vps: map[string]*fakeprinter.Printer{}, met: metrics.New()}
+	f := &harness{t: t, vps: map[string]*fakeprinter.Printer{}, met: metrics.New()}
 	f.bus = bus.New()
 
 	for i := range specs {
@@ -70,7 +70,7 @@ func newFleet(t *testing.T, specs ...domain.Printer) *fleet {
 		spec.Host, spec.Port = host, n
 	}
 
-	mgr, err := printer.NewManager(specs, log, f.bus, printer.ManagerOpts{
+	mgr, err := fleet.NewManager(specs, log, f.bus, fleet.ManagerOpts{
 		PollInterval: 150 * time.Millisecond, StaleAfter: time.Second,
 		DialTimeout: time.Second, WriteTimeout: 2 * time.Second, ReadTimeout: time.Second,
 	})
@@ -101,7 +101,7 @@ func newFleet(t *testing.T, specs ...domain.Printer) *fleet {
 	return f
 }
 
-func (f *fleet) do(method, path, key string, body any) (int, map[string]any) {
+func (f *harness) do(method, path, key string, body any) (int, map[string]any) {
 	f.t.Helper()
 	var rdr io.Reader
 	if body != nil {
@@ -130,7 +130,7 @@ func (f *fleet) do(method, path, key string, body any) (int, map[string]any) {
 	return resp.StatusCode, out
 }
 
-func (f *fleet) issueToken(clientID, role, ttl string) (string, string) {
+func (f *harness) issueToken(clientID, role, ttl string) (string, string) {
 	f.t.Helper()
 	body := map[string]any{"client_id": clientID, "role": role, "ttl": ttl}
 	code, out := f.do("POST", "/api/v1/admin/tokens", bootstrapAdmin, body)
@@ -141,7 +141,7 @@ func (f *fleet) issueToken(clientID, role, ttl string) (string, string) {
 }
 
 // waitJob polls a job until it reaches one of the wanted states.
-func (f *fleet) waitJob(key, jobID string, want ...domain.JobState) map[string]any {
+func (f *harness) waitJob(key, jobID string, want ...domain.JobState) map[string]any {
 	f.t.Helper()
 	wanted := map[string]bool{}
 	for _, w := range want {
@@ -164,7 +164,7 @@ func (f *fleet) waitJob(key, jobID string, want ...domain.JobState) map[string]a
 	return nil
 }
 
-func (f *fleet) printer(id string) *fakeprinter.Printer { return f.vps[id] }
+func (f *harness) printer(id string) *fakeprinter.Printer { return f.vps[id] }
 
 // ---------------------------------------------------------------- the flow
 
@@ -360,7 +360,7 @@ func TestBusinessSystemFlow(t *testing.T) {
 	}
 }
 
-func (f *fleet) rotate(tokenID string) (string, map[string]any) {
+func (f *harness) rotate(tokenID string) (string, map[string]any) {
 	f.t.Helper()
 	code, out := f.do("POST", "/api/v1/admin/tokens/"+tokenID+"/rotate", bootstrapAdmin, nil)
 	if code != http.StatusCreated {
@@ -381,7 +381,7 @@ func waitPreview(t *testing.T, vp *fakeprinter.Printer, index int) {
 	t.Fatalf("label %d was never rendered", index)
 }
 
-func waitPrinterState(t *testing.T, f *fleet, key, id, want string) {
+func waitPrinterState(t *testing.T, f *harness, key, id, want string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	var last any
