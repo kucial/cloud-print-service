@@ -1,5 +1,5 @@
 // Package model holds the domain types shared by every layer.
-package model
+package domain
 
 import "time"
 

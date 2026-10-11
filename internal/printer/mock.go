@@ -6,29 +6,29 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 func init() {
-	Register("mock", func(p model.Printer) (Driver, error) { return NewMock(p), nil })
+	Register("mock", func(p domain.Printer) (Driver, error) { return NewMock(p), nil })
 }
 
 // Mock is a fake printer: no sockets, deterministic behaviour for tests and demos.
 type Mock struct {
-	cfg model.MockCfg
+	cfg domain.MockCfg
 
 	mu      sync.Mutex
 	sends   int
 	failSeq int
 }
 
-func NewMock(p model.Printer) *Mock {
-	cfg := model.MockCfg{State: string(model.StateIdle)}
+func NewMock(p domain.Printer) *Mock {
+	cfg := domain.MockCfg{State: string(domain.StateIdle)}
 	if p.Mock != nil {
 		cfg = *p.Mock
 	}
 	if cfg.State == "" {
-		cfg.State = string(model.StateIdle)
+		cfg.State = string(domain.StateIdle)
 	}
 	return &Mock{cfg: cfg}
 }
@@ -56,12 +56,12 @@ func (m *Mock) Send(ctx context.Context, data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (m *Mock) Status(ctx context.Context) (model.Status, error) {
+func (m *Mock) Status(ctx context.Context) (domain.Status, error) {
 	if m.cfg.Offline {
-		return model.Status{State: model.StateOffline, ObservedAt: time.Now()}, fmt.Errorf("mock printer offline")
+		return domain.Status{State: domain.StateOffline, ObservedAt: time.Now()}, fmt.Errorf("mock printer offline")
 	}
-	return model.Status{
-		State:      model.PrinterState(m.cfg.State),
+	return domain.Status{
+		State:      domain.PrinterState(m.cfg.State),
 		Raw:        "^HS0,0,0,0^HS",
 		Detail:     "mock",
 		ObservedAt: time.Now(),

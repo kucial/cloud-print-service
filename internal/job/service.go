@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/model"
 	"github.com/kongkx/cloud-print-service/internal/printer"
 )
 
@@ -112,7 +112,7 @@ func (s *Service) Start(ctx context.Context) error {
 // replayQueued re-dispatches jobs that were accepted but never started. Safe because a
 // `queued` job provably sent zero bytes.
 func (s *Service) replayQueued(ctx context.Context) {
-	jobs, err := s.store.ListJobs(ctx, Filter{State: string(model.JobQueued), Limit: 1000})
+	jobs, err := s.store.ListJobs(ctx, Filter{State: string(domain.JobQueued), Limit: 1000})
 	if err != nil {
 		return
 	}
@@ -127,7 +127,7 @@ func (s *Service) Store() Store { return s.store }
 
 // Submit validates, deduplicates and enqueues a job. The bool result reports a replay:
 // the caller got an existing job back instead of a new label.
-func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*model.Job, bool, error) {
+func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, bool, error) {
 	payload, err := resolvePayload(req, s.cfg.MaxPayloadSize)
 	if err != nil {
 		return nil, false, err
@@ -183,11 +183,11 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*model.Job, bo
 		return nil, false, err
 	}
 
-	job := &model.Job{
+	job := &domain.Job{
 		ClientID:       req.ClientID,
 		ExternalID:     externalID,
 		PrinterID:      req.PrinterID,
-		State:          model.JobQueued,
+		State:          domain.JobQueued,
 		Payload:        string(payload),
 		Bytes:          len(payload),
 		PayloadSHA:     hex.EncodeToString(sum[:]),
@@ -207,7 +207,7 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*model.Job, bo
 	}
 	// Announce acceptance before the worker can start, so subscribers never see
 	// `sending` before `queued`.
-	s.transition(job, model.JobQueued, "")
+	s.transition(job, domain.JobQueued, "")
 	if err := s.enqueue(ctx, job); err != nil {
 		s.fail(ctx, job, err.Error())
 		return job, false, err
@@ -241,7 +241,7 @@ func resolvePayload(req SubmitRequest, max int64) ([]byte, error) {
 	return payload, nil
 }
 
-func (s *Service) enqueue(ctx context.Context, j *model.Job) error {
+func (s *Service) enqueue(ctx context.Context, j *domain.Job) error {
 	s.mu.Lock()
 	q, ok := s.queues[j.PrinterID]
 	if !ok {
@@ -312,7 +312,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	if err != nil {
 		return
 	}
-	if j.State != model.JobQueued {
+	if j.State != domain.JobQueued {
 		return // cancelled before we got to it
 	}
 	if time.Since(j.QueuedAt) > s.cfg.QueueTTL {
@@ -325,14 +325,14 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 		return
 	}
 
-	j.State = model.JobSending
+	j.State = domain.JobSending
 	j.Attempts = 0
 	// Persist before touching the printer: the boot reaper resolves anything left in
 	// `sending`, and the API must be able to show in-flight work.
 	if err := s.store.UpdateJob(loadCtx, j); err != nil {
 		s.log.Error("failed to mark job sending", "job_id", j.ID, "err", err)
 	}
-	s.transition(j, model.JobSending, "")
+	s.transition(j, domain.JobSending, "")
 
 	payload := []byte(j.Payload)
 	var lastErr string
@@ -343,7 +343,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 		if ctx.Err() != nil {
 			return // shutting down: leave as sending; boot reaper resolves it
 		}
-		at := &model.Attempt{JobID: j.ID, AttemptNo: attempt, StartedAt: time.Now().UTC()}
+		at := &domain.Attempt{JobID: j.ID, AttemptNo: attempt, StartedAt: time.Now().UTC()}
 		sendCtx, sendCancel := context.WithTimeout(ctx, s.cfg.ConfirmTimeout)
 		n, sendErr := p.Send(sendCtx, payload)
 		sendCancel()
@@ -368,7 +368,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 			j.LastError = sendErr.Error()
 			now := time.Now().UTC()
 			j.SentAt = &now
-			s.finish(ctx, j, model.JobFailed)
+			s.finish(ctx, j, domain.JobFailed)
 			s.met.Inc("cps_dispatch_failures_total", "reason", "partial_write", "printer_id", printerID)
 			return
 
@@ -408,17 +408,17 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	confirmed := s.confirm(ctx, p)
 	s.met.Observe("cps_confirm_seconds", time.Since(confirmStart).Seconds(), "printer_id", printerID)
 	if confirmed {
-		s.finish(ctx, j, model.JobPrinted)
+		s.finish(ctx, j, domain.JobPrinted)
 		return
 	}
 	j.LastError = "bytes sent but no confirmation observed within " + s.cfg.ConfirmTimeout.String()
-	_ = s.store.AddAttempt(ctx, &model.Attempt{
+	_ = s.store.AddAttempt(ctx, &domain.Attempt{
 		JobID: j.ID, AttemptNo: j.Attempts, StartedAt: now, FinishedAt: &now,
 		Result: "unconfirmed", BytesSent: bytesSent,
 	})
 	s.met.Inc("cps_sent_unknown_total", "printer_id", printerID)
 	s.log.Error("job sent but unconfirmed — needs human check", "job_id", j.ID, "printer_id", printerID, "bytes", bytesSent)
-	s.finish(ctx, j, model.JobSentUnknown)
+	s.finish(ctx, j, domain.JobSentUnknown)
 }
 
 // confirm waits for the printer to leave the printing state. It is evidence, not proof:
@@ -468,15 +468,15 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func (s *Service) fail(ctx context.Context, j *model.Job, msg string) {
-	j.State = model.JobFailed
+func (s *Service) fail(ctx context.Context, j *domain.Job, msg string) {
+	j.State = domain.JobFailed
 	j.LastError = msg
 	now := time.Now().UTC()
 	j.FinishedAt = &now
-	s.finish(ctx, j, model.JobFailed)
+	s.finish(ctx, j, domain.JobFailed)
 }
 
-func (s *Service) finish(ctx context.Context, j *model.Job, state model.JobState) {
+func (s *Service) finish(ctx context.Context, j *domain.Job, state domain.JobState) {
 	j.State = state
 	if state.Terminal() {
 		now := time.Now().UTC()
@@ -488,7 +488,7 @@ func (s *Service) finish(ctx context.Context, j *model.Job, state model.JobState
 	s.transition(j, state, j.LastError)
 }
 
-func (s *Service) transition(j *model.Job, state model.JobState, msg string) {
+func (s *Service) transition(j *domain.Job, state domain.JobState, msg string) {
 	s.met.Inc("cps_jobs_total", "state", string(state), "printer_id", j.PrinterID)
 	s.log.Info("job.state", "event", "job.state", "job_id", j.ID, "client_id", j.ClientID,
 		"printer_id", j.PrinterID, "biz_ref", j.BizRef, "state", string(state),
@@ -509,7 +509,7 @@ func (s *Service) transition(j *model.Job, state model.JobState, msg string) {
 }
 
 // Get returns a job, scoped to the owning client (cross-client access is 404).
-func (s *Service) Get(ctx context.Context, clientID, id string) (*model.Job, error) {
+func (s *Service) Get(ctx context.Context, clientID, id string) (*domain.Job, error) {
 	j, err := s.store.GetJob(ctx, id)
 	if err != nil {
 		return nil, err
@@ -521,22 +521,22 @@ func (s *Service) Get(ctx context.Context, clientID, id string) (*model.Job, err
 }
 
 // Cancel aborts a job that has not yet been written to a printer.
-func (s *Service) Cancel(ctx context.Context, clientID, id string) (*model.Job, error) {
+func (s *Service) Cancel(ctx context.Context, clientID, id string) (*domain.Job, error) {
 	j, err := s.Get(ctx, clientID, id)
 	if err != nil {
 		return nil, err
 	}
 	switch j.State {
-	case model.JobQueued:
-		j.State = model.JobCancelled
+	case domain.JobQueued:
+		j.State = domain.JobCancelled
 		now := time.Now().UTC()
 		j.FinishedAt = &now
 		if err := s.store.UpdateJob(ctx, j); err != nil {
 			return nil, err
 		}
-		s.transition(j, model.JobCancelled, "")
+		s.transition(j, domain.JobCancelled, "")
 		return j, nil
-	case model.JobSending:
+	case domain.JobSending:
 		// Best effort: ask the printer to abort, then let the worker settle the state.
 		if p, ok := s.mgr.Get(j.PrinterID); ok {
 			cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -551,14 +551,14 @@ func (s *Service) Cancel(ctx context.Context, clientID, id string) (*model.Job, 
 	}
 }
 
-func (s *Service) List(ctx context.Context, f Filter) ([]model.Job, error) {
+func (s *Service) List(ctx context.Context, f Filter) ([]domain.Job, error) {
 	if f.Limit <= 0 || f.Limit > 200 {
 		f.Limit = 50
 	}
 	return s.store.ListJobs(ctx, f)
 }
 
-func (s *Service) Attempts(ctx context.Context, clientID, jobID string) ([]model.Attempt, error) {
+func (s *Service) Attempts(ctx context.Context, clientID, jobID string) ([]domain.Attempt, error) {
 	if _, err := s.Get(ctx, clientID, jobID); err != nil {
 		return nil, err
 	}

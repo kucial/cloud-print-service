@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 // Helpers shared with server_test.go: newTestServer (panel + renderer enabled),
@@ -48,7 +48,7 @@ func readAll(t *testing.T, resp *http.Response) string {
 // pattern): no CORS, no second deployment, no node toolchain in the build.
 
 func TestPanelRedirectsRootToUI(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 
 	req, _ := http.NewRequest("GET", ts.URL+"/", nil)
 	c := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -66,7 +66,7 @@ func TestPanelRedirectsRootToUI(t *testing.T) {
 }
 
 func TestPanelServesIndexAndAssets(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 
 	resp, err := ts.Client().Get(ts.URL + "/ui/")
 	if err != nil {
@@ -113,7 +113,7 @@ func TestPanelServesIndexAndAssets(t *testing.T) {
 
 // Deep links must resolve to the SPA, not 404: /ui/jobs is a client-side route.
 func TestPanelServesSPAForUnknownRoutes(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 	resp, err := ts.Client().Get(ts.URL + "/ui/jobs")
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestPanelServesSPAForUnknownRoutes(t *testing.T) {
 
 // Serving the panel must not open a hole in the API's authentication.
 func TestPanelDoesNotBypassAuth(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 	if resp, _ := ts.Client().Get(ts.URL + "/api/v1/printers"); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("API without a key = %d, want 401", resp.StatusCode)
 	}
@@ -143,7 +143,7 @@ func TestPanelDoesNotBypassAuth(t *testing.T) {
 }
 
 func TestPanelCanBeDisabled(t *testing.T) {
-	ts := newTestServerWith(t, WebConfig{Enabled: false}, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServerWith(t, WebConfig{Enabled: false}, mockSpec("p1", &domain.MockCfg{}))
 	if resp, _ := ts.Client().Get(ts.URL + "/ui/"); resp.StatusCode == http.StatusOK {
 		t.Fatal("panel must not be served when disabled")
 	}
@@ -154,7 +154,7 @@ func TestPanelCanBeDisabled(t *testing.T) {
 
 func TestPanelCustomPathAndTitle(t *testing.T) {
 	ts := newTestServerWith(t, WebConfig{Enabled: true, Path: "/dashboard", Title: "WH1 Print Ops"},
-		mockSpec("p1", &model.MockCfg{}))
+		mockSpec("p1", &domain.MockCfg{}))
 
 	resp, err := ts.Client().Get(ts.URL + "/dashboard")
 	if err != nil {
@@ -176,7 +176,7 @@ func TestPanelCustomPathAndTitle(t *testing.T) {
 // ------------------------------------------------------------------ preview
 
 func TestPreviewRendersZPL(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 
 	resp, _ := postWithKey(t, ts, opsKey, "/api/v1/admin/preview",
 		`{"zpl":"^XA^FO40,40^A0N,40,40^FDhello^FS^XZ","width_mm":101.6,"height_mm":152.4,"dpmm":8}`)
@@ -196,7 +196,7 @@ func TestPreviewRendersZPL(t *testing.T) {
 }
 
 func TestPreviewIsAdminOnly(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 	body := `{"zpl":"^XA^FO40,40^FDx^FS^XZ"}`
 
 	// No credential.
@@ -217,7 +217,7 @@ func TestPreviewIsAdminOnly(t *testing.T) {
 }
 
 func TestPreviewValidatesInput(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 	cases := []struct{ name, body, code string }{
 		{"empty zpl", `{"zpl":""}`, "invalid_request"},
 		{"not zpl", `{"zpl":"hello world"}`, "render_failed"},
@@ -251,7 +251,7 @@ func TestPreviewReportsMissingRenderer(t *testing.T) {
 }
 
 func TestPreviewSupportsOtherFormats(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{}))
 	resp, _ := postWithKey(t, ts, opsKey, "/api/v1/admin/preview", `{"zpl":"^XA^FO40,40^FDx^FS^XZ","format":"svg"}`)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

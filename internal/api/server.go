@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/model"
 	"github.com/kongkx/cloud-print-service/internal/printer"
 	"github.com/kongkx/cloud-print-service/internal/render"
 	"github.com/kongkx/cloud-print-service/internal/token"
@@ -140,7 +140,7 @@ func (s *Server) listPrinters(w http.ResponseWriter, r *http.Request) {
 func (s *Server) bulkStatus(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	ids := splitCSV(q.Get("ids"))
-	var items []model.Printer
+	var items []domain.Printer
 	if len(ids) > 0 {
 		items = s.mgr.ViewsByIDs(ids)
 	} else {
@@ -532,7 +532,7 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, s.met.Render())
 }
 
-func (s *Server) refreshGauges(items []model.Printer) {
+func (s *Server) refreshGauges(items []domain.Printer) {
 	for _, p := range items {
 		s.met.Set("cps_queue_depth", float64(p.QueueDepth), "printer_id", p.PrinterID)
 		s.met.Set("cps_printer_usable", boolGauge(p.Usable), "printer_id", p.PrinterID)
@@ -541,7 +541,7 @@ func (s *Server) refreshGauges(items []model.Printer) {
 
 // ----------------------------------------------------------------- helpers
 
-func jobAccepted(j *model.Job, replayed bool) map[string]any {
+func jobAccepted(j *domain.Job, replayed bool) map[string]any {
 	return map[string]any{
 		"job_id":      j.ID,
 		"state":       j.State,

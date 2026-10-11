@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 // A status probe must not erase the "which document caused this" pointer: operators
 // debug a flapping printer by looking at the last job that touched it.
 func TestPollPreservesLastJob(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	mgr, err := NewManager([]model.Printer{
+	mgr, err := NewManager([]domain.Printer{
 		{PrinterID: "p1", Name: "p1", Driver: "mock", Host: "x", Enabled: true,
-			Mock: &model.MockCfg{State: "idle"}},
+			Mock: &domain.MockCfg{State: "idle"}},
 	}, log, bus.New(), ManagerOpts{PollInterval: 50 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
@@ -25,7 +25,7 @@ func TestPollPreservesLastJob(t *testing.T) {
 	defer mgr.Close()
 
 	p, _ := mgr.Get("p1")
-	p.NoteJob("job_42", model.JobPrinted)
+	p.NoteJob("job_42", domain.JobPrinted)
 	mgr.ProbeAll(context.Background())
 	mgr.ProbeAll(context.Background())
 
@@ -33,10 +33,10 @@ func TestPollPreservesLastJob(t *testing.T) {
 	if got.LastJob == nil {
 		t.Fatal("last_job pointer was wiped by a status probe")
 	}
-	if got.LastJob.JobID != "job_42" || got.LastJob.State != model.JobPrinted {
+	if got.LastJob.JobID != "job_42" || got.LastJob.State != domain.JobPrinted {
 		t.Fatalf("wrong last job: %+v", got.LastJob)
 	}
-	if got.State != model.StateIdle {
+	if got.State != domain.StateIdle {
 		t.Fatalf("state = %q", got.State)
 	}
 }
@@ -45,12 +45,12 @@ func TestPollPreservesLastJob(t *testing.T) {
 // mean "not usable", and unknown must never be reported as usable.
 func TestUsableRequiresEvidence(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	mgr, err := NewManager([]model.Printer{
-		{PrinterID: "unprobed", Driver: "mock", Host: "x", Enabled: true, Mock: &model.MockCfg{}},
-		{PrinterID: "out", Driver: "mock", Host: "x", Enabled: true, Mock: &model.MockCfg{State: "media_out"}},
-		{PrinterID: "off", Driver: "mock", Host: "x", Enabled: true, Mock: &model.MockCfg{Offline: true}},
-		{PrinterID: "disabled", Driver: "mock", Host: "x", Enabled: false, Mock: &model.MockCfg{}},
-		{PrinterID: "ok", Driver: "mock", Host: "x", Enabled: true, Mock: &model.MockCfg{State: "idle"}},
+	mgr, err := NewManager([]domain.Printer{
+		{PrinterID: "unprobed", Driver: "mock", Host: "x", Enabled: true, Mock: &domain.MockCfg{}},
+		{PrinterID: "out", Driver: "mock", Host: "x", Enabled: true, Mock: &domain.MockCfg{State: "media_out"}},
+		{PrinterID: "off", Driver: "mock", Host: "x", Enabled: true, Mock: &domain.MockCfg{Offline: true}},
+		{PrinterID: "disabled", Driver: "mock", Host: "x", Enabled: false, Mock: &domain.MockCfg{}},
+		{PrinterID: "ok", Driver: "mock", Host: "x", Enabled: true, Mock: &domain.MockCfg{State: "idle"}},
 	}, log, bus.New(), ManagerOpts{PollInterval: 50 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)

@@ -17,10 +17,10 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/api"
 	"github.com/kongkx/cloud-print-service/internal/bus"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/model"
 	"github.com/kongkx/cloud-print-service/internal/printer"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
@@ -42,7 +42,7 @@ type fleet struct {
 }
 
 // newFleet starts one virtual printer per spec plus the service in front of them.
-func newFleet(t *testing.T, specs ...model.Printer) *fleet {
+func newFleet(t *testing.T, specs ...domain.Printer) *fleet {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	f := &fleet{t: t, vps: map[string]*fakeprinter.Printer{}, met: metrics.New()}
@@ -141,7 +141,7 @@ func (f *fleet) issueToken(clientID, role, ttl string) (string, string) {
 }
 
 // waitJob polls a job until it reaches one of the wanted states.
-func (f *fleet) waitJob(key, jobID string, want ...model.JobState) map[string]any {
+func (f *fleet) waitJob(key, jobID string, want ...domain.JobState) map[string]any {
 	f.t.Helper()
 	wanted := map[string]bool{}
 	for _, w := range want {
@@ -172,8 +172,8 @@ func (f *fleet) printer(id string) *fakeprinter.Printer { return f.vps[id] }
 // token, see the fleet, print, retry safely, then survive printer trouble.
 func TestBusinessSystemFlow(t *testing.T) {
 	f := newFleet(t,
-		model.Printer{PrinterID: "wh1-pack-03", Name: "Packing 3", Site: "wh1", Model: "ZT411", Driver: "zebra9100", Enabled: true},
-		model.Printer{PrinterID: "wh1-pack-04", Name: "Packing 4", Site: "wh1", Model: "ZT411", Driver: "zebra9100", Enabled: true},
+		domain.Printer{PrinterID: "wh1-pack-03", Name: "Packing 3", Site: "wh1", Model: "ZT411", Driver: "zebra9100", Enabled: true},
+		domain.Printer{PrinterID: "wh1-pack-04", Name: "Packing 4", Site: "wh1", Model: "ZT411", Driver: "zebra9100", Enabled: true},
 	)
 
 	// --- 1. onboarding: ops issues a credential for the WMS integration -----------
@@ -239,7 +239,7 @@ func TestBusinessSystemFlow(t *testing.T) {
 		t.Fatalf("dispatch: %d %v", code, out)
 	}
 	jobID := out["job_id"].(string)
-	job := f.waitJob(wmsKey, jobID, model.JobPrinted)
+	job := f.waitJob(wmsKey, jobID, domain.JobPrinted)
 	if job["payload_bytes"].(float64) != float64(len(labelBody)) {
 		t.Errorf("payload size mismatch: %v", job["payload_bytes"])
 	}
@@ -313,8 +313,8 @@ func TestBusinessSystemFlow(t *testing.T) {
 		t.Fatalf("dispatch while offline should be accepted for later retry: %d %v", code, out)
 	}
 	offlineJob := f.waitJob(wmsKey, out["job_id"].(string),
-		model.JobSentUnknown, model.JobFailed, model.JobPrinted)
-	if offlineJob["state"] == model.JobPrinted {
+		domain.JobSentUnknown, domain.JobFailed, domain.JobPrinted)
+	if offlineJob["state"] == domain.JobPrinted {
 		t.Fatal("a job dispatched to an offline printer must never be reported as printed")
 	}
 
@@ -330,7 +330,7 @@ func TestBusinessSystemFlow(t *testing.T) {
 	if code != http.StatusAccepted {
 		t.Fatalf("dispatch after recovery: %d %v", code, out)
 	}
-	f.waitJob(wmsKey, out["job_id"].(string), model.JobPrinted)
+	f.waitJob(wmsKey, out["job_id"].(string), domain.JobPrinted)
 	if f.printer("wh1-pack-03").LabelCount() != 1 {
 		t.Fatalf("recovered printer should print exactly one label, got %d",
 			f.printer("wh1-pack-03").LabelCount())
@@ -402,8 +402,8 @@ func boolp(b bool) *bool { return &b }
 // TestTwoPrintersAreIndependent shows one sick printer must not stall the other.
 func TestTwoPrintersAreIndependent(t *testing.T) {
 	f := newFleet(t,
-		model.Printer{PrinterID: "fast", Model: "ZT411", Driver: "zebra9100", Enabled: true},
-		model.Printer{PrinterID: "stuck", Model: "ZT411", Driver: "zebra9100", Enabled: true},
+		domain.Printer{PrinterID: "fast", Model: "ZT411", Driver: "zebra9100", Enabled: true},
+		domain.Printer{PrinterID: "stuck", Model: "ZT411", Driver: "zebra9100", Enabled: true},
 	)
 	key, _ := f.issueToken("erp", "client", "1h")
 
@@ -422,18 +422,18 @@ func TestTwoPrintersAreIndependent(t *testing.T) {
 		if code != http.StatusAccepted {
 			t.Fatalf("fast dispatch %d: %d %v", i, code, out)
 		}
-		f.waitJob(key, out["job_id"].(string), model.JobPrinted)
+		f.waitJob(key, out["job_id"].(string), domain.JobPrinted)
 	}
 	if n := f.printer("fast").LabelCount(); n != 3 {
 		t.Fatalf("healthy printer should have 3 labels, got %d", n)
 	}
-	f.waitJob(key, stuckJob, model.JobSentUnknown)
+	f.waitJob(key, stuckJob, domain.JobSentUnknown)
 }
 
 // TestTenantIsolationAcrossIssuedTokens proves one customer's token cannot see or
 // touch another customer's jobs.
 func TestTenantIsolationAcrossIssuedTokens(t *testing.T) {
-	f := newFleet(t, model.Printer{PrinterID: "p1", Model: "ZT411", Driver: "zebra9100", Enabled: true})
+	f := newFleet(t, domain.Printer{PrinterID: "p1", Model: "ZT411", Driver: "zebra9100", Enabled: true})
 	erpKey, _ := f.issueToken("erp", "client", "1h")
 	wmsKey, _ := f.issueToken("wms", "client", "1h")
 
@@ -462,7 +462,7 @@ func TestTenantIsolationAcrossIssuedTokens(t *testing.T) {
 
 // TestBatchDispatchFlow covers the bulk endpoint a WMS uses to release a wave.
 func TestBatchDispatchFlow(t *testing.T) {
-	f := newFleet(t, model.Printer{PrinterID: "p1", Model: "ZT411", Driver: "zebra9100", Enabled: true})
+	f := newFleet(t, domain.Printer{PrinterID: "p1", Model: "ZT411", Driver: "zebra9100", Enabled: true})
 	key, _ := f.issueToken("wms", "client", "1h")
 
 	items := make([]map[string]any, 0, 5)
@@ -485,7 +485,7 @@ func TestBatchDispatchFlow(t *testing.T) {
 	res := out["items"].([]any)
 	for i := 0; i < 4; i++ {
 		id := res[i].(map[string]any)["job_id"].(string)
-		f.waitJob(key, id, model.JobPrinted)
+		f.waitJob(key, id, domain.JobPrinted)
 	}
 	if n := f.printer("p1").LabelCount(); n != 4 {
 		t.Fatalf("expected 4 labels on the printer, got %d", n)

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 // Duration is a time.Duration that reads from JSON as "15s" / "2m".
@@ -97,7 +97,7 @@ type Config struct {
 	RateLimitBurst      int      `json:"rate_limit_burst"`
 
 	APIKeys  map[string]ClientKey `json:"api_keys"`
-	Printers []model.Printer      `json:"printers"`
+	Printers []domain.Printer     `json:"printers"`
 
 	// UI is the embedded operator panel (same binary, same origin as the API).
 	UI UIConfig `json:"ui"`
@@ -130,7 +130,7 @@ func defaults() Config {
 		TokenDefaultTTL:     Duration(90 * 24 * time.Hour),
 		UI:                  UIConfig{Enabled: true, Path: "/ui/", Title: "Cloud Print Service"},
 		Render:              RenderConfig{Backend: "auto"},
-		Printers:            []model.Printer{},
+		Printers:            []domain.Printer{},
 		APIKeys:             map[string]ClientKey{},
 	}
 }

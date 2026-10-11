@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 // StatusUnsupported is returned by drivers whose model cannot report status.
@@ -22,14 +22,14 @@ var StatusUnsupported = fmt.Errorf("status query not supported by this driver")
 //     partial label, so the caller must NOT retry. Zero bytes means "safe to retry".
 type Driver interface {
 	Send(ctx context.Context, data []byte) (int, error)
-	Status(ctx context.Context) (model.Status, error)
+	Status(ctx context.Context) (domain.Status, error)
 	Cancel(ctx context.Context) error
 	Identify(ctx context.Context) (map[string]string, error)
 	Close() error
 }
 
 // Factory builds a driver for a declared printer.
-type Factory func(p model.Printer) (Driver, error)
+type Factory func(p domain.Printer) (Driver, error)
 
 var (
 	regMu sync.RWMutex
@@ -54,7 +54,7 @@ func Drivers() []string {
 }
 
 // New builds the driver declared by p.Driver.
-func New(p model.Printer) (Driver, error) {
+func New(p domain.Printer) (Driver, error) {
 	regMu.RLock()
 	f, ok := reg[p.Driver]
 	regMu.RUnlock()

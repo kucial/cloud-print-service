@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/model"
 	"github.com/kongkx/cloud-print-service/internal/printer"
 )
 
@@ -20,10 +20,10 @@ type harness struct {
 	mgr   *printer.Manager
 	bus   *bus.Bus
 	st    *MemoryStore
-	specs []model.Printer
+	specs []domain.Printer
 }
 
-func newHarness(t *testing.T, specs ...model.Printer) *harness {
+func newHarness(t *testing.T, specs ...domain.Printer) *harness {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
@@ -45,12 +45,12 @@ func newHarness(t *testing.T, specs ...model.Printer) *harness {
 	return &harness{svc: svc, mgr: mgr, bus: b, st: st, specs: specs}
 }
 
-func mockPrinter(id string, cfg *model.MockCfg) model.Printer {
-	return model.Printer{PrinterID: id, Name: id, Site: "t", Model: "mock", Driver: "mock",
+func mockPrinter(id string, cfg *domain.MockCfg) domain.Printer {
+	return domain.Printer{PrinterID: id, Name: id, Site: "t", Model: "mock", Driver: "mock",
 		Host: "127.0.0.1", Port: 9100, Enabled: true, Mock: cfg}
 }
 
-func waitState(t *testing.T, svc *Service, id string, want model.JobState) *model.Job {
+func waitState(t *testing.T, svc *Service, id string, want domain.JobState) *domain.Job {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -61,7 +61,7 @@ func waitState(t *testing.T, svc *Service, id string, want model.JobState) *mode
 		time.Sleep(5 * time.Millisecond)
 	}
 	j, _ := svc.Get(context.Background(), "", id)
-	got := model.JobState("<missing>")
+	got := domain.JobState("<missing>")
 	if j != nil {
 		got = j.State
 	}
@@ -70,14 +70,14 @@ func waitState(t *testing.T, svc *Service, id string, want model.JobState) *mode
 }
 
 func TestSubmitDispatchesAndConfirms(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	j, replayed, err := h.svc.Submit(context.Background(), SubmitRequest{
 		ClientID: "erp", PrinterID: "p1", ExternalID: "ok-1", ZPL: "^XA^FDhi^FS^XZ",
 	})
 	if err != nil || replayed {
 		t.Fatalf("submit: err=%v replayed=%v", err, replayed)
 	}
-	got := waitState(t, h.svc, j.ID, model.JobPrinted)
+	got := waitState(t, h.svc, j.ID, domain.JobPrinted)
 	if got.Bytes == 0 || got.PayloadSHA == "" {
 		t.Fatalf("payload metadata missing: %+v", got)
 	}
@@ -87,7 +87,7 @@ func TestSubmitDispatchesAndConfirms(t *testing.T) {
 }
 
 func TestIdempotencyPreventsDuplicateLabels(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	ctx := context.Background()
 	req := SubmitRequest{ClientID: "erp", PrinterID: "p1", ExternalID: "ok-42", ZPL: "^XA^FDa^FS^XZ"}
 
@@ -128,14 +128,14 @@ func TestMissingExternalIDRejected(t *testing.T) {
 
 func TestRetryOnZeroByteFailure(t *testing.T) {
 	// FailEvery=2 => first attempt fails with 0 bytes, second succeeds.
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle", FailEvery: 2}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle", FailEvery: 2}))
 	j, _, err := h.svc.Submit(context.Background(), SubmitRequest{
 		ClientID: "erp", PrinterID: "p1", ExternalID: "retry-1", ZPL: "^XA^FDa^FS^XZ",
 	})
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	got := waitState(t, h.svc, j.ID, model.JobPrinted)
+	got := waitState(t, h.svc, j.ID, domain.JobPrinted)
 	if got.Attempts != 2 {
 		t.Fatalf("attempts = %d, want 2", got.Attempts)
 	}
@@ -146,14 +146,14 @@ func TestRetryOnZeroByteFailure(t *testing.T) {
 }
 
 func TestExhaustedRetriesFail(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{FailEvery: 1}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{FailEvery: 1}))
 	j, _, err := h.svc.Submit(context.Background(), SubmitRequest{
 		ClientID: "erp", PrinterID: "p1", ExternalID: "always-fail", ZPL: "^XA^FDa^FS^XZ",
 	})
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	got := waitState(t, h.svc, j.ID, model.JobFailed)
+	got := waitState(t, h.svc, j.ID, domain.JobFailed)
 	if got.Attempts != 3 {
 		t.Fatalf("attempts = %d, want 3 (max_attempts)", got.Attempts)
 	}
@@ -167,14 +167,14 @@ func TestExhaustedRetriesFail(t *testing.T) {
 
 func TestUnconfirmedBecomesSentUnknown(t *testing.T) {
 	// Printer answers "printing" forever: bytes are sent but never confirmed.
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "printing"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "printing"}))
 	j, _, err := h.svc.Submit(context.Background(), SubmitRequest{
 		ClientID: "erp", PrinterID: "p1", ExternalID: "unconfirmed-1", ZPL: "^XA^FDa^FS^XZ",
 	})
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	got := waitState(t, h.svc, j.ID, model.JobSentUnknown)
+	got := waitState(t, h.svc, j.ID, domain.JobSentUnknown)
 	if got.Attempts != 1 {
 		t.Fatalf("attempts = %d: an unconfirmed job must NOT be retried (no duplicate labels)", got.Attempts)
 	}
@@ -183,7 +183,7 @@ func TestUnconfirmedBecomesSentUnknown(t *testing.T) {
 func TestQueueFullIsBackpressure(t *testing.T) {
 	// A blocked printer: every status probe reports printing, so each job burns the
 	// confirm window and the single worker stays busy.
-	slow := mockPrinter("p1", &model.MockCfg{State: "printing", DelayMS: 20})
+	slow := mockPrinter("p1", &domain.MockCfg{State: "printing", DelayMS: 20})
 	h := newHarness(t, slow)
 	h.svc.cfg.QueueSize = 1
 	h.svc.cfg.ConfirmTimeout = 200 * time.Millisecond
@@ -203,7 +203,7 @@ func TestQueueFullIsBackpressure(t *testing.T) {
 }
 
 func TestCancelQueuedJob(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "printing"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "printing"}))
 	h.svc.cfg.ConfirmTimeout = 3 * time.Second
 	// First job occupies the single per-printer worker (its confirm loop is long).
 	first, _, _ := h.svc.Submit(context.Background(), SubmitRequest{
@@ -219,7 +219,7 @@ func TestCancelQueuedJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	if got.State != model.JobCancelled {
+	if got.State != domain.JobCancelled {
 		t.Fatalf("state = %s, want cancelled", got.State)
 	}
 	// Cancelling in-flight work is a request, not an error.
@@ -228,24 +228,24 @@ func TestCancelQueuedJob(t *testing.T) {
 	}
 	// A cancelled job must never reach the printer.
 	time.Sleep(200 * time.Millisecond)
-	if j, _ := h.svc.Get(context.Background(), "", second.ID); j.State != model.JobCancelled {
+	if j, _ := h.svc.Get(context.Background(), "", second.ID); j.State != domain.JobCancelled {
 		t.Fatalf("cancelled job state = %s, want cancelled", j.State)
 	}
 }
 
 func TestCancelTerminalJobConflicts(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	j, _, _ := h.svc.Submit(context.Background(), SubmitRequest{
 		ClientID: "erp", PrinterID: "p1", ExternalID: "done", ZPL: "^XA^FDa^FS^XZ",
 	})
-	waitState(t, h.svc, j.ID, model.JobPrinted)
+	waitState(t, h.svc, j.ID, domain.JobPrinted)
 	if _, err := h.svc.Cancel(context.Background(), "erp", j.ID); !errors.Is(err, ErrNotCancellable) {
 		t.Fatalf("expected ErrNotCancellable for a printed job, got %v", err)
 	}
 }
 
 func TestTenantIsolation(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	j, _, _ := h.svc.Submit(context.Background(), SubmitRequest{
 		ClientID: "erp", PrinterID: "p1", ExternalID: "iso-1", ZPL: "^XA^FDa^FS^XZ",
 	})
@@ -268,7 +268,7 @@ func TestUnknownPrinterRejected(t *testing.T) {
 }
 
 func TestFIFOOrderPerPrinter(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	var ids []string
 	for i := 0; i < 5; i++ {
 		j, _, err := h.svc.Submit(context.Background(), SubmitRequest{
@@ -280,7 +280,7 @@ func TestFIFOOrderPerPrinter(t *testing.T) {
 		ids = append(ids, j.ID)
 	}
 	for _, id := range ids {
-		waitState(t, h.svc, id, model.JobPrinted)
+		waitState(t, h.svc, id, domain.JobPrinted)
 	}
 	jobs, err := h.st.ListJobs(context.Background(), Filter{PrinterID: "p1"})
 	if err != nil {
@@ -299,24 +299,24 @@ func TestFIFOOrderPerPrinter(t *testing.T) {
 
 func TestPerPrinterOrderDoesNotBlockOtherPrinters(t *testing.T) {
 	h := newHarness(t,
-		mockPrinter("blocked", &model.MockCfg{State: "printing"}),
-		mockPrinter("fast", &model.MockCfg{State: "idle"}),
+		mockPrinter("blocked", &domain.MockCfg{State: "printing"}),
+		mockPrinter("fast", &domain.MockCfg{State: "idle"}),
 	)
 	ctx := context.Background()
 	slow, _, _ := h.svc.Submit(ctx, SubmitRequest{ClientID: "erp", PrinterID: "blocked", ExternalID: "s1", ZPL: "^XA^FDa^FS^XZ"})
-	waitForState(t, h.svc, slow.ID, model.JobSending, 2*time.Second)
+	waitForState(t, h.svc, slow.ID, domain.JobSending, 2*time.Second)
 	fast, _, err := h.svc.Submit(ctx, SubmitRequest{ClientID: "erp", PrinterID: "fast", ExternalID: "f1", ZPL: "^XA^FDa^FS^XZ"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitState(t, h.svc, fast.ID, model.JobPrinted)
-	if j, _ := h.svc.Get(ctx, "", slow.ID); j.State != model.JobSending {
+	waitState(t, h.svc, fast.ID, domain.JobPrinted)
+	if j, _ := h.svc.Get(ctx, "", slow.ID); j.State != domain.JobSending {
 		t.Fatalf("blocked printer job state = %s, want sending (independent workers)", j.State)
 	}
 }
 
 // waitForState polls until want is reached or the timeout expires (never fails the test).
-func waitForState(t *testing.T, svc *Service, id string, want model.JobState, within time.Duration) {
+func waitForState(t *testing.T, svc *Service, id string, want domain.JobState, within time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
@@ -329,13 +329,13 @@ func waitForState(t *testing.T, svc *Service, id string, want model.JobState, wi
 }
 
 func TestRestartMarksInFlightAsSentUnknown(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	ctx := context.Background()
 
 	// Simulate a job that was mid-write when the process died.
-	inflight := &model.Job{
+	inflight := &domain.Job{
 		ID: "inflight-1", ClientID: "erp", ExternalID: "inflight-1", PrinterID: "p1",
-		State: model.JobSending, Payload: "^XA^FDa^FS^XZ", Bytes: 11,
+		State: domain.JobSending, Payload: "^XA^FDa^FS^XZ", Bytes: 11,
 		PayloadSHA: "deadbeef", Copies: 1, Priority: "normal", QueuedAt: time.Now().UTC(),
 	}
 	if err := h.st.CreateJob(ctx, inflight); err != nil {
@@ -346,7 +346,7 @@ func TestRestartMarksInFlightAsSentUnknown(t *testing.T) {
 		t.Fatalf("requeue: n=%d err=%v", n, err)
 	}
 	got, _ := h.st.GetJob(ctx, "inflight-1")
-	if got.State != model.JobSentUnknown {
+	if got.State != domain.JobSentUnknown {
 		t.Fatalf("state = %s, want sent_unknown (we cannot prove zero bytes were written)", got.State)
 	}
 	if got.FinishedAt == nil {
@@ -355,7 +355,7 @@ func TestRestartMarksInFlightAsSentUnknown(t *testing.T) {
 }
 
 func TestConcurrentIdenticalSubmitsCreateOneJob(t *testing.T) {
-	h := newHarness(t, mockPrinter("p1", &model.MockCfg{State: "idle"}))
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	ctx := context.Background()
 	req := SubmitRequest{ClientID: "erp", PrinterID: "p1", ExternalID: "race-1", ZPL: "^XA^FDa^FS^XZ"}
 
@@ -384,12 +384,12 @@ func TestConcurrentIdenticalSubmitsCreateOneJob(t *testing.T) {
 }
 
 func TestJobStateTerminal(t *testing.T) {
-	for _, s := range []model.JobState{model.JobPrinted, model.JobSentUnknown, model.JobFailed, model.JobCancelled} {
+	for _, s := range []domain.JobState{domain.JobPrinted, domain.JobSentUnknown, domain.JobFailed, domain.JobCancelled} {
 		if !s.Terminal() {
 			t.Errorf("%s should be terminal", s)
 		}
 	}
-	for _, s := range []model.JobState{model.JobQueued, model.JobSending} {
+	for _, s := range []domain.JobState{domain.JobQueued, domain.JobSending} {
 		if s.Terminal() {
 			t.Errorf("%s should not be terminal", s)
 		}
@@ -397,7 +397,7 @@ func TestJobStateTerminal(t *testing.T) {
 }
 
 func TestRejectWhenNotUsable(t *testing.T) {
-	specs := []model.Printer{mockPrinter("out", &model.MockCfg{State: "media_out"})}
+	specs := []domain.Printer{mockPrinter("out", &domain.MockCfg{State: "media_out"})}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
 	mgr, err := printer.NewManager(specs, log, b, printer.ManagerOpts{PollInterval: time.Minute})

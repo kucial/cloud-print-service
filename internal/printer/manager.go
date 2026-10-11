@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 // Manager owns every printer's driver and cached status.
@@ -32,14 +32,14 @@ type Manager struct {
 
 // Printer is one managed device: declared spec + driver + cached status.
 type Printer struct {
-	spec model.Printer
+	spec domain.Printer
 	drv  Driver
 	mgr  *Manager
 
 	queueDepth atomic.Int64
 
 	mu     sync.RWMutex
-	status model.Status
+	status domain.Status
 }
 
 type ManagerOpts struct {
@@ -50,7 +50,7 @@ type ManagerOpts struct {
 	ReadTimeout  time.Duration
 }
 
-func NewManager(specs []model.Printer, log *slog.Logger, b *bus.Bus, o ManagerOpts) (*Manager, error) {
+func NewManager(specs []domain.Printer, log *slog.Logger, b *bus.Bus, o ManagerOpts) (*Manager, error) {
 	if o.PollInterval <= 0 {
 		o.PollInterval = 15 * time.Second
 	}
@@ -80,7 +80,7 @@ func NewManager(specs []model.Printer, log *slog.Logger, b *bus.Bus, o ManagerOp
 	return m, nil
 }
 
-func (m *Manager) build(spec model.Printer) (*Printer, error) {
+func (m *Manager) build(spec domain.Printer) (*Printer, error) {
 	var drv Driver
 	var err error
 	if spec.Driver == "zebra9100" {
@@ -92,9 +92,9 @@ func (m *Manager) build(spec model.Printer) (*Printer, error) {
 		}
 	}
 	p := &Printer{spec: spec, drv: drv, mgr: m}
-	p.status = model.Status{State: model.StateUnknown, Detail: "not polled yet"}
+	p.status = domain.Status{State: domain.StateUnknown, Detail: "not polled yet"}
 	if !spec.Enabled {
-		p.status.State = model.StateDisabled
+		p.status.State = domain.StateDisabled
 	}
 	return p, nil
 }
@@ -120,9 +120,9 @@ type Filter struct {
 	Usable  *bool
 }
 
-func (m *Manager) List(f Filter) []model.Printer {
+func (m *Manager) List(f Filter) []domain.Printer {
 	m.mu.RLock()
-	out := make([]model.Printer, 0, len(m.printers))
+	out := make([]domain.Printer, 0, len(m.printers))
 	for _, p := range m.printers {
 		out = append(out, p.View())
 	}
@@ -148,8 +148,8 @@ func (m *Manager) List(f Filter) []model.Printer {
 }
 
 // ViewsByIDs returns only the requested printers (missing ids are skipped).
-func (m *Manager) ViewsByIDs(ids []string) []model.Printer {
-	out := make([]model.Printer, 0, len(ids))
+func (m *Manager) ViewsByIDs(ids []string) []domain.Printer {
+	out := make([]domain.Printer, 0, len(ids))
 	for _, id := range ids {
 		if p, ok := m.Get(id); ok {
 			out = append(out, p.View())
@@ -158,7 +158,7 @@ func (m *Manager) ViewsByIDs(ids []string) []model.Printer {
 	return out
 }
 
-func (p *Printer) Spec() model.Printer { return p.spec }
+func (p *Printer) Spec() domain.Printer { return p.spec }
 
 func (p *Printer) ID() string { return p.spec.PrinterID }
 
@@ -169,7 +169,7 @@ func (p *Printer) SetQueueDepth(n int) { p.queueDepth.Store(int64(n)) }
 func (p *Printer) QueueDepth() int { return int(p.queueDepth.Load()) }
 
 // Cached returns the last observed status, marked stale if it is too old.
-func (p *Printer) Cached() model.Status {
+func (p *Printer) Cached() domain.Status {
 	p.mu.RLock()
 	st := p.status
 	p.mu.RUnlock()
@@ -184,7 +184,7 @@ func (p *Printer) Send(ctx context.Context, data []byte) (int, error) {
 	return p.drv.Send(ctx, data)
 }
 
-func (p *Printer) Status(ctx context.Context) (model.Status, error) { return p.drv.Status(ctx) }
+func (p *Printer) Status(ctx context.Context) (domain.Status, error) { return p.drv.Status(ctx) }
 
 func (p *Printer) Cancel(ctx context.Context) error { return p.drv.Cancel(ctx) }
 
@@ -196,14 +196,14 @@ func (p *Printer) Close() { _ = p.drv.Close() }
 
 // NoteJob records the last job seen on this printer, so a dashboard opened after the fact
 // still shows which document produced the current state.
-func (p *Printer) NoteJob(jobID string, state model.JobState) {
+func (p *Printer) NoteJob(jobID string, state domain.JobState) {
 	p.mu.Lock()
-	p.status.LastJob = &model.JobRef{JobID: jobID, State: state, At: time.Now().UTC()}
+	p.status.LastJob = &domain.JobRef{JobID: jobID, State: state, At: time.Now().UTC()}
 	p.mu.Unlock()
 }
 
 // View renders the cached status plus usability into the API representation.
-func (p *Printer) View() model.Printer {
+func (p *Printer) View() domain.Printer {
 	v := p.spec
 	v.Status = p.Cached()
 	v.QueueDepth = p.QueueDepth()
@@ -218,7 +218,7 @@ func (p *Printer) View() model.Printer {
 	return v
 }
 
-func (p *Printer) publishStatus(st model.Status) {
+func (p *Printer) publishStatus(st domain.Status) {
 	if p.spec.PrinterID == "" {
 		return
 	}
@@ -242,7 +242,7 @@ func (p *Printer) probe(ctx context.Context) {
 
 	st, err := p.Status(probeCtx)
 	if err != nil {
-		st.State = model.StateOffline
+		st.State = domain.StateOffline
 		if st.Detail == "" {
 			st.Detail = err.Error()
 		}
@@ -251,7 +251,7 @@ func (p *Printer) probe(ctx context.Context) {
 		}
 		// Keep the last good reading visible for troubleshooting.
 		p.mu.Lock()
-		if prev := p.status; prev.ObservedAt.After(st.ObservedAt) && prev.State != model.StateUnknown {
+		if prev := p.status; prev.ObservedAt.After(st.ObservedAt) && prev.State != domain.StateUnknown {
 			st.Raw = prev.Raw
 		}
 		st.LastJob = p.status.LastJob
@@ -262,7 +262,7 @@ func (p *Printer) probe(ctx context.Context) {
 		return
 	}
 	if !p.spec.Enabled {
-		st.State = model.StateDisabled
+		st.State = domain.StateDisabled
 	}
 	p.mu.Lock()
 	changed := p.status.State != st.State

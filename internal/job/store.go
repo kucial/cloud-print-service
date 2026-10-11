@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 var (
@@ -34,13 +34,13 @@ type Filter struct {
 // Store is the persistence boundary. Memory is the MVP implementation; the Postgres
 // implementation (schema in db/schema.sql) is a drop-in for production.
 type Store interface {
-	CreateJob(ctx context.Context, j *model.Job) error
-	GetJob(ctx context.Context, id string) (*model.Job, error)
-	GetByExternal(ctx context.Context, clientID, externalID string) (*model.Job, error)
-	UpdateJob(ctx context.Context, j *model.Job) error
-	ListJobs(ctx context.Context, f Filter) ([]model.Job, error)
-	AddAttempt(ctx context.Context, a *model.Attempt) error
-	Attempts(ctx context.Context, jobID string) ([]model.Attempt, error)
+	CreateJob(ctx context.Context, j *domain.Job) error
+	GetJob(ctx context.Context, id string) (*domain.Job, error)
+	GetByExternal(ctx context.Context, clientID, externalID string) (*domain.Job, error)
+	UpdateJob(ctx context.Context, j *domain.Job) error
+	ListJobs(ctx context.Context, f Filter) ([]domain.Job, error)
+	AddAttempt(ctx context.Context, a *domain.Attempt) error
+	Attempts(ctx context.Context, jobID string) ([]domain.Attempt, error)
 	// RequeueUnfinished is called at boot: anything left `sending` cannot be proven
 	// unwritten, so it becomes `sent_unknown` rather than being printed again.
 	RequeueUnfinished(ctx context.Context) (int, error)
@@ -51,23 +51,23 @@ type Store interface {
 // MemoryStore is a process-local store: correct for MVP/demo, restart loses history.
 type MemoryStore struct {
 	mu       sync.RWMutex
-	jobs     map[string]*model.Job
+	jobs     map[string]*domain.Job
 	byExt    map[string]string // "clientID\x00externalID" -> job id
-	attempts map[string][]model.Attempt
+	attempts map[string][]domain.Attempt
 	seq      int64
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		jobs:     map[string]*model.Job{},
+		jobs:     map[string]*domain.Job{},
 		byExt:    map[string]string{},
-		attempts: map[string][]model.Attempt{},
+		attempts: map[string][]domain.Attempt{},
 	}
 }
 
 func extKey(clientID, externalID string) string { return clientID + "\x00" + externalID }
 
-func (s *MemoryStore) CreateJob(ctx context.Context, j *model.Job) error {
+func (s *MemoryStore) CreateJob(ctx context.Context, j *domain.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if j.ID == "" {
@@ -89,7 +89,7 @@ func (s *MemoryStore) CreateJob(ctx context.Context, j *model.Job) error {
 	return nil
 }
 
-func (s *MemoryStore) GetJob(ctx context.Context, id string) (*model.Job, error) {
+func (s *MemoryStore) GetJob(ctx context.Context, id string) (*domain.Job, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	j, ok := s.jobs[id]
@@ -100,7 +100,7 @@ func (s *MemoryStore) GetJob(ctx context.Context, id string) (*model.Job, error)
 	return &cp, nil
 }
 
-func (s *MemoryStore) GetByExternal(ctx context.Context, clientID, externalID string) (*model.Job, error) {
+func (s *MemoryStore) GetByExternal(ctx context.Context, clientID, externalID string) (*domain.Job, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	id, ok := s.byExt[extKey(clientID, externalID)]
@@ -111,7 +111,7 @@ func (s *MemoryStore) GetByExternal(ctx context.Context, clientID, externalID st
 	return &cp, nil
 }
 
-func (s *MemoryStore) UpdateJob(ctx context.Context, j *model.Job) error {
+func (s *MemoryStore) UpdateJob(ctx context.Context, j *domain.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.jobs[j.ID]; !ok {
@@ -122,9 +122,9 @@ func (s *MemoryStore) UpdateJob(ctx context.Context, j *model.Job) error {
 	return nil
 }
 
-func (s *MemoryStore) ListJobs(ctx context.Context, f Filter) ([]model.Job, error) {
+func (s *MemoryStore) ListJobs(ctx context.Context, f Filter) ([]domain.Job, error) {
 	s.mu.RLock()
-	out := []model.Job{}
+	out := []domain.Job{}
 	for _, j := range s.jobs {
 		if f.ClientID != "" && j.ClientID != f.ClientID {
 			continue
@@ -155,7 +155,7 @@ func (s *MemoryStore) ListJobs(ctx context.Context, f Filter) ([]model.Job, erro
 	return out, nil
 }
 
-func (s *MemoryStore) AddAttempt(ctx context.Context, a *model.Attempt) error {
+func (s *MemoryStore) AddAttempt(ctx context.Context, a *domain.Attempt) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seq++
@@ -165,10 +165,10 @@ func (s *MemoryStore) AddAttempt(ctx context.Context, a *model.Attempt) error {
 	return nil
 }
 
-func (s *MemoryStore) Attempts(ctx context.Context, jobID string) ([]model.Attempt, error) {
+func (s *MemoryStore) Attempts(ctx context.Context, jobID string) ([]domain.Attempt, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]model.Attempt(nil), s.attempts[jobID]...), nil
+	return append([]domain.Attempt(nil), s.attempts[jobID]...), nil
 }
 
 func (s *MemoryStore) RequeueUnfinished(ctx context.Context) (int, error) {
@@ -177,10 +177,10 @@ func (s *MemoryStore) RequeueUnfinished(ctx context.Context) (int, error) {
 	n := 0
 	now := time.Now().UTC()
 	for _, j := range s.jobs {
-		if j.State != model.JobSending {
+		if j.State != domain.JobSending {
 			continue
 		}
-		j.State = model.JobSentUnknown
+		j.State = domain.JobSentUnknown
 		j.LastError = "cps restarted while the job was in flight; printed state unknown"
 		j.FinishedAt = &now
 		n++

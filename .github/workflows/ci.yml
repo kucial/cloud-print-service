@@ -1,0 +1,105 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  check:
+    name: vet, fmt, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l . | tee /dev/stderr)"
+          test -z "$unformatted" || { echo "run: gofmt -w ."; exit 1; }
+
+      - name: vet
+        run: go vet ./...
+
+      # The service path must stay dependency-light and buildable without cgo, so the
+      # libusb/USB tier can never quietly leak into the server binaries.
+      - name: build (CGO_ENABLED=0)
+        run: |
+          CGO_ENABLED=0 go build ./...
+          for b in cps cpsctl vprint demo-web zplpng; do
+            CGO_ENABLED=0 go build -o /tmp/$b ./cmd/$b
+          done
+
+      - name: test -race
+        run: go test -race -count=1 ./...
+
+  e2e:
+    name: end-to-end (virtual printers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # The flow test boots virtual printers and the real HTTP API, issues tokens and
+      # injects printer faults. It is the acceptance test for the whole product.
+      - name: flow test
+        run: go test -count=1 -v -run 'TestBusinessSystemFlow|TestTwoPrintersAreIndependent|TestTenantIsolation' ./test/e2e/
+
+      - name: scripted flow against a live service
+        run: |
+          set -euo pipefail
+          go build -o /tmp/cps ./cmd/cps
+          go build -o /tmp/vprint ./cmd/vprint
+
+          /tmp/vprint -count 2 -id sim -base-port 19100 -base-admin-port 19200 -render >/tmp/vprint.log 2>&1 &
+          sleep 2
+
+          # Point the example fleet at the virtual printers (they share the -id prefix,
+          # so both sim-* and wh1-* entries land on the two vprint ports).
+          jq --argjson p1 19100 --argjson p2 19101 '
+            .printers |= map(
+              if .printer_id == "sim-pack-01" then .port = $p1
+              elif .printer_id == "sim-pack-02" then .port = $p2
+              else . end)
+          ' config.example.json > /tmp/ci.json
+
+          /tmp/cps -config /tmp/ci.json >/tmp/cps.log 2>&1 &
+          sleep 2
+          curl -sS -o /dev/null http://localhost:18080/healthz
+          VPRINT_ADMIN=http://localhost:19200 ./examples/flow.sh http://localhost:18080 \
+            dev-key-ops-0123456789abcdef
+
+  render:
+    name: render matches published reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Dispatches zebrash's own ups.zpl through the full pipeline (HTTP -> queue -> TCP
+      # -> parser -> raster) and diffs the result against its committed reference PNG.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil >/dev/null
+      - run: ./examples/verify-render.sh
+
+  docker:
+    name: image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t cps:ci .

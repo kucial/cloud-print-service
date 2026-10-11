@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
-	"github.com/kongkx/cloud-print-service/internal/model"
 	"github.com/kongkx/cloud-print-service/internal/printer"
 	"github.com/kongkx/cloud-print-service/internal/render"
 	"github.com/kongkx/cloud-print-service/internal/token"
@@ -28,7 +28,7 @@ const (
 	wmsKey = "test-wms-key-0000000001"
 )
 
-func newTestServer(t *testing.T, specs ...model.Printer) *httptest.Server {
+func newTestServer(t *testing.T, specs ...domain.Printer) *httptest.Server {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
@@ -63,7 +63,7 @@ func newTestServer(t *testing.T, specs ...model.Printer) *httptest.Server {
 type httpServer = httptest.Server
 
 // newTestServerWith builds a server with a custom panel configuration.
-func newTestServerWith(t *testing.T, web WebConfig, specs ...model.Printer) *httpServer {
+func newTestServerWith(t *testing.T, web WebConfig, specs ...domain.Printer) *httpServer {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := bus.New()
@@ -111,8 +111,8 @@ func newTestServerNoRenderer(t *testing.T) *httpServer {
 
 func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
 
-func mockSpec(id string, cfg *model.MockCfg) model.Printer {
-	return model.Printer{PrinterID: id, Name: id, Site: "wh1", Model: "mock", Driver: "mock",
+func mockSpec(id string, cfg *domain.MockCfg) domain.Printer {
+	return domain.Printer{PrinterID: id, Name: id, Site: "wh1", Model: "mock", Driver: "mock",
 		Host: "127.0.0.1", Port: 9100, Enabled: true, Mock: cfg}
 }
 
@@ -142,7 +142,7 @@ func do(t *testing.T, ts *httptest.Server, method, path, key, body string) (*htt
 }
 
 func TestRequiresAuth(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	resp, _ := do(t, ts, "GET", "/api/v1/printers", "", "")
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
@@ -155,7 +155,7 @@ func TestRequiresAuth(t *testing.T) {
 }
 
 func TestAdminOnlyRoutes(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	resp, body := do(t, ts, "POST", "/api/v1/printers/p1/test", erpKey, "")
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("status = %d (%v), want 403 for a client key", resp.StatusCode, body)
@@ -168,9 +168,9 @@ func TestAdminOnlyRoutes(t *testing.T) {
 
 func TestBulkStatusEndpoint(t *testing.T) {
 	ts := newTestServer(t,
-		mockSpec("ok1", &model.MockCfg{State: "idle"}),
-		mockSpec("low1", &model.MockCfg{State: "media_low"}),
-		mockSpec("out1", &model.MockCfg{State: "media_out"}),
+		mockSpec("ok1", &domain.MockCfg{State: "idle"}),
+		mockSpec("low1", &domain.MockCfg{State: "media_low"}),
+		mockSpec("out1", &domain.MockCfg{State: "media_out"}),
 	)
 	// Status is normally filled by the background poller; force one pass.
 	resp, _ := do(t, ts, "POST", "/api/v1/printers/probe", opsKey, "")
@@ -201,7 +201,7 @@ func TestBulkStatusEndpoint(t *testing.T) {
 }
 
 func TestSubmitAndReplay(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	payload := `{"printer_id":"p1","external_id":"OK-1","zpl":"^XA^FDhello^FS^XZ","biz_ref":"OK-1"}`
 
 	resp, body := do(t, ts, "POST", "/api/v1/jobs", erpKey, payload)
@@ -247,8 +247,8 @@ func TestSubmitAndReplay(t *testing.T) {
 
 func TestSubmitErrorCodes(t *testing.T) {
 	ts := newTestServer(t,
-		mockSpec("p1", &model.MockCfg{State: "idle"}),
-		model.Printer{PrinterID: "disabled1", Name: "off", Site: "wh1", Driver: "mock", Host: "h", Enabled: false, Mock: &model.MockCfg{State: "idle"}},
+		mockSpec("p1", &domain.MockCfg{State: "idle"}),
+		domain.Printer{PrinterID: "disabled1", Name: "off", Site: "wh1", Driver: "mock", Host: "h", Enabled: false, Mock: &domain.MockCfg{State: "idle"}},
 	)
 	cases := []struct {
 		name, body, code string
@@ -278,7 +278,7 @@ func TestSubmitErrorCodes(t *testing.T) {
 }
 
 func TestPayloadTooLarge(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	big := strings.Repeat("x", 5000)
 	_, body := do(t, ts, "POST", "/api/v1/jobs", erpKey,
 		`{"printer_id":"p1","external_id":"big","zpl":"`+big+`"}`)
@@ -288,7 +288,7 @@ func TestPayloadTooLarge(t *testing.T) {
 }
 
 func TestRawDispatch(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/jobs/raw?printer_id=p1&external_id=raw-1", bytes.NewReader([]byte("^XA^FDraw^FS^XZ")))
 	req.Header.Set("Authorization", "Bearer "+erpKey)
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -304,7 +304,7 @@ func TestRawDispatch(t *testing.T) {
 }
 
 func TestBatchDispatchIsPerItem(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	body := `{"items":[
 		{"printer_id":"p1","external_id":"b-1","zpl":"^XA^FD1^FS^XZ"},
 		{"printer_id":"ghost","external_id":"b-2","zpl":"^XA^FD2^FS^XZ"},
@@ -323,7 +323,7 @@ func TestBatchDispatchIsPerItem(t *testing.T) {
 }
 
 func TestTenantIsolationOverHTTP(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	_, body := do(t, ts, "POST", "/api/v1/jobs", erpKey,
 		`{"printer_id":"p1","external_id":"iso","zpl":"^XA^FDx^FS^XZ"}`)
 	id := body["job_id"].(string)
@@ -344,7 +344,7 @@ func TestTenantIsolationOverHTTP(t *testing.T) {
 }
 
 func TestSSEEvents(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/v1/events?topics=job.state&printer_ids=p1", nil)
@@ -385,7 +385,7 @@ func ctxDeadline(ctx context.Context) time.Time {
 }
 
 func TestMetricsEndpoint(t *testing.T) {
-	ts := newTestServer(t, mockSpec("p1", &model.MockCfg{State: "idle"}))
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
 	do(t, ts, "POST", "/api/v1/jobs", erpKey, `{"printer_id":"p1","external_id":"m-1","zpl":"^XA^FDx^FS^XZ"}`)
 	resp, err := ts.Client().Get(ts.URL + "/metrics")
 	if err != nil {

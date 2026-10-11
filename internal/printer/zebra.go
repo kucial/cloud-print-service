@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/model"
+	"github.com/kongkx/cloud-print-service/internal/domain"
 )
 
 func init() {
-	Register("zebra9100", func(p model.Printer) (Driver, error) {
+	Register("zebra9100", func(p domain.Printer) (Driver, error) {
 		return NewZebra(p, ZebraOpts{DialTimeout: 3 * time.Second, WriteTimeout: 5 * time.Second, ReadTimeout: 3 * time.Second}), nil
 	})
 }
@@ -49,7 +49,7 @@ type ZebraOpts struct {
 	ReadTimeout  time.Duration
 }
 
-func NewZebra(p model.Printer, o ZebraOpts) *Zebra {
+func NewZebra(p domain.Printer, o ZebraOpts) *Zebra {
 	if o.DialTimeout <= 0 {
 		o.DialTimeout = 3 * time.Second
 	}
@@ -210,17 +210,17 @@ func (z *Zebra) queryOnce(ctx context.Context, cmd string, maxBytes int) (string
 
 // Status probes with the ZPL host status command. Falls back to reachability-only when the
 // model does not answer, so the API contract stays intact (state becomes `unknown`).
-func (z *Zebra) Status(ctx context.Context) (model.Status, error) {
+func (z *Zebra) Status(ctx context.Context) (domain.Status, error) {
 	raw, err := z.query(ctx, "^HS", 128)
 	now := time.Now()
 	if err != nil {
-		st := model.Status{State: model.StateOffline, ObservedAt: now, Detail: "status query failed"}
+		st := domain.Status{State: domain.StateOffline, ObservedAt: now, Detail: "status query failed"}
 		return st, err
 	}
 	st, ok := ParseHostStatus([]byte(raw))
 	st.ObservedAt = now
 	if !ok {
-		st.State = model.StateUnknown
+		st.State = domain.StateUnknown
 		st.Detail = "unrecognised host status reply"
 	}
 	return st, nil
@@ -280,12 +280,12 @@ func (z *Zebra) Close() error {
 //
 // Raw is always preserved, so a model whose semantics differ can be fixed here alone.
 // See docs/DESIGN.md §5 — verify this table against the actual fleet (milestone M1).
-func ParseHostStatus(raw []byte) (model.Status, bool) {
+func ParseHostStatus(raw []byte) (domain.Status, bool) {
 	s := strings.TrimSpace(string(raw))
 	if s == "" {
-		return model.Status{State: model.StateUnknown, Detail: "empty host status reply"}, false
+		return domain.Status{State: domain.StateUnknown, Detail: "empty host status reply"}, false
 	}
-	st := model.Status{Raw: s}
+	st := domain.Status{Raw: s}
 
 	seg := s
 	if i := strings.Index(seg, "^HS"); i >= 0 {
@@ -293,7 +293,7 @@ func ParseHostStatus(raw []byte) (model.Status, bool) {
 	}
 	nums := intsIn(seg)
 	if len(nums) == 0 {
-		st.State = model.StateUnknown
+		st.State = domain.StateUnknown
 		st.Detail = "no numeric fields in host status reply"
 		return st, false
 	}
@@ -304,21 +304,21 @@ func ParseHostStatus(raw []byte) (model.Status, bool) {
 
 	switch {
 	case head == 1:
-		st.State = model.StateHeadError
+		st.State = domain.StateHeadError
 	case device == 3:
-		st.State = model.StateError
+		st.State = domain.StateError
 	case ribbon == 2:
-		st.State = model.StateRibbonOut
+		st.State = domain.StateRibbonOut
 	case media == 2:
-		st.State = model.StateMediaOut
+		st.State = domain.StateMediaOut
 	case device == 1:
-		st.State = model.StatePrinting
+		st.State = domain.StatePrinting
 	case device == 2:
-		st.State = model.StateBusy
+		st.State = domain.StateBusy
 	case media == 1 || ribbon == 1:
-		st.State = model.StateMediaLow
+		st.State = domain.StateMediaLow
 	default:
-		st.State = model.StateIdle
+		st.State = domain.StateIdle
 	}
 	st.Detail = fmt.Sprintf("device=%d media=%d ribbon=%d head=%d", device, media, ribbon, head)
 	return st, true

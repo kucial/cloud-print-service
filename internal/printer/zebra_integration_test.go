@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
-	"github.com/kongkx/cloud-print-service/internal/model"
 	"github.com/kongkx/cloud-print-service/internal/printer"
 )
 
@@ -35,7 +35,7 @@ func driverFor(t *testing.T, vp *fakeprinter.Printer) *printer.Zebra {
 	if err != nil {
 		t.Fatalf("virtual printer port %q: %v", port, err)
 	}
-	z := printer.NewZebra(model.Printer{PrinterID: "vp", Host: host, Port: n},
+	z := printer.NewZebra(domain.Printer{PrinterID: "vp", Host: host, Port: n},
 		printer.ZebraOpts{
 			DialTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second,
 		})
@@ -78,7 +78,7 @@ func TestZebraStatusTracksPrintingState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if st.State != model.StateIdle {
+	if st.State != domain.StateIdle {
 		t.Fatalf("idle printer reported %q (raw %q)", st.State, st.Raw)
 	}
 
@@ -94,7 +94,7 @@ func TestZebraStatusTracksPrintingState(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if st.State == model.StatePrinting {
+		if st.State == domain.StatePrinting {
 			sawPrinting = true
 			break
 		}
@@ -112,13 +112,13 @@ func TestZebraStatusDecodesConsumables(t *testing.T) {
 
 	cases := []struct {
 		control fakeprinter.Control
-		want    model.PrinterState
+		want    domain.PrinterState
 	}{
-		{fakeprinter.Control{State: "media_out"}, model.StateMediaOut},
-		{fakeprinter.Control{State: "media_low"}, model.StateMediaLow},
-		{fakeprinter.Control{State: "head_error"}, model.StateHeadError},
-		{fakeprinter.Control{State: "error"}, model.StateError},
-		{fakeprinter.Control{State: "idle"}, model.StateIdle},
+		{fakeprinter.Control{State: "media_out"}, domain.StateMediaOut},
+		{fakeprinter.Control{State: "media_low"}, domain.StateMediaLow},
+		{fakeprinter.Control{State: "head_error"}, domain.StateHeadError},
+		{fakeprinter.Control{State: "error"}, domain.StateError},
+		{fakeprinter.Control{State: "idle"}, domain.StateIdle},
 	}
 	for _, tc := range cases {
 		vp.Control(fakeprinter.Control{State: "idle"}) // faults accumulate; reset first
@@ -159,7 +159,7 @@ func TestZebraCancelClearsPrinting(t *testing.T) {
 	if _, err := z.Send(ctx, []byte("^XA^FDlong^FS^XZ")); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := z.Status(ctx); st.State != model.StatePrinting {
+	if st, _ := z.Status(ctx); st.State != domain.StatePrinting {
 		t.Fatalf("expected printing before cancel, got %q", st.State)
 	}
 	if err := z.Cancel(ctx); err != nil {
@@ -167,7 +167,7 @@ func TestZebraCancelClearsPrinting(t *testing.T) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if st, _ := z.Status(ctx); st.State == model.StateIdle {
+		if st, _ := z.Status(ctx); st.State == domain.StateIdle {
 			return // cancel took effect
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -189,7 +189,7 @@ func TestZebraOfflineIsReportedNotGuessed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a failure when the printer is offline, got state %q", st.State)
 	}
-	if st.State != model.StateOffline {
+	if st.State != domain.StateOffline {
 		t.Fatalf("offline failure must report state=offline, got %q", st.State)
 	}
 	if n, err := z.Send(ctx, []byte("^XA^FDx^FS^XZ")); err == nil {
@@ -252,6 +252,18 @@ func TestZebraSurvivesPrinterReboot(t *testing.T) {
 	if got := vp.LabelCount(); got != 3 {
 		t.Fatalf("labels on printer = %d, want 3", got)
 	}
+}
+
+// waitPrinterState polls the printer until it reports want, or the deadline passes.
+func waitPrinterState(ctx context.Context, z *printer.Zebra, want domain.PrinterState, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if st, err := z.Status(ctx); err == nil && st.State == want {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
 }
 
 func boolp(b bool) *bool { return &b }
