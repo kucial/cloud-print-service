@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/api"
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/config"
 	"github.com/kongkx/cloud-print-service/internal/driver"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
+	"github.com/kongkx/cloud-print-service/internal/httpapi"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
 	"github.com/kongkx/cloud-print-service/internal/render"
@@ -82,14 +82,14 @@ func main() {
 
 	mgr.StartPolling(ctx)
 
-	keys := make(map[string]api.KeySpec, len(cfg.APIKeys))
+	keys := make(map[string]httpapi.KeySpec, len(cfg.APIKeys))
 	for secret, k := range cfg.APIKeys {
-		keys[secret] = api.KeySpec{ClientID: k.ClientID, Role: k.Role}
+		keys[secret] = httpapi.KeySpec{ClientID: k.ClientID, Role: k.Role}
 	}
 	// Tokens issued to business systems live in their own store so they can be listed,
 	// rotated and revoked at runtime without touching config.
 	tokenSvc := token.NewService(token.NewMemoryStore(), cfg.TokenDefaultTTL.D())
-	auth := api.NewAuth(keys, tokenSvc, cfg.RateLimitRPS, cfg.RateLimitBurst, met)
+	auth := httpapi.NewAuth(keys, tokenSvc, cfg.RateLimitRPS, cfg.RateLimitBurst, met)
 
 	// Operator panel + ZPL preview. The render engine is optional: if it cannot be
 	// loaded, the service still runs and only /admin/preview is unavailable.
@@ -98,8 +98,8 @@ func main() {
 		log.Warn("render engine unavailable, label previews disabled", "err", rerr)
 	}
 
-	apiSrv := api.New(mgr, js, b, auth, tokenSvc, log, met, cfg.MaxBatchSize, cfg.MaxPayloadBytes)
-	apiSrv.SetWebConfig(api.WebConfig{
+	apiSrv := httpapi.New(mgr, js, b, auth, tokenSvc, log, met, cfg.MaxBatchSize, cfg.MaxPayloadBytes)
+	apiSrv.SetWebConfig(httpapi.WebConfig{
 		Enabled: cfg.UI.Enabled, Path: cfg.UI.Path, Title: cfg.UI.Title,
 	})
 	if renderer != nil {

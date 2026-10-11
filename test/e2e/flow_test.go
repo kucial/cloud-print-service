@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/api"
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
+	"github.com/kongkx/cloud-print-service/internal/httpapi"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
 	"github.com/kongkx/cloud-print-service/internal/token"
@@ -92,11 +92,11 @@ func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 	}
 
 	f.tok = token.NewService(token.NewMemoryStore(), 24*time.Hour)
-	auth := api.NewAuth(map[string]api.KeySpec{
+	auth := httpapi.NewAuth(map[string]httpapi.KeySpec{
 		bootstrapAdmin: {ClientID: "ops", Role: "admin"},
 	}, f.tok, 0, 0, f.met)
 
-	f.srv = httptest.NewServer(api.New(mgr, f.job, f.bus, auth, f.tok, log, f.met, 50, 1<<20).Handler())
+	f.srv = httptest.NewServer(httpapi.New(mgr, f.job, f.bus, auth, f.tok, log, f.met, 50, 1<<20).Handler())
 	t.Cleanup(f.srv.Close)
 	return f
 }

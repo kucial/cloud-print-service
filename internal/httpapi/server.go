@@ -1,5 +1,5 @@
 // Package api exposes the HTTP surface consumed by ERP/WMS and operator tooling.
-package api
+package httpapi
 
 import (
 	"encoding/json"
