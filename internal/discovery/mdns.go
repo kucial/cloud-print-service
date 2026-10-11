@@ -38,16 +38,29 @@ type MDNS struct {
 
 func (p MDNS) Name() string { return "mdns" }
 
+// withDefaults is not optional here: a probe built with zero types would scan nothing
+// and report success, which looks exactly like "no printers on this network".
+func (p MDNS) withDefaults() MDNS {
+	if len(p.Types) == 0 {
+		p.Types = DefaultTypes()
+	}
+	if p.BrowseTimeout <= 0 {
+		p.BrowseTimeout = 2 * time.Second
+	}
+	if p.IdentifyTimeout <= 0 {
+		p.IdentifyTimeout = 2 * time.Second
+	}
+	if p.DefaultPort == 0 {
+		p.DefaultPort = 9100
+	}
+	return p
+}
+
 // Scan browses each service type and merges the results by device key.
 func (p MDNS) Scan(ctx context.Context) ([]Found, error) {
+	p = p.withDefaults()
 	timeout := p.BrowseTimeout
-	if timeout <= 0 {
-		timeout = 2 * time.Second
-	}
 	identifyTimeout := p.IdentifyTimeout
-	if identifyTimeout <= 0 {
-		identifyTimeout = 2 * time.Second
-	}
 
 	byKey := map[string]Found{}
 	var errs []string

@@ -176,3 +176,15 @@ func TestDefaultTypesIncludeLinkOS(t *testing.T) {
 func domainPrinter(id string) domain.Printer {
 	return domain.Printer{PrinterID: id}
 }
+
+// A probe with no configuration must still scan something: an empty service-type list
+// that silently scans nothing is indistinguishable from an empty warehouse.
+func TestMDNSDefaultsToTheLinkOSTypes(t *testing.T) {
+	p := MDNS{}.withDefaults()
+	if len(p.Types) == 0 {
+		t.Fatal("a zero MDNS probe must default to the Link-OS service types")
+	}
+	if p.BrowseTimeout <= 0 || p.IdentifyTimeout <= 0 || p.DefaultPort != 9100 {
+		t.Fatalf("defaults incomplete: %+v", p)
+	}
+}
