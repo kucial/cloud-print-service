@@ -39,6 +39,10 @@ func main() {
 	switch cmd {
 	case "token":
 		err = tokenCmd(args)
+	case "agent":
+		err = agentCmd(args)
+	case "discover":
+		err = discoverCmd(args)
 	case "printers":
 		err = printersCmd(args)
 	case "status":
@@ -66,6 +70,12 @@ Commands:
   token list    [--client-id <id>]
   token rotate  <token-id>
   token revoke  <token-id>
+  agent enroll  [--id pc7] [--site wh1] [--ttl 8760h]     one-time token for an edge agent
+  agent list                                          enrolled agents and health
+  agent revoke   <agent-id>                             drop an agent and its printers
+  discover list                                        discovered-but-not-adopted devices
+  discover adopt  <device-key> --printer-id wh1-pack-04 --site wh1
+  discover dismiss <device-key>
   printers                       list the fleet with status
   status                         service health
   test <printer-id>              print a test label
@@ -255,6 +265,165 @@ func tokenCmd(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown token subcommand %q", sub)
+}
+
+func agentCmd(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: cpsctl agent enroll|list|revoke ...")
+	}
+	sub := args[0]
+	fs := flag.NewFlagSet("agent "+sub, flag.ExitOnError)
+	c := newClient(fs)
+	agentID := fs.String("id", "", "agent id (default: the hostname you enroll from)")
+	site := fs.String("site", "", "site this agent belongs to, e.g. wh1")
+	ttl := fs.String("ttl", "8760h", "agent credential lifetime (default: 1 year)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	c.resolve()
+
+	switch sub {
+	case "enroll":
+		body := map[string]any{"site": *site, "ttl": *ttl}
+		if *agentID != "" {
+			body["agent_id"] = *agentID
+		}
+		out, err := c.do("POST", "/api/v1/admin/agents/enroll", body)
+		if err != nil {
+			return err
+		}
+		secret, _ := out["token"].(string)
+		fmt.Printf("agent %v enrolled at %v\n\n", out["agent_id"], c.base)
+		fmt.Printf("  one-time token (shown once): %s\n\n", secret)
+		fmt.Printf("  On the packing PC:\n")
+		fmt.Printf("    cps-agent -enroll %s -site %v\n", secret, *site)
+		fmt.Printf("\n  It stops working once the agent has enrolled.\n")
+		return nil
+
+	case "list":
+		out, err := c.do("GET", "/api/v1/agents", nil)
+		if err != nil {
+			return err
+		}
+		items, _ := out["items"].([]any)
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "AGENT\tSITE\tHOST\tOS\tVERSION\tADDRESS\tPRINTERS\tLAST SEEN")
+		for _, it := range items {
+			m := it.(map[string]any)
+			pn := 0
+			if l, ok := m["printers"].([]any); ok {
+				pn = len(l)
+			}
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%d\t%v\n",
+				m["id"], m["site"], m["hostname"], m["os"], m["version"], m["agent_addr"],
+				pn, ago(fmt.Sprint(m["last_seen"])))
+		}
+		_ = w.Flush()
+		fmt.Printf("\n%v agent(s), %v healthy (last 60s)\n", out["count"], out["healthy"])
+		return nil
+
+	case "revoke":
+		if fs.NArg() < 1 {
+			return fmt.Errorf("usage: cpsctl agent revoke <agent-id>")
+		}
+		id := fs.Arg(0)
+		out, err := c.do("DELETE", "/api/v1/agents/"+id, nil)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("revoked %v; %d printer(s) removed from the fleet\n",
+			out["agent"], len(toSlice(out["printers_removed"])))
+		return nil
+	}
+	return fmt.Errorf("unknown agent subcommand %q", sub)
+}
+
+func discoverCmd(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: cpsctl discover list|adopt|dismiss ...")
+	}
+	sub := args[0]
+	fs := flag.NewFlagSet("discover "+sub, flag.ExitOnError)
+	c := newClient(fs)
+	printerID := fs.String("printer-id", "", "id for the adopted printer, e.g. wh1-pack-04")
+	site := fs.String("site", "", "site for the adopted printer")
+	name := fs.String("name", "", "display name")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	c.resolve()
+
+	switch sub {
+	case "list":
+		out, err := c.do("GET", "/api/v1/admin/discovery/candidates", nil)
+		if err != nil {
+			return err
+		}
+		items, _ := out["items"].([]any)
+		if len(items) == 0 {
+			fmt.Println("no candidates: nothing discovered that is not already a printer")
+			return nil
+		}
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "DEVICE KEY\tSOURCE\tMODEL\tADDRESS\tLAST SEEN")
+		for _, it := range items {
+			m := it.(map[string]any)
+			addr := "-"
+			if h, ok := m["host"].(string); ok && h != "" {
+				addr = fmt.Sprintf("%v:%v", h, m["port"])
+			}
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\n",
+				m["device_key"], m["source"], m["model"], addr, ago(fmt.Sprint(m["last_seen"])))
+		}
+		_ = w.Flush()
+		return nil
+
+	case "adopt":
+		if fs.NArg() < 1 || *printerID == "" {
+			return fmt.Errorf("usage: cpsctl discover adopt <device-key> --printer-id <id>")
+		}
+		body := map[string]any{"printer_id": *printerID, "site": *site, "name": *name}
+		out, err := c.do("POST", "/api/v1/admin/discovery/candidates/"+fs.Arg(0)+"/adopt", body)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("adopted %s as %v — it is now dispatchable\n", fs.Arg(0), out["printer_id"])
+		return nil
+
+	case "dismiss":
+		if fs.NArg() < 1 {
+			return fmt.Errorf("usage: cpsctl discover dismiss <device-key>")
+		}
+		if _, err := c.do("POST", "/api/v1/admin/discovery/candidates/"+fs.Arg(0)+"/dismiss", map[string]any{}); err != nil {
+			return err
+		}
+		fmt.Printf("dismissed %s\n", fs.Arg(0))
+		return nil
+	}
+	return fmt.Errorf("unknown discover subcommand %q", sub)
+}
+
+func toSlice(v any) []any {
+	if l, ok := v.([]any); ok {
+		return l
+	}
+	return nil
+}
+
+func ago(s string) string {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil || t.IsZero() {
+		return "never"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
 }
 
 func printersCmd(args []string) error {

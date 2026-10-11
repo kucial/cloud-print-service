@@ -91,3 +91,45 @@ func TestUsableRequiresEvidence(t *testing.T) {
 }
 
 func boolp(b bool) *bool { return &b }
+
+// Sync starts a poller for every new printer, so a caller that also calls StartPolling
+// used to give each device two pollers sharing one status socket — which made healthy
+// printers look offline. One poller per printer, enforced.
+func TestOnlyOnePollerPerPrinter(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	m, err := NewManager(nil, log, observ.NewBus(), ManagerOpts{PollInterval: 50 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := m.Registry().Upsert(SourceConfig, "", domain.Printer{
+		PrinterID: "p1", Driver: "mock", Host: "h", Enabled: true,
+		Mock: &domain.MockCfg{State: "idle"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Both of these are safe no-ops for an already-polled printer.
+	m.StartPolling(ctx)
+	if err := m.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	p, ok := m.Get("p1")
+	if !ok {
+		t.Fatal("printer missing after sync")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if !p.polling.Load() {
+		t.Fatal("expected exactly one active poller")
+	}
+	st := p.Cached()
+	if st.State != domain.StateIdle {
+		t.Fatalf("healthy printer reported %q (offline means pollers collided)", st.State)
+	}
+}

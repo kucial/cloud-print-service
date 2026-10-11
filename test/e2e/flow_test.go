@@ -78,7 +78,8 @@ func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 	}
 	t.Cleanup(mgr.Close)
 	f.mgr = mgr
-	mgr.StartPolling(context.Background())
+	// Sync (inside NewManager) already starts one poller per printer; calling
+	// StartPolling here would double-probe every device.
 
 	store := job.NewMemoryStore()
 	f.job = job.NewService(job.Config{
@@ -95,7 +96,9 @@ func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 		bootstrapAdmin: {ClientID: "ops", Role: "admin"},
 	}, f.tok, 0, 0, f.met)
 
-	f.srv = httptest.NewServer(httpapi.New(mgr, f.job, f.bus, auth, f.tok, log, f.met, 50, 1<<20).Handler())
+	srv := httpapi.New(mgr, f.job, f.bus, auth, f.tok, log, f.met, 50, 1<<20)
+	srv.SetAgents(fleet.NewAgentRegistry(mgr.Registry(), mgr, log))
+	f.srv = httptest.NewServer(srv.Handler())
 	t.Cleanup(f.srv.Close)
 	return f
 }
@@ -127,6 +130,18 @@ func (f *harness) do(method, path, key string, body any) (int, map[string]any) {
 	var out map[string]any
 	_ = json.Unmarshal(raw, &out)
 	return resp.StatusCode, out
+}
+
+// Token issues a credential through the API, like an operator would.
+func (f *harness) Token(t *testing.T, clientID string) string {
+	t.Helper()
+	secret, _ := f.issueToken(clientID, "client", "1h")
+	return secret
+}
+
+func (f *harness) issuedClientKey(t *testing.T, clientID string) string {
+	t.Helper()
+	return f.Token(t, clientID)
 }
 
 func (f *harness) issueToken(clientID, role, ttl string) (string, string) {
@@ -488,5 +503,109 @@ func TestBatchDispatchFlow(t *testing.T) {
 	}
 	if n := f.printer("p1").LabelCount(); n != 4 {
 		t.Fatalf("expected 4 labels on the printer, got %d", n)
+	}
+}
+
+// An edge agent turns a locally attached printer into a fleet member: the server needs no
+// USB code, only a TCP endpoint. This is the acceptance test for that whole idea.
+func TestAgentRegistersAndServesAPrinter(t *testing.T) {
+	f := newFleet(t, domain.Printer{PrinterID: "lab-01", Model: "ZT411", Driver: "zebra9100", Enabled: true})
+	// The operator credential is the bootstrap admin key this harness already uses.
+	opsKey := bootstrapAdmin
+
+	// An operator mints a one-time bootstrap token for a packing PC.
+	code, out := f.do("POST", "/api/v1/admin/agents/enroll", opsKey,
+		map[string]any{"agent_id": "pc7", "site": "wh1", "ttl": "1h"})
+	if code != http.StatusCreated {
+		t.Fatalf("enroll: %d %v", code, out)
+	}
+	bootstrap, _ := out["token"].(string)
+	if bootstrap == "" {
+		t.Fatal("enroll returned no token")
+	}
+
+	// A client credential may not enroll an agent.
+	code, _ = f.do("POST", "/api/v1/admin/agents/enroll", f.issuedClientKey(t, "wms"),
+		map[string]any{"agent_id": "pc7"})
+	if code != http.StatusForbidden {
+		t.Fatalf("a business token must not enroll agents, got %d", code)
+	}
+
+	// The agent registers: printers it reports become dispatchable immediately.
+	agentPrinter := domain.Printer{
+		PrinterID: "pc7-usb-1", Name: "packing station USB", Site: "wh1",
+		Driver: "zebra9100", Host: "127.0.0.1", Port: 19555, Enabled: true,
+	}
+	code, out = f.do("POST", "/api/v1/agents/register", bootstrap, map[string]any{
+		"agent_id": "pc7", "site": "wh1", "hostname": "PC7", "os": "windows",
+		"version": "test", "agent_addr": "10.0.0.7", "printers": []domain.Printer{agentPrinter},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("register: %d %v", code, out)
+	}
+	durable, _ := out["token"].(string)
+	if durable == "" || durable == bootstrap {
+		t.Fatalf("first registration must exchange the bootstrap token for a durable one")
+	}
+
+	// The bootstrap token is spent.
+	if code, _ := f.do("POST", "/api/v1/agents/register", bootstrap, map[string]any{
+		"agent_id": "pc7", "agent_addr": "10.0.0.7", "printers": []domain.Printer{},
+	}); code != http.StatusUnauthorized {
+		t.Fatalf("a used bootstrap token must be revoked, got %d", code)
+	}
+
+	// The printer is visible with agent provenance, without a restart.
+	_, fleetView := f.do("GET", "/api/v1/printers/status", durable, nil)
+	found := false
+	for _, it := range fleetView["items"].([]any) {
+		m := it.(map[string]any)
+		if m["printer_id"] == "pc7-usb-1" {
+			found = true
+			if m["site"] != "wh1" {
+				t.Errorf("agent printer should inherit the agent's site: %v", m["site"])
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("agent-registered printer missing from the fleet: %v", fleetView["items"])
+	}
+	if prov := f.mgr.Registry().Provenance("pc7-usb-1"); len(prov) == 0 || prov[0] != "agent" {
+		t.Errorf("provenance = %v, want agent", prov)
+	}
+
+	// The agent reports status; the fleet reflects it.
+	code, _ = f.do("POST", "/api/v1/agents/heartbeat", durable, map[string]any{
+		"agent_id": "pc7",
+		"status":   map[string]domain.Status{"pc7-usb-1": {State: domain.StateMediaOut, Raw: "^HS0,2,0,0^HS"}},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("heartbeat: %d", code)
+	}
+	f.mgr.ApplyStatus("pc7-usb-1", domain.Status{State: domain.StateMediaOut, Raw: "^HS0,2,0,0^HS"})
+	_, st := f.do("GET", "/api/v1/printers/pc7-usb-1/status", durable, nil)
+	status := st["status"].(map[string]any)
+	if status["state"] != string(domain.StateMediaOut) {
+		t.Fatalf("agent-reported status was ignored: %v", status)
+	}
+
+	// A business token cannot use the agent surface.
+	code, _ = f.do("POST", "/api/v1/agents/heartbeat", f.issuedClientKey(t, "wms2"),
+		map[string]any{"agent_id": "pc7"})
+	if code != http.StatusForbidden {
+		t.Fatalf("business token reached the agent API: %d", code)
+	}
+
+	// Revoking the agent removes its printers from the fleet.
+	code, out = f.do("DELETE", "/api/v1/agents/pc7", opsKey, nil)
+	if code != http.StatusOK {
+		t.Fatalf("revoke agent: %d %v", code, out)
+	}
+	if _, ok := f.mgr.Registry().Get("pc7-usb-1"); ok {
+		t.Fatal("the agent's printers must leave the fleet when it is revoked")
+	}
+	// Config-declared printers are untouched by an agent's departure.
+	if _, ok := f.mgr.Registry().Get("lab-01"); !ok {
+		t.Fatal("revoking an agent removed a config printer")
 	}
 }

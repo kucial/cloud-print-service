@@ -2,7 +2,6 @@ package fleet
 
 import (
 	"context"
-	"fmt"
 	"hash/fnv"
 	"log/slog"
 	"sync"
@@ -29,6 +28,72 @@ type Manager struct {
 
 	mu       sync.RWMutex
 	printers map[string]*Printer
+	reg      *Registry
+}
+
+// Registry exposes the fleet data model (sources, provenance, candidates).
+func (m *Manager) Registry() *Registry { return m.reg }
+
+// Sync reconciles live drivers with the registry: adds new printers, refreshes changed
+// specs, and closes drivers for printers that no longer exist. Safe to call at any time;
+// this is how an agent's USB printers appear without a server restart.
+func (m *Manager) Sync(ctx context.Context) error {
+	wanted := m.reg.List(Filter{})
+	seen := make(map[string]bool, len(wanted))
+
+	m.mu.Lock()
+	for _, spec := range wanted {
+		seen[spec.PrinterID] = true
+		existing, ok := m.printers[spec.PrinterID]
+		if ok {
+			existing.mu.Lock()
+			existing.spec = spec
+			existing.mu.Unlock()
+			continue
+		}
+		p, err := m.build(spec)
+		if err != nil {
+			m.mu.Unlock()
+			return err
+		}
+		m.printers[spec.PrinterID] = p
+		go m.pollOne(ctx, p)
+	}
+	for id, p := range m.printers {
+		if !seen[id] {
+			p.Close()
+			delete(m.printers, id)
+			m.log.Info("printer removed from fleet", "printer_id", id)
+		}
+	}
+	m.mu.Unlock()
+	return nil
+}
+
+// ApplyStatus records a status observation pushed by an agent for a printer this manager
+// owns. Agent-reported status wins over the socket poller because it comes from the
+// device itself (USB) rather than a proxy.
+func (m *Manager) ApplyStatus(printerID string, st domain.Status) {
+	m.mu.RLock()
+	p, ok := m.printers[printerID]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+	if st.ObservedAt.IsZero() {
+		// A report without a timestamp is still a real observation; stamp it so freshness
+		// and the stale flag keep working.
+		st.ObservedAt = time.Now().UTC()
+	}
+	p.mu.Lock()
+	if st.ObservedAt.After(p.status.ObservedAt) {
+		st.LastJob = p.status.LastJob
+		p.status = st
+	} else {
+		st = p.status // an older report never overwrites a newer observation
+	}
+	p.mu.Unlock()
+	p.publishStatus(st)
 }
 
 // Printer is one managed device: declared spec + driver + cached status.
@@ -39,8 +104,9 @@ type Printer struct {
 
 	queueDepth atomic.Int64
 
-	mu     sync.RWMutex
-	status domain.Status
+	mu      sync.RWMutex
+	status  domain.Status
+	polling atomic.Bool // exactly one poller per printer, ever
 }
 
 type ManagerOpts struct {
@@ -51,7 +117,23 @@ type ManagerOpts struct {
 	ReadTimeout  time.Duration
 }
 
-func NewManager(specs []domain.Printer, log *slog.Logger, b *observ.Bus, o ManagerOpts) (*Manager, error) {
+// NewManager builds a manager from a declared fleet. Config is just another source, so
+// the resulting behaviour matches the registry path exactly.
+func NewManager(specs []domain.Printer, log *observ.Log, b *observ.Bus, o ManagerOpts) (*Manager, error) {
+	reg := NewRegistry()
+	if err := reg.UpsertMany(SourceConfig, "", specs); err != nil {
+		return nil, err
+	}
+	m, err := NewManagerWithRegistry(reg, log, b, o)
+	if err != nil {
+		return nil, err
+	}
+	return m, m.Sync(context.Background())
+}
+
+// NewManagerWithRegistry builds a manager backed by a Registry, so printers can be added
+// and removed at runtime (agents, adopted discoveries) instead of only at boot.
+func NewManagerWithRegistry(reg *Registry, log *observ.Log, b *observ.Bus, o ManagerOpts) (*Manager, error) {
 	if o.PollInterval <= 0 {
 		o.PollInterval = 15 * time.Second
 	}
@@ -66,17 +148,8 @@ func NewManager(specs []domain.Printer, log *slog.Logger, b *observ.Bus, o Manag
 		dialTimeout:  o.DialTimeout,
 		writeTimeout: o.WriteTimeout,
 		readTimeout:  o.ReadTimeout,
-		printers:     make(map[string]*Printer, len(specs)),
-	}
-	for _, spec := range specs {
-		if _, dup := m.printers[spec.PrinterID]; dup {
-			return nil, fmt.Errorf("duplicate printer_id %q", spec.PrinterID)
-		}
-		p, err := m.build(spec)
-		if err != nil {
-			return nil, err
-		}
-		m.printers[spec.PrinterID] = p
+		printers:     make(map[string]*Printer),
+		reg:          reg,
 	}
 	return m, nil
 }
@@ -116,6 +189,7 @@ func (m *Manager) Len() int {
 // Views returns live views of all printers, optionally filtered.
 type Filter struct {
 	Site    string
+	Source  string // only printers whose winning claim comes from this source
 	Model   string
 	Enabled *bool
 	Usable  *bool
@@ -238,6 +312,13 @@ func (p *Printer) publishStatus(st domain.Status) {
 }
 
 func (p *Printer) probe(ctx context.Context) {
+	// An agent-managed printer is probed by the agent itself, on the device: there is no
+	// point dialling the agent's TCP port for status, and doing so would race the agent's
+	// own (more accurate) report. If the agent stops heart-beating the cached status simply
+	// goes stale, which is how an operator sees "that packing PC is gone".
+	if src := p.mgr.sourceOf(p.spec.PrinterID); src == SourceAgent {
+		return
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, p.mgr.pollInterval)
 	defer cancel()
 
@@ -311,6 +392,42 @@ func (m *Manager) StartPolling(ctx context.Context) {
 			}
 		}(p)
 	}
+}
+
+// pollOne probes a printer immediately and then on the poll interval, staggered by id so
+// a fleet of printers does not query in lockstep.
+//
+// Exactly one poller per printer is permitted: two pollers sharing a driver's status
+// socket interleave queries and read each other's replies, which shows up as a fleet
+// that is "offline" for no reason. Sync starts pollers for new printers, so callers must
+// not also call StartPolling.
+func (m *Manager) pollOne(ctx context.Context, p *Printer) {
+	if !p.polling.CompareAndSwap(false, true) {
+		return
+	}
+	p.probe(ctx)
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(p.spec.PrinterID))
+	t := time.NewTimer(time.Duration(h.Sum32() % uint32(m.pollInterval)))
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		p.probe(ctx)
+		t.Reset(m.pollInterval)
+	}
+}
+
+// sourceOf reports which source owns a printer's claim (config wins over agent).
+func (m *Manager) sourceOf(printerID string) string {
+	prov := m.reg.Provenance(printerID)
+	if len(prov) == 0 {
+		return ""
+	}
+	return prov[0]
 }
 
 // ProbeAll forces an immediate refresh of every printer (admin/maintenance).

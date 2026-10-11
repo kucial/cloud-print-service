@@ -25,6 +25,18 @@ const (
 
 	RoleClient = "client"
 	RoleAdmin  = "admin"
+
+	// Token kinds. A credential's kind decides what it may do, independent of role:
+	// an agent credential can report status but never dispatch a job or read business
+	// data, so a compromised packing PC cannot become a printing station.
+	KindBusiness = "business"
+	KindAgent    = "agent"
+	// KindAgentBootstrap is the one-time credential an operator hands to a packing PC.
+	// It is exchanged for a durable agent credential on the agent's first registration and
+	// revoked in the same breath, so a token pasted into an install script cannot be
+	// replayed.
+	KindAgentBootstrap = "agent-bootstrap"
+	KindBootstrap      = "bootstrap"
 )
 
 var (
@@ -38,6 +50,8 @@ type Token struct {
 	ID         string     `json:"id"`
 	ClientID   string     `json:"client_id"`
 	Role       string     `json:"role"`
+	Kind       string     `json:"kind"`
+	AgentID    string     `json:"agent_id,omitempty"`
 	Prefix     string     `json:"prefix"`
 	Note       string     `json:"note,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -209,6 +223,10 @@ type IssueRequest struct {
 	Role     string
 	TTL      time.Duration
 	Note     string
+	// Kind is business (default) or agent. Agents are issued by `cpsctl agent enroll`.
+	Kind string
+	// AgentID links an agent credential to its registry entry.
+	AgentID string
 }
 
 // Issue mints a token and returns it with the plaintext secret (shown once).
@@ -222,6 +240,15 @@ func (s *Service) Issue(ctx context.Context, req IssueRequest) (*Token, string, 
 	}
 	if req.Role != RoleClient && req.Role != RoleAdmin {
 		return nil, "", fmt.Errorf("role must be %s|%s", RoleClient, RoleAdmin)
+	}
+	if req.Kind == "" {
+		req.Kind = KindBusiness
+	}
+	if req.Kind != KindBusiness && req.Kind != KindAgent && req.Kind != KindAgentBootstrap {
+		return nil, "", fmt.Errorf("kind must be %s|%s|%s", KindBusiness, KindAgent, KindAgentBootstrap)
+	}
+	if req.Kind == KindAgent || req.Kind == KindAgentBootstrap {
+		req.Role = RoleClient // an agent is never an admin
 	}
 	if req.TTL < 0 {
 		return nil, "", errors.New("ttl must be positive (use a negative-free duration, or 0 for the default)")
@@ -238,6 +265,8 @@ func (s *Service) Issue(ctx context.Context, req IssueRequest) (*Token, string, 
 	t := &Token{
 		ClientID: req.ClientID,
 		Role:     req.Role,
+		Kind:     req.Kind,
+		AgentID:  req.AgentID,
 		// Prefix is the identifying head *after* the scheme, so listings read
 		// "cps_live_5BKF7CKS…" instead of repeating the scheme.
 		Prefix:    secret[len(SecretPrefix) : len(SecretPrefix)+prefixLen],
@@ -328,7 +357,8 @@ func (s *Service) Rotate(ctx context.Context, id string) (*Token, string, error)
 	if _, err := s.Revoke(ctx, id); err != nil {
 		return nil, "", err
 	}
-	return s.Issue(ctx, IssueRequest{ClientID: old.ClientID, Role: old.Role, TTL: ttl, Note: old.Note})
+	return s.Issue(ctx, IssueRequest{ClientID: old.ClientID, Role: old.Role, TTL: ttl,
+		Note: old.Note, Kind: old.Kind, AgentID: old.AgentID})
 }
 
 // Delete removes a token entirely (used for tokens that were issued and never used).

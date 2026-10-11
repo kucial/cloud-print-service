@@ -24,6 +24,7 @@ type Client struct {
 	ID      string
 	Role    string // client | admin
 	TokenID string // set when authenticated with an issued token ("" for bootstrap keys)
+	Kind    string // business | agent | bootstrap
 }
 
 func (c Client) IsAdmin() bool { return c.Role == "admin" }
@@ -83,6 +84,7 @@ func (a *Auth) authenticate(r *http.Request) (Client, bool) {
 		}
 	}
 	if ok {
+		found.Kind = token.KindBootstrap
 		return found, true
 	}
 
@@ -90,7 +92,13 @@ func (a *Auth) authenticate(r *http.Request) (Client, bool) {
 	if a.tokens != nil {
 		t, err := a.tokens.Verify(r.Context(), secret)
 		if err == nil {
-			return Client{ID: t.ClientID, Role: t.Role, TokenID: t.ID}, true
+			// Carry the token's own kind through: it, not the role, decides what the
+			// credential may reach (agent vs agent-bootstrap vs business).
+			kind := t.Kind
+			if kind == "" {
+				kind = token.KindBusiness
+			}
+			return Client{ID: t.ClientID, Role: t.Role, TokenID: t.ID, Kind: kind}, true
 		}
 		// Metrics distinguish revoked/expired/unknown; the HTTP response does not,
 		// so probing cannot tell a dead token from a nonexistent one.
@@ -222,4 +230,38 @@ func (l *rateLimiter) allow(id string) bool {
 	}
 	b.tokens--
 	return true
+}
+
+// RequireEnroll guards the agent enrollment endpoint: an operator's admin key, or the
+// one-time bootstrap token minted for that purpose. Nothing else in the API accepts a
+// bootstrap token.
+func RequireEnroll(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := ClientFrom(r.Context())
+		if c.Kind == token.KindAgentBootstrap || c.Kind == token.KindBootstrap {
+			next(w, r)
+			return
+		}
+		if !c.IsAdmin() {
+			writeErr(w, http.StatusForbidden, "forbidden",
+				"enrollment requires an admin key or an agent bootstrap token (cpsctl agent enroll)")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// RequireAgent gates the edge-agent surface. Agent credentials are a separate token class
+// (kind=agent): they may register and report status, nothing else — an agent that could
+// dispatch a job or read business data would be a much bigger blast radius than it needs.
+func RequireAgent(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := ClientFrom(r.Context())
+		if c.Kind != token.KindAgent && c.Kind != token.KindAgentBootstrap {
+			writeErr(w, http.StatusForbidden, "forbidden",
+				"this endpoint requires an agent credential (cpsctl agent enroll)")
+			return
+		}
+		next(w, r)
+	}
 }

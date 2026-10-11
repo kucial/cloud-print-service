@@ -28,8 +28,10 @@ type Server struct {
 	met      *observ.Registry
 	auth     *Auth
 	tokens   *token.Service
+	agents   *fleet.AgentRegistry
 	web      WebConfig
 	renderer render.Renderer
+	agentTTL time.Duration
 
 	maxBatch   int
 	maxPayload int64
@@ -77,6 +79,19 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("DELETE /api/v1/admin/tokens/{token_id}/purge", RequireAdmin(s.deleteToken))
 	apiMux.HandleFunc("POST /api/v1/admin/preview", RequireAdmin(s.previewZPL))
 
+	// --- agent (edge) surface: scope-limited, never dispatches ----------------------
+	apiMux.HandleFunc("POST /api/v1/agents/register", RequireAgent(s.agentRegister))
+	apiMux.HandleFunc("POST /api/v1/agents/heartbeat", RequireAgent(s.agentHeartbeat))
+	apiMux.HandleFunc("POST /api/v1/agents/{agent_id}/printers/{printer_id}/status", RequireAgent(s.agentPrinterStatus))
+	apiMux.HandleFunc("GET /api/v1/agents", RequireAdmin(s.listAgents))
+	apiMux.HandleFunc("POST /api/v1/admin/agents/enroll", RequireEnroll(s.enrollAgent))
+	apiMux.HandleFunc("DELETE /api/v1/agents/{agent_id}", RequireAdmin(s.deleteAgent))
+
+	// --- discovery: candidates until a human adopts them ---------------------------
+	apiMux.HandleFunc("GET /api/v1/admin/discovery/candidates", RequireAdmin(s.listCandidates))
+	apiMux.HandleFunc("POST /api/v1/admin/discovery/candidates/{device_key}/adopt", RequireAdmin(s.adoptCandidate))
+	apiMux.HandleFunc("POST /api/v1/admin/discovery/candidates/{device_key}/dismiss", RequireAdmin(s.dismissCandidate))
+
 	// --- ops: unauthenticated, carries no business data -------------------
 	opsMux := http.NewServeMux()
 	opsMux.HandleFunc("GET /healthz", s.healthz)
@@ -104,6 +119,12 @@ func (s *Server) Handler() http.Handler {
 }
 
 // ---------------------------------------------------------------- printers
+
+// SetAgentTTL sets the lifetime of exchanged agent credentials (default 1 year).
+func (s *Server) SetAgentTTL(d time.Duration) { s.agentTTL = d }
+
+// SetAgents wires the edge-agent surface (registration, heartbeat, status).
+func (s *Server) SetAgents(a *fleet.AgentRegistry) { s.agents = a }
 
 // SetWebConfig enables the embedded operator panel (see WebConfig).
 func (s *Server) SetWebConfig(cfg WebConfig) { s.web = cfg }

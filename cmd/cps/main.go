@@ -97,7 +97,12 @@ func main() {
 		log.Warn("render engine unavailable, label previews disabled", "err", rerr)
 	}
 
+	// Edge agents (USB printers on packing PCs) register here; their printers become
+	// first-class fleet members and are reconciled without a restart.
+	agents := fleet.NewAgentRegistry(mgr.Registry(), mgr, log)
+
 	apiSrv := httpapi.New(mgr, js, b, auth, tokenSvc, log, met, cfg.MaxBatchSize, cfg.MaxPayloadBytes)
+	apiSrv.SetAgents(agents)
 	apiSrv.SetWebConfig(httpapi.WebConfig{
 		Enabled: cfg.UI.Enabled, Path: cfg.UI.Path, Title: cfg.UI.Title,
 	})

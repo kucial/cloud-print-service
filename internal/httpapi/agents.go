@@ -1,0 +1,239 @@
+package httpapi
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/kongkx/cloud-print-service/internal/config"
+	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/fleet"
+	"github.com/kongkx/cloud-print-service/internal/token"
+)
+
+// Agent-facing endpoints.
+//
+// Topology (D2): the server and the packing PCs share a LAN and the server pulls, so an
+// agent (a) listens per printer for the server to connect to, and (b) sends these three
+// messages. Nothing here can dispatch a job or read business data: an agent token is
+// scoped to the agent routes only.
+
+func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
+	if s.agents == nil {
+		writeErr(w, http.StatusNotImplemented, "not_configured", "agent support is not enabled")
+		return
+	}
+	var p fleet.RegisterPayload
+	if err := decodeJSON(r, &p); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	if p.Printers == nil {
+		p.Printers = []domain.Printer{}
+	}
+	agent, err := s.agents.Register(p)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	// Newly registered printers need live drivers; Sync is idempotent for existing ones.
+	if err := s.mgr.Sync(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "sync_failed", err.Error())
+		return
+	}
+
+	out := map[string]any{
+		"agent":    agent,
+		"printers": len(p.Printers),
+		"note":     "your printers are now dispatchable; the server will connect to agent_addr",
+	}
+
+	// First contact with a bootstrap credential: exchange it for a durable one and
+	// revoke it, so the token from the install script is spent.
+	if cl := ClientFrom(r.Context()); cl.Kind == token.KindAgentBootstrap && s.tokens != nil && cl.TokenID != "" {
+		if _, err := s.tokens.Revoke(r.Context(), cl.TokenID); err != nil {
+			s.log.Warn("could not revoke bootstrap token", "token_id", cl.TokenID, "err", err)
+		} else {
+			ttl := s.agentTTL
+			if ttl <= 0 {
+				ttl = 365 * 24 * time.Hour
+			}
+			t, secret, err := s.tokens.Issue(r.Context(), token.IssueRequest{
+				ClientID: "agent:" + p.AgentID, Role: token.RoleClient, Kind: token.KindAgent,
+				AgentID: p.AgentID, TTL: ttl, Note: "agent credential",
+			})
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "token_failed", err.Error())
+				return
+			}
+			out["token"] = secret
+			out["token_id"] = t.ID
+			out["expires"] = t.ExpiresAt
+			s.log.Info("agent credential exchanged", "agent_id", p.AgentID, "token_id", t.ID)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
+	var p fleet.HeartbeatPayload
+	if err := decodeJSON(r, &p); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	if err := s.agents.Heartbeat(p); err != nil {
+		writeErr(w, http.StatusNotFound, "agent_not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "at": time.Now().UTC()})
+}
+
+func (s *Server) agentPrinterStatus(w http.ResponseWriter, r *http.Request) {
+	var st domain.Status
+	if err := decodeJSON(r, &st); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	if err := s.agents.Status(r.PathValue("agent_id"), r.PathValue("printer_id"), st); err != nil {
+		writeErr(w, http.StatusNotFound, "agent_not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
+	items := s.agents.List()
+	secs, _ := strconv.Atoi(r.URL.Query().Get("healthy_within_seconds"))
+	ttl := 60 * time.Second
+	if secs > 0 {
+		ttl = time.Duration(secs) * time.Second
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":   items,
+		"count":   len(items),
+		"healthy": s.agents.Healthy(ttl),
+	})
+}
+
+func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("agent_id")
+	gone := s.agents.Deregister(id)
+	_ = s.mgr.Sync(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"agent":            id,
+		"printers_removed": gone,
+	})
+}
+
+// ------------------------------------------------------------- discovery
+
+func (s *Server) listCandidates(w http.ResponseWriter, r *http.Request) {
+	includeDismissed := strings.EqualFold(r.URL.Query().Get("dismissed"), "true")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": s.mgr.Registry().Candidates(includeDismissed),
+		"count": len(s.mgr.Registry().Candidates(includeDismissed)),
+	})
+}
+
+func (s *Server) adoptCandidate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PrinterID string `json:"printer_id"` // required: human-stable id, e.g. wh1-pack-04
+		Site      string `json:"site"`
+		Name      string `json:"name"`
+		Enabled   *bool  `json:"enabled"`
+		Model     string `json:"model"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	if strings.TrimSpace(body.PrinterID) == "" {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request",
+			"printer_id is required: adoption is an explicit, human decision")
+		return
+	}
+	p := domain.Printer{
+		PrinterID: body.PrinterID, Site: body.Site, Name: body.Name, Model: body.Model,
+		Driver: "zebra9100", Port: 9100, Enabled: true,
+	}
+	if body.Enabled != nil {
+		p.Enabled = *body.Enabled
+	}
+	if err := s.mgr.Registry().AdoptCandidate(r.PathValue("device_key"), fleet.SourceDiscovery, "", p); err != nil {
+		writeErr(w, http.StatusNotFound, "candidate_not_found", err.Error())
+		return
+	}
+	if err := s.mgr.Sync(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "sync_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"printer_id": p.PrinterID, "status": "adopted"})
+}
+
+func (s *Server) dismissCandidate(w http.ResponseWriter, r *http.Request) {
+	if !s.mgr.Registry().DismissCandidate(r.PathValue("device_key")) {
+		writeErr(w, http.StatusNotFound, "candidate_not_found", "unknown device "+r.PathValue("device_key"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "dismissed"})
+}
+
+// enrollAgent mints a one-time bootstrap token for a new edge agent. A stolen bootstrap
+// token is worthless after a single use, which is what makes it safe to paste into an
+// install script.
+func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		AgentID  string `json:"agent_id"`
+		Site     string `json:"site"`
+		Hostname string `json:"hostname"`
+		OS       string `json:"os"`
+		TTL      string `json:"ttl"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	if s.tokens == nil {
+		writeErr(w, http.StatusNotImplemented, "not_configured", "token service unavailable")
+		return
+	}
+	agentID := strings.TrimSpace(body.AgentID)
+	if agentID == "" {
+		agentID = strings.TrimSpace(body.Hostname)
+	}
+	if agentID == "" {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request",
+			"agent_id (or hostname) is required: it names the fleet entry")
+		return
+	}
+	req := token.IssueRequest{
+		ClientID: "agent:" + agentID,
+		Role:     token.RoleClient,
+		Kind:     token.KindAgentBootstrap,
+		Note:     strings.TrimSpace(strings.Join([]string{body.Site, body.OS}, " ")),
+		AgentID:  agentID,
+	}
+	if body.TTL != "" {
+		d, err := config.ParseDuration(body.TTL)
+		if err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+			return
+		}
+		req.TTL = d
+	}
+	t, secret, err := s.tokens.Issue(r.Context(), req)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	s.log.Info("agent credential issued", "agent_id", agentID, "site", body.Site, "token_id", t.ID)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"token":    secret,
+		"agent_id": agentID,
+		"prefix":   token.Display(t),
+		"expires":  t.ExpiresAt,
+		"enroll":   "cps-agent -enroll " + secret,
+		"warning":  "one-time token: it stops working as soon as the agent enrolls",
+	})
+}
