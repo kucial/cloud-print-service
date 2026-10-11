@@ -11,6 +11,7 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/driver"
 )
 
 // Manager owns every printer's driver and cached status.
@@ -33,7 +34,7 @@ type Manager struct {
 // Printer is one managed device: declared spec + driver + cached status.
 type Printer struct {
 	spec domain.Printer
-	drv  Driver
+	drv  driver.Driver
 	mgr  *Manager
 
 	queueDepth atomic.Int64
@@ -81,12 +82,12 @@ func NewManager(specs []domain.Printer, log *slog.Logger, b *bus.Bus, o ManagerO
 }
 
 func (m *Manager) build(spec domain.Printer) (*Printer, error) {
-	var drv Driver
+	var drv driver.Driver
 	var err error
 	if spec.Driver == "zebra9100" {
-		drv = NewZebra(spec, ZebraOpts{DialTimeout: m.dialTimeout, WriteTimeout: m.writeTimeout, ReadTimeout: m.readTimeout})
+		drv = driver.NewZebra(spec, driver.ZebraOpts{DialTimeout: m.dialTimeout, WriteTimeout: m.writeTimeout, ReadTimeout: m.readTimeout})
 	} else {
-		drv, err = New(spec)
+		drv, err = driver.New(spec)
 		if err != nil {
 			return nil, err
 		}

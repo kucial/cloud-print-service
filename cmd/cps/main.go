@@ -15,6 +15,7 @@ import (
 	"github.com/kongkx/cloud-print-service/internal/api"
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/config"
+	"github.com/kongkx/cloud-print-service/internal/driver"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
 	"github.com/kongkx/cloud-print-service/internal/printer"
@@ -116,7 +117,7 @@ func main() {
 
 	go func() {
 		log.Info("cloud print service listening",
-			"addr", cfg.Addr, "printers", mgr.Len(), "drivers", printer.Drivers(),
+			"addr", cfg.Addr, "printers", mgr.Len(), "drivers", driver.Drivers(),
 			"store", cfg.StoreDriver, "token_default_ttl", cfg.TokenDefaultTTL.D().String(),
 			"ui", cfg.UI.Enabled, "renderer", rendererName(renderer))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

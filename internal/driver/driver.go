@@ -1,5 +1,5 @@
 // Package printer owns connectivity to physical printers and the status cache.
-package printer
+package driver
 
 import (
 	"context"

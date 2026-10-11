@@ -322,7 +322,7 @@ func TestBusinessSystemFlow(t *testing.T) {
 	f.printer("wh1-pack-03").Control(fakeprinter.Control{State: "idle"})
 	waitPrinterState(t, f, wmsKey, "wh1-pack-03", "idle")
 
-	// Back in business: a new label prints on the recovered printer.
+	// Back in business: a new label prints on the recovered driver.
 	f.printer("wh1-pack-03").Reset()
 	code, out = f.do("POST", "/api/v1/jobs", wmsKey, map[string]any{
 		"printer_id": "wh1-pack-03", "external_id": "OK-88213-7", "zpl": labelBody,

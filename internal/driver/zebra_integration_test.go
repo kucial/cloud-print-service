@@ -1,4 +1,4 @@
-package printer_test
+package driver_test
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/driver"
 	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
-	"github.com/kongkx/cloud-print-service/internal/printer"
 )
 
 // These tests drive the real zebra9100 driver against a virtual printer over TCP,
@@ -28,15 +28,15 @@ func startVirtual(t *testing.T, o fakeprinter.Opts) *fakeprinter.Printer {
 	return p
 }
 
-func driverFor(t *testing.T, vp *fakeprinter.Printer) *printer.Zebra {
+func driverFor(t *testing.T, vp *fakeprinter.Printer) *driver.Zebra {
 	t.Helper()
 	host, port := vp.Addr()
 	n, err := strconv.Atoi(port)
 	if err != nil {
 		t.Fatalf("virtual printer port %q: %v", port, err)
 	}
-	z := printer.NewZebra(domain.Printer{PrinterID: "vp", Host: host, Port: n},
-		printer.ZebraOpts{
+	z := driver.NewZebra(domain.Printer{PrinterID: "vp", Host: host, Port: n},
+		driver.ZebraOpts{
 			DialTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second,
 		})
 	t.Cleanup(func() { _ = z.Close() })
@@ -255,7 +255,7 @@ func TestZebraSurvivesPrinterReboot(t *testing.T) {
 }
 
 // waitPrinterState polls the printer until it reports want, or the deadline passes.
-func waitPrinterState(ctx context.Context, z *printer.Zebra, want domain.PrinterState, within time.Duration) bool {
+func waitPrinterState(ctx context.Context, z *driver.Zebra, want domain.PrinterState, within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
 		if st, err := z.Status(ctx); err == nil && st.State == want {

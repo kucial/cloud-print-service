@@ -226,7 +226,7 @@ func TestCancelQueuedJob(t *testing.T) {
 	if _, err := h.svc.Cancel(context.Background(), "erp", first.ID); err != nil {
 		t.Fatalf("cancelling an in-flight job: %v", err)
 	}
-	// A cancelled job must never reach the printer.
+	// A cancelled job must never reach the driver.
 	time.Sleep(200 * time.Millisecond)
 	if j, _ := h.svc.Get(context.Background(), "", second.ID); j.State != domain.JobCancelled {
 		t.Fatalf("cancelled job state = %s, want cancelled", j.State)

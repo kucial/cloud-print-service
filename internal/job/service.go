@@ -304,7 +304,7 @@ func (s *Service) worker(ctx context.Context, printerID string, q chan string) {
 }
 
 // execute runs one job to a terminal state, retrying only failures that provably
-// produced zero bytes on the printer.
+// produced zero bytes on the driver.
 func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	j, err := s.store.GetJob(loadCtx, jobID)
@@ -360,7 +360,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 			lastErr = ""
 
 		case n > 0:
-			// Ambiguous: part of a label reached the printer. Never auto-retry.
+			// Ambiguous: part of a label reached the driver. Never auto-retry.
 			at.Result = "partial_write"
 			at.Error = sendErr.Error()
 			_ = s.store.AddAttempt(ctx, at)
@@ -520,7 +520,7 @@ func (s *Service) Get(ctx context.Context, clientID, id string) (*domain.Job, er
 	return j, nil
 }
 
-// Cancel aborts a job that has not yet been written to a printer.
+// Cancel aborts a job that has not yet been written to a driver.
 func (s *Service) Cancel(ctx context.Context, clientID, id string) (*domain.Job, error) {
 	j, err := s.Get(ctx, clientID, id)
 	if err != nil {
