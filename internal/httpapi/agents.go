@@ -126,59 +126,6 @@ func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ------------------------------------------------------------- discovery
-
-func (s *Server) listCandidates(w http.ResponseWriter, r *http.Request) {
-	includeDismissed := strings.EqualFold(r.URL.Query().Get("dismissed"), "true")
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items": s.mgr.Registry().Candidates(includeDismissed),
-		"count": len(s.mgr.Registry().Candidates(includeDismissed)),
-	})
-}
-
-func (s *Server) adoptCandidate(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		PrinterID string `json:"printer_id"` // required: human-stable id, e.g. wh1-pack-04
-		Site      string `json:"site"`
-		Name      string `json:"name"`
-		Enabled   *bool  `json:"enabled"`
-		Model     string `json:"model"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
-		return
-	}
-	if strings.TrimSpace(body.PrinterID) == "" {
-		writeErr(w, http.StatusUnprocessableEntity, "invalid_request",
-			"printer_id is required: adoption is an explicit, human decision")
-		return
-	}
-	p := domain.Printer{
-		PrinterID: body.PrinterID, Site: body.Site, Name: body.Name, Model: body.Model,
-		Driver: "zebra9100", Port: 9100, Enabled: true,
-	}
-	if body.Enabled != nil {
-		p.Enabled = *body.Enabled
-	}
-	if err := s.mgr.Registry().AdoptCandidate(r.PathValue("device_key"), fleet.SourceDiscovery, "", p); err != nil {
-		writeErr(w, http.StatusNotFound, "candidate_not_found", err.Error())
-		return
-	}
-	if err := s.mgr.Sync(r.Context()); err != nil {
-		writeErr(w, http.StatusInternalServerError, "sync_failed", err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"printer_id": p.PrinterID, "status": "adopted"})
-}
-
-func (s *Server) dismissCandidate(w http.ResponseWriter, r *http.Request) {
-	if !s.mgr.Registry().DismissCandidate(r.PathValue("device_key")) {
-		writeErr(w, http.StatusNotFound, "candidate_not_found", "unknown device "+r.PathValue("device_key"))
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "dismissed"})
-}
-
 // enrollAgent mints a one-time bootstrap token for a new edge agent. A stolen bootstrap
 // token is worthless after a single use, which is what makes it safe to paste into an
 // install script.

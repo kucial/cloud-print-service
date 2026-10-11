@@ -57,6 +57,8 @@ func main() {
 		renderGray   = flag.Bool("render-grayscale", false, "antialiased greyscale instead of 1-bit")
 		renderUp     = flag.Bool("render-upright", false, "do not rotate ^POI labels 180 (physically faithful by default)")
 		printStartup = flag.String("label", "", "send this ZPL once at startup (smoke check)")
+		mdns         = flag.Bool("mdns", false, "advertise over mDNS so the server can discover this printer")
+		mdnsName     = flag.String("mdns-name", "", "mDNS instance name (default: the printer id)")
 	)
 	flag.Parse()
 
@@ -131,9 +133,14 @@ func main() {
 		}()
 		defer func(s *http.Server) { _ = s.Close() }(srv)
 
+		if *mdns {
+			if _, err := p.Advertise(ctx, log, *mdnsName); err != nil {
+				log.Warn("mDNS advertise failed", "id", pid, "err", err)
+			}
+		}
 		log.Info("virtual printer up",
 			"id", pid, "print", pPort, "gallery", aAddr,
-			"model", *model, "serial", sn, "renderer", p.RendererName())
+			"model", *model, "serial", sn, "renderer", p.RendererName(), "mdns", *mdns)
 	}
 
 	if *printStartup != "" {

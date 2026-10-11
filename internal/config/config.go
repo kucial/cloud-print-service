@@ -60,6 +60,18 @@ type UIConfig struct {
 	Title   string `json:"title"` // injected into index.html
 }
 
+// DiscoveryConfig controls printer discovery.
+type DiscoveryConfig struct {
+	Enabled         bool     `json:"enabled"`
+	Types           []string `json:"types"`            // DNS-SD service types to browse
+	Interval        Duration `json:"interval"`         // sweep period
+	CandidateTTL    Duration `json:"candidate_ttl"`    // forget devices that stop answering
+	Verify          *bool    `json:"verify"`           // ask each hit `~HI` (default true)
+	Site            string   `json:"site"`             // recorded on candidates
+	IdentifyTimeout Duration `json:"identify_timeout"` // one `~HI` probe
+	BrowseTimeout   Duration `json:"browse_timeout"`   // one browse pass
+}
+
 // RenderConfig selects the ZPL render engine used for label previews.
 type RenderConfig struct {
 	Backend     string `json:"backend"`      // auto|zebrash|labelize
@@ -103,6 +115,8 @@ type Config struct {
 	UI UIConfig `json:"ui"`
 	// Render configures the ZPL preview engine (POST /api/v1/admin/preview).
 	Render RenderConfig `json:"render"`
+	// Discovery finds printers on the LAN. Findings are candidates until adopted.
+	Discovery DiscoveryConfig `json:"discovery"`
 
 	// TokenDefaultTTL applies to tokens issued for business systems when none is given.
 	TokenDefaultTTL Duration `json:"token_default_ttl"`
@@ -130,6 +144,7 @@ func defaults() Config {
 		TokenDefaultTTL:     Duration(90 * 24 * time.Hour),
 		UI:                  UIConfig{Enabled: true, Path: "/ui/", Title: "Cloud Print Service"},
 		Render:              RenderConfig{Backend: "auto"},
+		Discovery:           DiscoveryConfig{Interval: Duration(time.Minute), CandidateTTL: Duration(10 * time.Minute), BrowseTimeout: Duration(2 * time.Second), IdentifyTimeout: Duration(2 * time.Second)},
 		Printers:            []domain.Printer{},
 		APIKeys:             map[string]ClientKey{},
 	}
@@ -174,6 +189,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxPayloadBytes < 64 {
 		return fmt.Errorf("max_payload_bytes must be >= 64")
+	}
+	if c.Discovery.Interval.D() > 0 && c.Discovery.Interval.D() < 10*time.Second {
+		return fmt.Errorf("discovery.interval must be >= 10s, got %s", c.Discovery.Interval.D())
 	}
 	switch c.Render.Backend {
 	case "", "auto", "zebrash", "labelize":

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kongkx/cloud-print-service/internal/discovery"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/job"
@@ -32,6 +33,7 @@ type Server struct {
 	agents   *fleet.AgentRegistry
 	web      WebConfig
 	renderer render.Renderer
+	disco    *discovery.Service
 	agentTTL time.Duration
 
 	maxBatch   int
@@ -89,6 +91,8 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("DELETE /api/v1/agents/{agent_id}", RequireAdmin(s.deleteAgent))
 
 	// --- discovery: candidates until a human adopts them ---------------------------
+	apiMux.HandleFunc("GET /api/v1/admin/discovery", RequireAdmin(s.discoveryStatus))
+	apiMux.HandleFunc("POST /api/v1/admin/discovery/scan", RequireAdmin(s.scanDiscovery))
 	apiMux.HandleFunc("GET /api/v1/admin/discovery/candidates", RequireAdmin(s.listCandidates))
 	apiMux.HandleFunc("POST /api/v1/admin/discovery/candidates/{device_key}/adopt", RequireAdmin(s.adoptCandidate))
 	apiMux.HandleFunc("POST /api/v1/admin/discovery/candidates/{device_key}/dismiss", RequireAdmin(s.dismissCandidate))

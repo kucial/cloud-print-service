@@ -286,9 +286,14 @@ func (r *Registry) ExpireCandidates(ttl time.Duration) int {
 	if ttl <= 0 {
 		return 0
 	}
+	return r.ExpireBefore(r.now().Add(-ttl))
+}
+
+// ExpireBefore forgets sightings last seen before cutoff. Taking the cutoff rather than a
+// duration lets the caller own the clock (discovery sweeps and tests may not share one).
+func (r *Registry) ExpireBefore(cutoff time.Time) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cutoff := r.now().Add(-ttl)
 	n := 0
 	for k, c := range r.candidates {
 		if c.LastSeen.Before(cutoff) {

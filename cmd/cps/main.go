@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kongkx/cloud-print-service/internal/config"
+	"github.com/kongkx/cloud-print-service/internal/discovery"
 	"github.com/kongkx/cloud-print-service/internal/driver"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/httpapi"
@@ -102,8 +103,32 @@ func main() {
 	// first-class fleet members and are reconciled without a restart.
 	agents := fleet.NewAgentRegistry(mgr.Registry(), mgr, log)
 
+	// Discovery finds printers on the LAN. It only produces *candidates*: adoption is a
+	// human decision, because a warehouse LAN contains things that are not printers.
+	var disco *discovery.Service
+	if cfg.Discovery.Enabled {
+		verify := true
+		if cfg.Discovery.Verify != nil {
+			verify = *cfg.Discovery.Verify
+		}
+		dcfg := discovery.Config{
+			Types: cfg.Discovery.Types, Interval: cfg.Discovery.Interval.D(),
+			CandidateTTL: cfg.Discovery.CandidateTTL.D(), Site: cfg.Discovery.Site,
+			Verify: verify, BrowseTimeout: cfg.Discovery.BrowseTimeout.D(),
+		}
+		disco = discovery.NewService(dcfg, mgr.Registry(), log).WithProbes(discovery.MDNS{
+			Types: cfg.Discovery.Types, Identify: verify,
+			BrowseTimeout:   cfg.Discovery.BrowseTimeout.D(),
+			IdentifyTimeout: cfg.Discovery.IdentifyTimeout.D(),
+			Logf:            func(f string, a ...any) { log.Debug(f, a...) },
+		})
+		go disco.Run(ctx)
+		log.Info("discovery enabled", "types", cfg.Discovery.Types, "interval", cfg.Discovery.Interval.D())
+	}
+
 	apiSrv := httpapi.New(mgr, js, b, auth, tokenSvc, log, met, cfg.MaxBatchSize, cfg.MaxPayloadBytes)
 	apiSrv.SetAgents(agents)
+	apiSrv.SetDiscovery(disco)
 	apiSrv.SetWebConfig(httpapi.WebConfig{
 		Enabled: cfg.UI.Enabled, Path: cfg.UI.Path, Title: cfg.UI.Title,
 	})

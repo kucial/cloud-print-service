@@ -21,7 +21,7 @@ var internalPackages = map[string][]string{
 	"job":     {"domain", "driver", "store", "fleet", "observ"},
 	"token":   {"domain"},
 	"render":  {},
-	"httpapi": {"domain", "driver", "fleet", "job", "store", "token", "render", "observ", "config", "web"},
+	"httpapi": {"domain", "driver", "fleet", "job", "store", "token", "render", "observ", "config", "web", "discovery"},
 	"virtual": {"domain", "render", "observ"},
 	"config":  {"domain"},
 	"observ":  {},

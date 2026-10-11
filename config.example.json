@@ -94,5 +94,17 @@
         "state": "media_out"
       }
     }
-  ]
+  ],
+  "discovery": {
+    "enabled": false,
+    "types": [
+      "_pdl-datastream._tcp",
+      "_printer._tcp",
+      "_ipp._tcp"
+    ],
+    "interval": "60s",
+    "candidate_ttl": "10m",
+    "verify": true,
+    "site": ""
+  }
 }
