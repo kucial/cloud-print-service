@@ -99,9 +99,9 @@ func (r *Registry) UpsertMany(source, sourceRef string, ps []domain.Printer) err
 	return nil
 }
 
-// UpdateMetadata updates user-editable metadata (name, site, remark, custom_label, enabled)
+// UpdateMetadata updates user-editable metadata (name, site, remark, custom_label, paper_size, dimensions, enabled)
 // on all claims for the specified printer.
-func (r *Registry) UpdateMetadata(printerID string, name, site, remark, customLabel *string, enabled *bool) (domain.Printer, error) {
+func (r *Registry) UpdateMetadata(printerID string, name, site, remark, customLabel, paperSize *string, mediaW, mediaH *float64, enabled *bool) (domain.Printer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	claims, ok := r.claims[printerID]
@@ -121,6 +121,15 @@ func (r *Registry) UpdateMetadata(printerID string, name, site, remark, customLa
 		}
 		if customLabel != nil {
 			p.CustomLabel = *customLabel
+		}
+		if paperSize != nil {
+			p.PaperSize = *paperSize
+		}
+		if mediaW != nil {
+			p.MediaWidthMM = *mediaW
+		}
+		if mediaH != nil {
+			p.MediaHeightMM = *mediaH
 		}
 		if enabled != nil {
 			p.Enabled = *enabled
@@ -244,6 +253,9 @@ func (r *Registry) List(f Filter) []domain.Printer {
 			continue
 		}
 		if f.Source != "" && claims[0].source != f.Source {
+			continue
+		}
+		if f.PaperSize != "" && p.PaperSize != f.PaperSize {
 			continue
 		}
 		out = append(out, p)

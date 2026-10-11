@@ -32,11 +32,13 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
 
   const [search, setSearch] = useState('');
   const [siteFilter, setSiteFilter] = useState('');
+  const [paperSizeFilter, setPaperSizeFilter] = useState('');
   const [usableFilter, setUsableFilter] = useState<'all' | 'usable' | 'unusable'>('all');
   const [probing, setProbing] = useState(false);
 
   const selectedPrinter = printers.find((p) => p.printer_id === selectedPrinterId);
   const sites = Array.from(new Set(printers.map((p) => p.site).filter(Boolean)));
+  const paperSizes = Array.from(new Set(printers.map((p) => p.paper_size).filter(Boolean))) as string[];
 
   const filteredPrinters = printers.filter((p) => {
     const q = search.toLowerCase();
@@ -45,15 +47,17 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
       (p.name && p.name.toLowerCase().includes(q)) ||
       (p.model && p.model.toLowerCase().includes(q)) ||
       (p.custom_label && p.custom_label.toLowerCase().includes(q)) ||
+      (p.paper_size && p.paper_size.toLowerCase().includes(q)) ||
       (p.remark && p.remark.toLowerCase().includes(q));
 
     const matchesSite = !siteFilter || p.site === siteFilter;
+    const matchesPaperSize = !paperSizeFilter || p.paper_size === paperSizeFilter;
     const matchesUsable =
       usableFilter === 'all' ||
       (usableFilter === 'usable' && p.usable) ||
       (usableFilter === 'unusable' && !p.usable);
 
-    return matchesSearch && matchesSite && matchesUsable;
+    return matchesSearch && matchesSite && matchesPaperSize && matchesUsable;
   });
 
   const handleProbeAll = async () => {
@@ -127,6 +131,17 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
           </select>
         )}
 
+        {paperSizes.length > 0 && (
+          <select value={paperSizeFilter} onChange={(e) => setPaperSizeFilter(e.target.value)}>
+            <option value="">{t('all_paper_sizes')}</option>
+            {paperSizes.map((ps) => (
+              <option key={ps} value={ps}>
+                {t('paper_size_filter')}: {ps}
+              </option>
+            ))}
+          </select>
+        )}
+
         <select
           value={usableFilter}
           onChange={(e) => setUsableFilter(e.target.value as any)}
@@ -145,6 +160,7 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
               <th>{t('th_printer_id')}</th>
               <th>{t('th_display_name')}</th>
               <th>{t('th_site')}</th>
+              <th>{t('paper_size')}</th>
               <th>{t('th_model_driver')}</th>
               <th>{t('state')}</th>
               <th>{t('usable')}</th>
@@ -180,6 +196,15 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                       )}
                     </td>
                     <td>{p.site || '—'}</td>
+                    <td>
+                      {p.paper_size ? (
+                        <span className="badge-pill badge-warn font-mono">
+                          {p.paper_size}
+                        </span>
+                      ) : (
+                        <span className="text-muted text-xs">—</span>
+                      )}
+                    </td>
                     <td className="font-mono text-sm">{p.model || p.driver}</td>
                     <td>
                       <span className={`state-badge state-${st.state}`}>
@@ -248,6 +273,11 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                       {p.custom_label && (
                         <span className="badge-pill badge-custom-label text-xs">
                           {p.custom_label}
+                        </span>
+                      )}
+                      {p.paper_size && (
+                        <span className="badge-pill badge-warn text-xs font-mono">
+                          {p.paper_size}
                         </span>
                       )}
                     </div>
@@ -333,6 +363,9 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
   const [site, setSite] = useState(p.site || '');
   const [customLabel, setCustomLabel] = useState(p.custom_label || '');
   const [remark, setRemark] = useState(p.remark || '');
+  const [paperSize, setPaperSize] = useState(p.paper_size || '');
+  const [mediaWidthMm, setMediaWidthMm] = useState<number | undefined>(p.media_width_mm);
+  const [mediaHeightMm, setMediaHeightMm] = useState<number | undefined>(p.media_height_mm);
   const [enabled, setEnabled] = useState(p.enabled);
   const [saving, setSaving] = useState(false);
 
@@ -345,6 +378,9 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
         site: site.trim(),
         custom_label: customLabel.trim(),
         remark: remark.trim(),
+        paper_size: paperSize.trim(),
+        media_width_mm: mediaWidthMm,
+        media_height_mm: mediaHeightMm,
         enabled,
       });
       toast(t('metadata_updated'), 'success');
@@ -402,6 +438,38 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                   onChange={(e) => setCustomLabel(e.target.value)}
                   placeholder={t('custom_label_placeholder')}
                 />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="form-group mb-0">
+                  <label>{t('paper_size')}</label>
+                  <input
+                    type="text"
+                    value={paperSize}
+                    onChange={(e) => setPaperSize(e.target.value)}
+                    placeholder="e.g. 4x6, 4x2"
+                  />
+                </div>
+                <div className="form-group mb-0">
+                  <label>W (mm)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={mediaWidthMm ?? ''}
+                    onChange={(e) => setMediaWidthMm(parseFloat(e.target.value) || undefined)}
+                    placeholder="101.6"
+                  />
+                </div>
+                <div className="form-group mb-0">
+                  <label>H (mm)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={mediaHeightMm ?? ''}
+                    onChange={(e) => setMediaHeightMm(parseFloat(e.target.value) || undefined)}
+                    placeholder="152.4"
+                  />
+                </div>
               </div>
 
               <div className="form-group">
@@ -498,6 +566,21 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                 <span className="detail-val">
                   {p.custom_label ? (
                     <span className="badge-pill badge-custom-label">{p.custom_label}</span>
+                  ) : (
+                    '—'
+                  )}
+                </span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">{t('paper_size')}</span>
+                <span className="detail-val">
+                  {p.paper_size ? (
+                    <span className="badge-pill badge-warn font-mono">
+                      {p.paper_size}{' '}
+                      {p.media_width_mm && p.media_height_mm
+                        ? `(${p.media_width_mm}×${p.media_height_mm}mm)`
+                        : ''}
+                    </span>
                   ) : (
                     '—'
                   )}

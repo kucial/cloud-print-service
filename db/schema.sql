@@ -11,9 +11,12 @@ create table if not exists printers (
   host         text not null,
   port         int  not null default 9100,
   enabled      boolean not null default true,
-  remark       text not null default '',
-  custom_label text not null default '',
-  created_at   timestamptz not null default now(),
+  remark          text not null default '',
+  custom_label    text not null default '',
+  paper_size      text not null default '',
+  media_width_mm  numeric not null default 0,
+  media_height_mm numeric not null default 0,
+  created_at      timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 create index if not exists printers_site_enabled_idx on printers (site, enabled);

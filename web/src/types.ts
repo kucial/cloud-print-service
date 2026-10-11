@@ -40,6 +40,9 @@ export interface Printer {
   queue_depth: number;
   remark?: string;
   custom_label?: string;
+  paper_size?: string;
+  media_width_mm?: number;
+  media_height_mm?: number;
   status: PrinterStatus;
 }
 

@@ -91,6 +91,9 @@ export const api = {
       site?: string;
       remark?: string;
       custom_label?: string;
+      paper_size?: string;
+      media_width_mm?: number;
+      media_height_mm?: number;
       enabled?: boolean;
     }
   ) => request<Printer>(`/printers/${id}`, { method: 'PATCH', body }),
@@ -122,7 +125,16 @@ export const api = {
   scanDiscovery: () => request('/admin/discovery/scan', { method: 'POST' }),
   adoptCandidate: (
     key: string,
-    body: { printer_id: string; site?: string; name?: string; remark?: string; custom_label?: string }
+    body: {
+      printer_id: string;
+      site?: string;
+      name?: string;
+      remark?: string;
+      custom_label?: string;
+      paper_size?: string;
+      media_width_mm?: number;
+      media_height_mm?: number;
+    }
   ) => request(`/admin/discovery/candidates/${key}/adopt`, { method: 'POST', body }),
   dismissCandidate: (key: string) =>
     request(`/admin/discovery/candidates/${key}/dismiss`, { method: 'POST' }),

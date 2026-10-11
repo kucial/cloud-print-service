@@ -160,6 +160,9 @@ const AdoptModal: React.FC<AdoptModalProps> = ({ candidate: c, onClose, onSucces
   const [name, setName] = useState(c.model ? `${c.model} (Packing)` : 'Packing Station Printer');
   const [customLabel, setCustomLabel] = useState('');
   const [remark, setRemark] = useState('');
+  const [paperSize, setPaperSize] = useState('4x6');
+  const [mediaWidthMm, setMediaWidthMm] = useState<number | undefined>(101.6);
+  const [mediaHeightMm, setMediaHeightMm] = useState<number | undefined>(152.4);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -177,6 +180,9 @@ const AdoptModal: React.FC<AdoptModalProps> = ({ candidate: c, onClose, onSucces
         name: name.trim(),
         custom_label: customLabel.trim(),
         remark: remark.trim(),
+        paper_size: paperSize.trim(),
+        media_width_mm: mediaWidthMm,
+        media_height_mm: mediaHeightMm,
       });
       toast(t('adopt_success', { id: printerId }), 'success');
       onSuccess();
@@ -236,6 +242,38 @@ const AdoptModal: React.FC<AdoptModalProps> = ({ candidate: c, onClose, onSucces
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Packing Station 4 (ZT411)"
               />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="form-group mb-0">
+                <label>{t('paper_size')}</label>
+                <input
+                  type="text"
+                  value={paperSize}
+                  onChange={(e) => setPaperSize(e.target.value)}
+                  placeholder="e.g. 4x6, 4x2"
+                />
+              </div>
+              <div className="form-group mb-0">
+                <label>W (mm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={mediaWidthMm ?? ''}
+                  onChange={(e) => setMediaWidthMm(parseFloat(e.target.value) || undefined)}
+                  placeholder="101.6"
+                />
+              </div>
+              <div className="form-group mb-0">
+                <label>H (mm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={mediaHeightMm ?? ''}
+                  onChange={(e) => setMediaHeightMm(parseFloat(e.target.value) || undefined)}
+                  placeholder="152.4"
+                />
+              </div>
             </div>
 
             <div className="form-group">

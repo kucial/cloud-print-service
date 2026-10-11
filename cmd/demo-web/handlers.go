@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 // Handler exposes the demo console's own API plus the embedded UI.
@@ -15,6 +16,9 @@ func (a *app) Handler() http.Handler {
 	mux.HandleFunc("GET /api/orders", a.handleOrders)
 	mux.HandleFunc("POST /api/orders/{id}/release", a.handleRelease)
 	mux.HandleFunc("POST /api/orders/{id}/resend", a.handleResend)
+	mux.HandleFunc("POST /api/orders/{id}/lines/{no}/printer", a.handleSetLinePrinter)
+	mux.HandleFunc("GET /api/orders/{id}/lines/{no}/preview", a.handleLinePreview)
+	mux.HandleFunc("GET /api/printers", a.handlePrinters)
 	mux.HandleFunc("GET /api/jobs/{job_id}", a.handleJob)
 	mux.HandleFunc("POST /api/preview", a.handlePreview)
 	mux.HandleFunc("GET /api/config", a.handleConfig)
@@ -27,6 +31,8 @@ func (a *app) Handler() http.Handler {
 
 func (a *app) handleOrders(w http.ResponseWriter, r *http.Request) {
 	a.reconcile(r.Context())
+	a.reconcileTargetPrinters()
+
 	a.mu.RLock()
 	out := make([]map[string]any, 0, len(a.ords))
 	for _, o := range a.ords {
@@ -37,6 +43,69 @@ func (a *app) handleOrders(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "count": len(out)})
+}
+
+func (a *app) handlePrinters(w http.ResponseWriter, r *http.Request) {
+	_ = a.refreshPrinters(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": a.Printers(),
+		"count": len(a.Printers()),
+	})
+}
+
+func (a *app) handleSetLinePrinter(w http.ResponseWriter, r *http.Request) {
+	orderID := r.PathValue("id")
+	lineNo, err := strconv.Atoi(r.PathValue("no"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid line number"})
+		return
+	}
+	var body struct {
+		PrinterID string `json:"printer_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	if err := a.SetLinePrinter(orderID, lineNo, body.PrinterID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "printer_id": body.PrinterID})
+}
+
+func (a *app) handleLinePreview(w http.ResponseWriter, r *http.Request) {
+	orderID := r.PathValue("id")
+	lineNo, err := strconv.Atoi(r.PathValue("no"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid line number"})
+		return
+	}
+	a.mu.RLock()
+	var targetLine *Line
+	for _, o := range a.ords {
+		if o.ID == orderID {
+			for i := range o.Lines {
+				if o.Lines[i].No == lineNo {
+					targetLine = &o.Lines[i]
+					break
+				}
+			}
+		}
+	}
+	a.mu.RUnlock()
+	if targetLine == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "line not found"})
+		return
+	}
+	png, err := a.preview(r.Context(), targetLine.ZPL, targetLine.WidthMM, targetLine.HeightMM)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
 }
 
 func (a *app) handleRelease(w http.ResponseWriter, r *http.Request) {
@@ -72,17 +141,9 @@ func (a *app) handleWave(w http.ResponseWriter, r *http.Request, resend bool) {
 
 // releaseWave wraps a release so it refreshes the printer list on demand.
 func (a *app) releaseWave(ctx context.Context, orderID string) ([]dispatchResult, error) {
-	a.mu.RLock()
-	ids := a.printerIDs
-	a.mu.RUnlock()
-	if len(ids) == 0 {
-		if err := a.refreshPrinters(ctx); err != nil {
-			return nil, err
-		}
-		ids = a.PrinterIDs()
-		if len(ids) == 0 {
-			return nil, errNoPrinters
-		}
+	_ = a.refreshPrinters(ctx)
+	if len(a.Printers()) == 0 {
+		return nil, errNoPrinters
 	}
 	return a.Release(ctx, orderID)
 }
@@ -102,13 +163,15 @@ func (a *app) handleJob(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) handlePreview(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ZPL string `json:"zpl"`
+		ZPL      string  `json:"zpl"`
+		WidthMM  float64 `json:"width_mm"`
+		HeightMM float64 `json:"height_mm"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	png, err := a.preview(r.Context(), body.ZPL)
+	png, err := a.preview(r.Context(), body.ZPL, body.WidthMM, body.HeightMM)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
@@ -123,7 +186,7 @@ func (a *app) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"cps":        a.cfg.base,
 		"site":       a.cfg.site,
 		"printer":    a.cfg.printerID,
-		"printers":   a.PrinterIDs(),
+		"printers":   a.Printers(),
 		"preview":    a.cfg.adminToken != "",
 		"simulate":   a.cfg.simulate,
 		"token_kind": "client (dispatch) / admin (preview only)",

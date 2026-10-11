@@ -143,8 +143,9 @@ func errorHandler(err error) http.Handler {
 
 func (s *Server) listPrinters(w http.ResponseWriter, r *http.Request) {
 	f := fleet.Filter{
-		Site:  r.URL.Query().Get("site"),
-		Model: r.URL.Query().Get("model"),
+		Site:      r.URL.Query().Get("site"),
+		Model:     r.URL.Query().Get("model"),
+		PaperSize: r.URL.Query().Get("paper_size"),
 	}
 	if v := r.URL.Query().Get("enabled"); v != "" {
 		b := v == "true" || v == "1"
@@ -171,8 +172,9 @@ func (s *Server) bulkStatus(w http.ResponseWriter, r *http.Request) {
 		items = s.mgr.ViewsByIDs(ids)
 	} else {
 		items = s.mgr.List(fleet.Filter{
-			Site:  q.Get("site"),
-			Model: q.Get("model"),
+			Site:      q.Get("site"),
+			Model:     q.Get("model"),
+			PaperSize: q.Get("paper_size"),
 		})
 	}
 	s.refreshGauges(items)
@@ -206,17 +208,20 @@ func (s *Server) getPrinter(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updatePrinter(w http.ResponseWriter, r *http.Request) {
 	printerID := r.PathValue("printer_id")
 	var body struct {
-		Name        *string `json:"name"`
-		Site        *string `json:"site"`
-		Remark      *string `json:"remark"`
-		CustomLabel *string `json:"custom_label"`
-		Enabled     *bool   `json:"enabled"`
+		Name          *string  `json:"name"`
+		Site          *string  `json:"site"`
+		Remark        *string  `json:"remark"`
+		CustomLabel   *string  `json:"custom_label"`
+		PaperSize     *string  `json:"paper_size"`
+		MediaWidthMM  *float64 `json:"media_width_mm"`
+		MediaHeightMM *float64 `json:"media_height_mm"`
+		Enabled       *bool    `json:"enabled"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
 		return
 	}
-	p, err := s.mgr.Registry().UpdateMetadata(printerID, body.Name, body.Site, body.Remark, body.CustomLabel, body.Enabled)
+	p, err := s.mgr.Registry().UpdateMetadata(printerID, body.Name, body.Site, body.Remark, body.CustomLabel, body.PaperSize, body.MediaWidthMM, body.MediaHeightMM, body.Enabled)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "printer_not_found", err.Error())
 		return

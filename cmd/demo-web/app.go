@@ -26,6 +26,21 @@ type appConfig struct {
 	seed       int64
 }
 
+// PrinterSummary is what the demo console knows about each available printer roll.
+type PrinterSummary struct {
+	PrinterID     string  `json:"printer_id"`
+	Name          string  `json:"name"`
+	Site          string  `json:"site"`
+	PaperSize     string  `json:"paper_size"`
+	MediaWidthMM  float64 `json:"media_width_mm"`
+	MediaHeightMM float64 `json:"media_height_mm"`
+	Remark        string  `json:"remark"`
+	CustomLabel   string  `json:"custom_label"`
+	Usable        bool    `json:"usable"`
+	Enabled       bool    `json:"enabled"`
+	QueueDepth    int     `json:"queue_depth"`
+}
+
 // Order is the "business document" this demo pretends to be releasing.
 type Order struct {
 	ID       string    `json:"id"`
@@ -38,21 +53,28 @@ type Order struct {
 }
 
 type Line struct {
-	No     int            `json:"no"`
-	ZPL    string         `json:"-"`
-	Status dispatchResult `json:"status"`
-	JobID  string         `json:"job_id,omitempty"`
+	No              int            `json:"no"`
+	LabelType       string         `json:"label_type"`       // "shipping_4x6", "carton_4x2", "item_2x1"
+	LabelName       string         `json:"label_name"`       // Display name
+	PaperSize       string         `json:"paper_size"`       // "4x6", "4x2", "2x1"
+	WidthMM         float64        `json:"width_mm"`
+	HeightMM        float64        `json:"height_mm"`
+	SelectedPrinter string         `json:"selected_printer"` // manual override if set
+	TargetPrinter   string         `json:"target_printer"`   // computed target printer
+	ZPL             string         `json:"-"`
+	Status          dispatchResult `json:"status"`
+	JobID           string         `json:"job_id,omitempty"`
 }
 
 // app holds demo state and the reference integration logic.
 type app struct {
-	log        *slog.Logger
-	cfg        appConfig
-	cli        *client
-	mu         sync.RWMutex
-	ords       []*Order
-	printerIDs []string
-	live       map[string]string // job_id -> external_id, for live updates
+	log      *slog.Logger
+	cfg      appConfig
+	cli      *client
+	mu       sync.RWMutex
+	ords     []*Order
+	printers []PrinterSummary
+	live     map[string]string // job_id -> external_id, for live updates
 }
 
 func newApp(log *slog.Logger, cfg appConfig) (*app, error) {
@@ -66,16 +88,12 @@ func newApp(log *slog.Logger, cfg appConfig) (*app, error) {
 		live: map[string]string{},
 		ords: generateOrders(cfg.seed),
 	}
-	// Fail fast on a bad token: an integration should verify credentials at startup,
-	// not discover them on the first customer order.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := a.refreshPrinters(ctx); err != nil {
-		return nil, fmt.Errorf("cannot read the printer fleet with the supplied token: %w", err)
+		return nil, fmt.Errorf("cannot read printer fleet: %w", err)
 	}
-	if len(a.PrinterIDs()) == 0 {
-		log.Warn("no printers visible to this token — the console will idle until some appear")
-	}
+	a.reconcileTargetPrinters()
 	return a, nil
 }
 
@@ -86,20 +104,36 @@ func (a *app) Run(ctx context.Context) {
 	}
 }
 
+func (a *app) Printers() []PrinterSummary {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return append([]PrinterSummary(nil), a.printers...)
+}
+
 func (a *app) PrinterIDs() []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	ids := a.printerIDs
-	return append([]string(nil), ids...)
+	out := make([]string, 0, len(a.printers))
+	for _, p := range a.printers {
+		out = append(out, p.PrinterID)
+	}
+	return out
 }
 
 func (a *app) refreshPrinters(ctx context.Context) error {
 	var out struct {
 		Items []struct {
-			PrinterID string `json:"printer_id"`
-			Site      string `json:"site"`
-			Usable    bool   `json:"usable"`
-			Enabled   bool   `json:"enabled"`
+			PrinterID     string  `json:"printer_id"`
+			Name          string  `json:"name"`
+			Site          string  `json:"site"`
+			PaperSize     string  `json:"paper_size"`
+			MediaWidthMM  float64 `json:"media_width_mm"`
+			MediaHeightMM float64 `json:"media_height_mm"`
+			Remark        string  `json:"remark"`
+			CustomLabel   string  `json:"custom_label"`
+			Usable        bool    `json:"usable"`
+			Enabled       bool    `json:"enabled"`
+			QueueDepth    int     `json:"queue_depth"`
 		} `json:"items"`
 	}
 	if err := a.cli.do(ctx, "GET", "/api/v1/printers/status", a.cfg.token, nil, &out); err != nil {
@@ -107,28 +141,92 @@ func (a *app) refreshPrinters(ctx context.Context) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.printerIDs = a.printerIDs[:0]
+	a.printers = a.printers[:0]
 	for _, p := range out.Items {
-		if a.cfg.printerID != "" {
-			if p.PrinterID == a.cfg.printerID {
-				a.printerIDs = append(a.printerIDs, p.PrinterID)
-			}
+		if a.cfg.printerID != "" && p.PrinterID != a.cfg.printerID {
 			continue
 		}
 		if a.cfg.site != "" && p.Site != a.cfg.site {
 			continue
 		}
-		if p.Usable && p.Enabled {
-			a.printerIDs = append(a.printerIDs, p.PrinterID)
-		}
+		a.printers = append(a.printers, PrinterSummary{
+			PrinterID:     p.PrinterID,
+			Name:          p.Name,
+			Site:          p.Site,
+			PaperSize:     p.PaperSize,
+			MediaWidthMM:  p.MediaWidthMM,
+			MediaHeightMM: p.MediaHeightMM,
+			Remark:        p.Remark,
+			CustomLabel:   p.CustomLabel,
+			Usable:        p.Usable,
+			Enabled:       p.Enabled,
+			QueueDepth:    p.QueueDepth,
+		})
 	}
-	sort.Strings(a.printerIDs)
+	sort.Slice(a.printers, func(i, j int) bool {
+		return a.printers[i].PrinterID < a.printers[j].PrinterID
+	})
 	return nil
 }
 
-// Release dispatches every line of an order as one wave: concurrent, bounded, and each
-// line carrying its own stable external_id.
+// reconcileTargetPrinters automatically pairs each line's required roll size
+// with an available, usable printer loaded with that exact roll.
+func (a *app) reconcileTargetPrinters() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, o := range a.ords {
+		for i := range o.Lines {
+			line := &o.Lines[i]
+			if line.SelectedPrinter != "" {
+				line.TargetPrinter = line.SelectedPrinter
+				continue
+			}
+			// Find first usable printer with matching paper_size
+			var fallback string
+			var matched string
+			for _, p := range a.printers {
+				if !p.Usable || !p.Enabled {
+					continue
+				}
+				if fallback == "" {
+					fallback = p.PrinterID
+				}
+				if p.PaperSize != "" && p.PaperSize == line.PaperSize {
+					matched = p.PrinterID
+					break
+				}
+			}
+			if matched != "" {
+				line.TargetPrinter = matched
+			} else if fallback != "" {
+				line.TargetPrinter = fallback
+			}
+		}
+	}
+}
+
+// SetLinePrinter allows the operator to manually override the target printer for a line.
+func (a *app) SetLinePrinter(orderID string, lineNo int, printerID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, o := range a.ords {
+		if o.ID == orderID {
+			for i := range o.Lines {
+				if o.Lines[i].No == lineNo {
+					o.Lines[i].SelectedPrinter = printerID
+					o.Lines[i].TargetPrinter = printerID
+					return nil
+				}
+			}
+		}
+	}
+	return fmt.Errorf("order %s line %d not found", orderID, lineNo)
+}
+
+// Release dispatches every line of an order to its designated roll printer.
 func (a *app) Release(ctx context.Context, orderID string) ([]dispatchResult, error) {
+	a.reconcileTargetPrinters()
+
 	a.mu.RLock()
 	var ord *Order
 	for _, o := range a.ords {
@@ -137,22 +235,31 @@ func (a *app) Release(ctx context.Context, orderID string) ([]dispatchResult, er
 			break
 		}
 	}
-	ids := a.printerIDs
 	a.mu.RUnlock()
 	if ord == nil {
 		return nil, fmt.Errorf("unknown order %s", orderID)
 	}
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("no usable printer visible to this token")
-	}
 
 	results := make([]dispatchResult, len(ord.Lines))
-	sem := make(chan struct{}, 4) // a WMS releases waves, it does not stampede
+	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
+
 	for i := range ord.Lines {
 		line := &ord.Lines[i]
 		externalID := fmt.Sprintf("%s-line-%d", ord.ID, line.No)
-		printer := ids[i%len(ids)]
+		targetPrinter := line.TargetPrinter
+		if targetPrinter == "" {
+			targetPrinter = line.SelectedPrinter
+		}
+
+		if targetPrinter == "" {
+			results[i] = dispatchResult{
+				State: "rejected",
+				Error: fmt.Sprintf("no printer available with %s roll", line.PaperSize),
+			}
+			line.Status = results[i]
+			continue
+		}
 
 		wg.Add(1)
 		sem <- struct{}{}
@@ -161,14 +268,18 @@ func (a *app) Release(ctx context.Context, orderID string) ([]dispatchResult, er
 			defer func() { <-sem }()
 			res, err := a.cli.dispatch(ctx, map[string]any{
 				"printer_id":  printer,
-				"external_id": externalID, // stable business key: this is what makes retries safe
+				"external_id": externalID,
 				"biz_ref":     ord.ID,
 				"zpl":         line.ZPL,
 				"copies":      1,
-				"meta":        map[string]string{"module": "demo-web", "order": ord.ID},
+				"meta": map[string]string{
+					"module":     "demo-web",
+					"order":      ord.ID,
+					"paper_size": line.PaperSize,
+				},
 			})
 			if err != nil {
-				a.log.Warn("dispatch rejected", "order", ord.ID, "line", line.No, "err", err)
+				a.log.Warn("dispatch rejected", "order", ord.ID, "line", line.No, "printer", printer, "err", err)
 			}
 			line.Status = res
 			line.JobID = res.JobID
@@ -178,19 +289,17 @@ func (a *app) Release(ctx context.Context, orderID string) ([]dispatchResult, er
 				a.live[res.JobID] = externalID
 			}
 			a.mu.Unlock()
-		}(i, line, externalID, printer)
+		}(i, line, externalID, targetPrinter)
 	}
 	wg.Wait()
 	return results, nil
 }
 
-// Resend re-submits an order unchanged. Every line must come back `replayed: true` with no
-// new labels: that is the property this console exists to demonstrate.
+// Resend re-submits an order unchanged. Every line must come back `replayed: true`.
 func (a *app) Resend(ctx context.Context, orderID string) ([]dispatchResult, error) {
 	return a.Release(ctx, orderID)
 }
 
-// pollJob fetches the authoritative state; the console never infers it.
 func (a *app) pollJob(ctx context.Context, jobID string) (*job, error) {
 	if jobID == "" {
 		return nil, nil
@@ -202,7 +311,6 @@ func (a *app) pollJob(ctx context.Context, jobID string) (*job, error) {
 	return &j, nil
 }
 
-// watchJobs keeps line status current: SSE first, polling as the fallback.
 func (a *app) watchJobs(ctx context.Context) {
 	for ctx.Err() == nil {
 		if err := a.streamEvents(ctx); err != nil {
@@ -231,17 +339,13 @@ func (a *app) streamEvents(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("stream http %d", resp.StatusCode)
 	}
-	a.log.Info("live event stream connected")
 
 	dec := json.NewDecoder(resp.Body)
 	for {
 		var frame struct {
 			Event string `json:"event"`
 			Data  string `json:"data"`
-			ID    string `json:"id"`
-			Retry int    `json:"retry"`
 		}
-		// The service emits `event:`/`data:` frames; decode them generically.
 		if err := dec.Decode(&frame); err != nil {
 			if errors_IsEOF(err) {
 				return nil
@@ -278,10 +382,9 @@ func (a *app) applyState(jobID, state string, attempts int) {
 	}
 }
 
-// reconcile is the polling fallback: it reads the API rather than trusting the stream.
 func (a *app) reconcile(ctx context.Context) {
 	a.mu.RLock()
-	var pending [][2]any // order, line index
+	var pending [][2]any
 	for _, o := range a.ords {
 		for i := range o.Lines {
 			if o.Lines[i].JobID != "" && o.Lines[i].Status.State != "printed" {
@@ -332,15 +435,20 @@ func (a *app) setLine(ordID string, idx int, res dispatchResult) {
 	}
 }
 
-// preview renders a label through the service (admin token required). Optional: the
-// console works without it, and never asks for an admin token for dispatch.
-func (a *app) preview(ctx context.Context, zpl string) ([]byte, error) {
+func (a *app) preview(ctx context.Context, zpl string, widthMM, heightMM float64) ([]byte, error) {
 	if a.cfg.adminToken == "" {
 		return nil, errNoAdminToken
 	}
+	if widthMM <= 0 {
+		widthMM = 101.6
+	}
+	if heightMM <= 0 {
+		heightMM = 152.4
+	}
+	bodyJSON := fmt.Sprintf(`{"zpl":%s,"width_mm":%f,"height_mm":%f,"dpmm":8}`,
+		mustJSONString(zpl), widthMM, heightMM)
 	req, err := http.NewRequestWithContext(ctx, "POST", a.cfg.base+"/api/v1/admin/preview",
-		strings.NewReader(fmt.Sprintf(`{"zpl":%s,"width_mm":101.6,"height_mm":152.4,"dpmm":8}`,
-			mustJSONString(zpl))))
+		strings.NewReader(bodyJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -369,12 +477,15 @@ func errors_IsEOF(err error) bool { return err == io.EOF || err == context.Cance
 
 // ------------------------------------------------------------- demo data
 
-// generateOrders fabricates plausible warehouse work so the console has something to
-// release. Real integrations read this from their own order book instead.
+// generateOrders creates multi-line warehouse packages with distinct label sizes:
+//   - Line 1: Outbound Shipping & Pallet Label (4"x6") -> routed to 4x6 printer
+//   - Line 2: Carton / Case Box Label          (4"x2") -> routed to 4x2 printer
+//   - Line 3: Item SKU / Bin Pick Tag          (2"x1") -> routed to 2x1 printer
 func generateOrders(seed int64) []*Order {
 	rng := rand.New(rand.NewSource(seed))
-	customers := []string{"NORTHWIND", "HALLEIN GMBH", "MERCHANT AB", "POSTEN", "DPD GROUP"}
+	customers := []string{"NORTHWIND LOGISTICS", "HALLEIN GMBH", "MERCHANT GLOBAL", "POSTEN NORDIC", "DPD EXPRESS"}
 	orders := make([]*Order, 0, 8)
+
 	for i := 0; i < 8; i++ {
 		ord := &Order{
 			ID:       fmt.Sprintf("OK-%04d", 8800+i),
@@ -384,38 +495,95 @@ func generateOrders(seed int64) []*Order {
 			Bin:      fmt.Sprintf("A-%02d", 1+rng.Intn(20)),
 			Created:  time.Now().Add(-time.Duration(rng.Intn(240)) * time.Minute),
 		}
-		for n := 1; n <= 1+rng.Intn(2); n++ {
-			ord.Lines = append(ord.Lines, Line{
-				No:  n,
-				ZPL: palletLabel(ord, n),
-			})
-		}
+
+		// Line 1: 4"x6" Outbound Pallet / Shipping Label
+		ord.Lines = append(ord.Lines, Line{
+			No:        1,
+			LabelType: "shipping_4x6",
+			LabelName: "Outbound Pallet Label",
+			PaperSize: "4x6",
+			WidthMM:   101.6,
+			HeightMM:  152.4,
+			ZPL:       shippingLabel4x6(ord),
+		})
+
+		// Line 2: 4"x2" Carton / Case Label
+		ord.Lines = append(ord.Lines, Line{
+			No:        2,
+			LabelType: "carton_4x2",
+			LabelName: "Carton Box Label",
+			PaperSize: "4x2",
+			WidthMM:   101.6,
+			HeightMM:  50.8,
+			ZPL:       cartonLabel4x2(ord),
+		})
+
+		// Line 3: 2"x1" Item SKU Pick Tag
+		ord.Lines = append(ord.Lines, Line{
+			No:        3,
+			LabelType: "item_2x1",
+			LabelName: "Item SKU Tag",
+			PaperSize: "2x1",
+			WidthMM:   50.8,
+			HeightMM:  25.4,
+			ZPL:       itemLabel2x1(ord),
+		})
+
 		orders = append(orders, ord)
 	}
 	return orders
 }
 
-// palletLabel renders a realistic 4x6 outbound label — the kind of ZPL an ERP/WMS
-// already produces. The service never interprets this; it just prints it.
-func palletLabel(o *Order, lineNo int) string {
+// 4"x6" Outbound Shipping / Pallet Label
+func shippingLabel4x6(o *Order) string {
 	tracking := fmt.Sprintf("1Z%09d%06d", 680000000+o.Qty, o.ID2())
 	return strings.Join([]string{
-		"^XA^CI28^PW812",
+		"^XA^CI28^PW812^LL1218",
 		"^FO40,28^GB732,3,3^FS",
-		fmt.Sprintf("^FO40,42^A0N,44,44^FDOUTBOUND %s^FS", o.Customer),
-		fmt.Sprintf("^FO40,104^A0N,30,30^FDOrder %s-%d   Bin %s^FS", o.ID, lineNo, o.Bin),
-		fmt.Sprintf("^FO40,146^A0N,26,26^FDSKU %s x%d^FS", o.SKU, o.Qty),
-		fmt.Sprintf("^FO40,186^BCN,90,Y,N,N^FD%s^FS", tracking),
-		fmt.Sprintf("^FO560,186^BQN,2,6^FD%s^FS", o.SKU),
-		fmt.Sprintf("^FO40,300^GB300,80,3^FS"),
-		fmt.Sprintf("^FO56,330^A0N,30,30^FDHANDLE WITH CARE^FS"),
-		fmt.Sprintf("^FO560,300^GB180,80,3^FS"),
-		fmt.Sprintf("^FO575,340^A0N,30,30^FDCHECKED^FS"),
+		fmt.Sprintf("^FO40,44^A0N,44,44^FDOUTBOUND LOGISTICS: %s^FS", o.Customer),
+		fmt.Sprintf("^FO40,105^A0N,30,30^FDOrder %s (Pallet Tag)   Bin %s^FS", o.ID, o.Bin),
+		fmt.Sprintf("^FO40,150^A0N,26,26^FDSKU: %s   Total Qty: %d CTN^FS", o.SKU, o.Qty),
+		fmt.Sprintf("^FO40,195^BCN,100,Y,N,N^FD%s^FS", tracking),
+		fmt.Sprintf("^FO560,195^BQN,2,6^FD%s^FS", o.SKU),
+		"^FO40,330^GB732,3,3^FS",
+		fmt.Sprintf("^FO40,360^A0N,30,30^FDDESTINATION: BERLIN LOGISTICS HUB DOCK 4^FS"),
+		fmt.Sprintf("^FO40,410^A0N,24,24^FDTRACKING: %s^FS", tracking),
+		"^FO40,460^GB200,80,3^FS",
+		"^FO55,485^A0N,32,32^FDPALLET^FS",
+		"^FO560,460^GB180,80,3^FS",
+		"^FO575,485^A0N,32,32^FDCHECKED^FS",
 		"^XZ",
 	}, "")
 }
 
-// ID2 gives the order a stable numeric suffix for building tracking numbers.
+// 4"x2" Carton / Case Label
+func cartonLabel4x2(o *Order) string {
+	cartonCode := fmt.Sprintf("CAR-%s-01", o.ID)
+	return strings.Join([]string{
+		"^XA^CI28^PW812^LL406",
+		"^FO30,20^GB752,3,3^FS",
+		fmt.Sprintf("^FO30,35^A0N,32,32^FDCARTON BOX #1 - %s^FS", o.Customer),
+		fmt.Sprintf("^FO30,78^A0N,22,22^FDOrder: %s | SKU: %s x%d | Loc: %s^FS", o.ID, o.SKU, o.Qty, o.Bin),
+		fmt.Sprintf("^FO30,115^BCN,75,Y,N,N^FD%s^FS", cartonCode),
+		fmt.Sprintf("^FO600,115^BQN,2,4^FD%s^FS", cartonCode),
+		"^FO30,230^GB752,2,2^FS",
+		fmt.Sprintf("^FO30,245^A0N,20,20^FDVERIFIED BY PACKING STATION - DO NOT DROP^FS"),
+		"^XZ",
+	}, "")
+}
+
+// 2"x1" Item SKU Pick Tag
+func itemLabel2x1(o *Order) string {
+	return strings.Join([]string{
+		"^XA^CI28^PW406^LL203",
+		fmt.Sprintf("^FO20,15^A0N,24,24^FD%s^FS", o.SKU),
+		fmt.Sprintf("^FO20,44^A0N,18,18^FDBin: %s | Qty: %d EA^FS", o.Bin, o.Qty),
+		fmt.Sprintf("^FO20,72^BCN,48,Y,N,N^FD%s^FS", o.SKU),
+		fmt.Sprintf("^FO310,72^BQN,2,3^FD%s^FS", o.SKU),
+		"^XZ",
+	}, "")
+}
+
 func (o *Order) ID2() int {
 	n := 0
 	for _, c := range strings.TrimPrefix(o.ID, "OK-") {
@@ -424,7 +592,6 @@ func (o *Order) ID2() int {
 	return n
 }
 
-// simulateLoop generates background traffic so queueing and backpressure can be seen.
 func (a *app) simulateLoop(ctx context.Context) {
 	if a.cfg.simulate <= 0 {
 		return
@@ -443,7 +610,11 @@ func (a *app) simulateLoop(ctx context.Context) {
 				ID: fmt.Sprintf("SIM-%d", time.Now().Unix()%100000), Customer: "SIMULATED",
 				SKU: fmt.Sprintf("SKU-%05d", rand.Intn(99999)), Qty: 1 + rand.Intn(3),
 				Bin: fmt.Sprintf("B-%02d", 1+rand.Intn(20)), Created: time.Now(),
-				Lines: []Line{{No: 1, ZPL: "^XA^CI28^FO40,40^A0N,40,40^FDSIMULATED JOB^FS^FO40,110^BCN,90,Y,N,N^FD" + fmt.Sprint(time.Now().Unix()) + "^FS^XZ"}},
+				Lines: []Line{{
+					No: 1, LabelType: "shipping_4x6", LabelName: "Simulated Pallet",
+					PaperSize: "4x6", WidthMM: 101.6, HeightMM: 152.4,
+					ZPL: "^XA^CI28^FO40,40^A0N,40,40^FDSIMULATED 4x6^FS^FO40,110^BCN,90,Y,N,N^FD" + fmt.Sprint(time.Now().Unix()) + "^FS^XZ",
+				}},
 			}
 			a.mu.Lock()
 			a.ords = append([]*Order{ord}, a.ords...)

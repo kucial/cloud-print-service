@@ -68,8 +68,11 @@ func (s *Server) adoptCandidate(w http.ResponseWriter, r *http.Request) {
 		Model     string `json:"model"`
 		Host      string `json:"host"`
 		Port        int    `json:"port"`
-		Remark      string `json:"remark"`
-		CustomLabel string `json:"custom_label"`
+		Remark        string  `json:"remark"`
+		CustomLabel   string  `json:"custom_label"`
+		PaperSize     string  `json:"paper_size"`
+		MediaWidthMM  float64 `json:"media_width_mm"`
+		MediaHeightMM float64 `json:"media_height_mm"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
@@ -84,6 +87,7 @@ func (s *Server) adoptCandidate(w http.ResponseWriter, r *http.Request) {
 		PrinterID: body.PrinterID, Site: body.Site, Name: body.Name, Model: body.Model,
 		Driver: "zebra9100", Port: 9100, Enabled: true,
 		Host: body.Host, Remark: body.Remark, CustomLabel: body.CustomLabel,
+		PaperSize: body.PaperSize, MediaWidthMM: body.MediaWidthMM, MediaHeightMM: body.MediaHeightMM,
 	}
 	if err := s.mgr.Registry().AdoptCandidate(r.PathValue("device_key"), fleet.SourceDiscovery, "", p); err != nil {
 		writeErr(w, http.StatusNotFound, "candidate_not_found", err.Error())

@@ -201,11 +201,12 @@ func (m *Manager) Len() int {
 
 // Views returns live views of all printers, optionally filtered.
 type Filter struct {
-	Site    string
-	Source  string // only printers whose winning claim comes from this source
-	Model   string
-	Enabled *bool
-	Usable  *bool
+	Site      string
+	Source    string // only printers whose winning claim comes from this source
+	Model     string
+	PaperSize string // e.g. "4x6", "4x2", "2x1", "100x150"
+	Enabled   *bool
+	Usable    *bool
 }
 
 func (m *Manager) List(f Filter) []domain.Printer {
@@ -222,6 +223,9 @@ func (m *Manager) List(f Filter) []domain.Printer {
 			continue
 		}
 		if f.Model != "" && p.Model != f.Model {
+			continue
+		}
+		if f.PaperSize != "" && p.PaperSize != f.PaperSize {
 			continue
 		}
 		if f.Enabled != nil && p.Enabled != *f.Enabled {

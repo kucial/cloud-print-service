@@ -49,37 +49,57 @@
       "driver": "zebra9100",
       "host": "10.20.1.53",
       "port": 9100,
-      "enabled": true
+      "enabled": true,
+      "paper_size": "4x6",
+      "media_width_mm": 101.6,
+      "media_height_mm": 152.4,
+      "custom_label": "Pack-03",
+      "remark": "Near dock 3, shipping roll loaded"
     },
     {
       "printer_id": "sim-pack-01",
-      "name": "Virtual printer 1 (go run ./cmd/vprint -count 1)",
+      "name": "Virtual printer 1 (Shipping 4x6)",
       "site": "sim",
       "model": "ZT411",
       "driver": "zebra9100",
       "host": "127.0.0.1",
       "port": 19100,
-      "enabled": true
+      "enabled": true,
+      "paper_size": "4x6",
+      "media_width_mm": 101.6,
+      "media_height_mm": 152.4,
+      "custom_label": "Outbound-4x6",
+      "remark": "Standard 4x6 pallet & shipping label roll"
     },
     {
       "printer_id": "sim-pack-02",
-      "name": "Virtual printer 2 (go run ./cmd/vprint -count 1)",
+      "name": "Virtual printer 2 (Carton 4x2)",
       "site": "sim",
       "model": "ZT411",
       "driver": "zebra9100",
       "host": "127.0.0.1",
       "port": 19101,
-      "enabled": true
+      "enabled": true,
+      "paper_size": "4x2",
+      "media_width_mm": 101.6,
+      "media_height_mm": 50.8,
+      "custom_label": "Carton-4x2",
+      "remark": "4x2 carton & bin label roll"
     },
     {
       "printer_id": "dev-mock-01",
-      "name": "Local dev printer (no sockets at all)",
+      "name": "Local dev printer (Item 2x1)",
       "site": "dev",
       "model": "mock",
       "driver": "mock",
       "host": "127.0.0.1",
       "port": 9100,
-      "enabled": true
+      "enabled": true,
+      "paper_size": "2x1",
+      "media_width_mm": 50.8,
+      "media_height_mm": 25.4,
+      "custom_label": "ItemTag-2x1",
+      "remark": "2x1 item SKU & barcode roll"
     },
     {
       "printer_id": "dev-mock-paperout",
@@ -90,6 +110,10 @@
       "host": "127.0.0.1",
       "port": 9100,
       "enabled": true,
+      "paper_size": "4x6",
+      "media_width_mm": 101.6,
+      "media_height_mm": 152.4,
+      "custom_label": "PaperOut-Sim",
       "mock": {
         "state": "media_out"
       }

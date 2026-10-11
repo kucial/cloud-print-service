@@ -74,6 +74,11 @@ type Printer struct {
 	Remark      string `json:"remark,omitempty"`
 	CustomLabel string `json:"custom_label,omitempty"`
 
+	// Installed media/roll specifications
+	PaperSize     string  `json:"paper_size,omitempty"`      // standard size tag, e.g. "4x6", "4x2", "2x1"
+	MediaWidthMM  float64 `json:"media_width_mm,omitempty"`  // roll width in mm (e.g. 101.6)
+	MediaHeightMM float64 `json:"media_height_mm,omitempty"` // label length/pitch in mm (e.g. 152.4)
+
 	// Live fields, filled by the printer manager.
 	Usable     bool   `json:"usable"`
 	QueueDepth int    `json:"queue_depth"`
