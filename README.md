@@ -243,6 +243,23 @@ presented to the server as a loopback TCP endpoint**, so `driver: zebra9100` is 
 and every dispatch guarantee (per-printer FIFO, no retry after the first byte,
 `sent_unknown` for ambiguous outcomes) applies to USB printers for free.
 
+Verified end to end with no hardware — a virtual printer behind the agent:
+
+```bash
+cpsctl agent enroll --id pc7-pack01 --site wh1      # one-time token
+cps-agent -enroll <token> -site wh1                # discovers, serves, registers, heartbeats
+cpsctl printers                                    # the agent's printers are in the fleet
+```
+
+* dispatch through the agent → 1 attempt, `printed`, one label on the device
+* printer offline → `sent_unknown`, never a false success
+* recovery → `printed`
+* agent revoked → its printers leave the fleet; config printers untouched
+* agent dies → its printers stay but go **unusable** as their status goes stale
+
+Agent credentials are a separate token *kind*: they may register and report status, never
+dispatch a job or read business data.
+
 ## Not done yet
 
 - Postgres store (schema in `db/schema.sql`; the binary ships the memory store, so issued

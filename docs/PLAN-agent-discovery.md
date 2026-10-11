@@ -446,10 +446,10 @@ boundary is wrong — stop and redraw it.
 |---|---|---|
 | **M0 · Observe** | sniffing script + `vprint` mDNS advertisement | we know what our real printers advertise (service type, TXT records, port) and have the finding written down |
 | **M1 · demo-web** ✅ | `demo-web` binary + annotated reference README | **done** — `cmd/demo-web`, retry rules pinned by tests, verified live: 3 full wave resends → 0 extra labels |
-| **M2 · Reorg R1–R6** | package moves | every existing test passes with no behavioural change |
-| **M3 · Registry** | `fleet.Registry` + sources + config source (R7) | config-only behaviour is byte-identical; registry has unit tests for precedence |
+| **M2 · Reorg R1–R6** ✅ | package moves | **done** — `domain`, `driver`, `fleet`, `job`, `store`(pending), `httpapi`, `virtual`, `observ`; every existing test passes with no behavioural change, one commit per step |
+| **M3 · Registry** ✅ | `fleet.Registry` + sources + config source (R7) | **done** — `internal/fleet/registry.go`: precedence, provenance, candidate lifecycle; config behaviour unchanged, all pre-existing tests pass |
 | **M4 · Discovery** | mdns probe + candidates + adopt/dismiss + panel + CLI | a real printer appears as a candidate, is adopted, then prints |
-| **M5 · Agent v1** | enroll, enumerate, forward, register, heartbeat, panel/CLI | `cps-agent` in front of a `vprint` on the same laptop: server dispatches, status flows, unplug is detected |
+| **M5 · Agent v1** ✅ | enroll, enumerate, forward, register, heartbeat, panel/CLI | **done (tier 1 backend)** — `cmd/cps-agent` verified against `vprint`: dispatch → agent → printer prints in 1 attempt; offline → `sent_unknown`; recovery → printed; revocation removes its printers; a dead agent's printers go unusable rather than disappearing |
 | **M6 · Real USB (Windows)** | tier 1 probe + tier 2 WinUSB backend + service install + firewall | an actual USB printer with **no driver share** prints through the agent on Windows; unplug is detected; the agent survives a service restart |
 | **M7 · Harden** | agent fleet management, token rotation, metrics, requeue on agent loss, runbook | agent restart mid-job leaves a truthful job state |
 
