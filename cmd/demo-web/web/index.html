@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WMS packing console — demo module</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">▣ WMS packing console <span class="muted">reference integration</span></div>
+  <div class="spacer"></div>
+  <span class="pill" id="cfg">connecting…</span>
+  <span class="pill" id="live">offline</span>
+</header>
+<main>
+  <section class="orders">
+    <div class="bar">
+      <h2>Outbound orders</h2>
+      <button class="btn" id="reload">Refresh</button>
+      <label class="muted"><input type="checkbox" id="autorefresh"> auto</label>
+    </div>
+    <div id="orders"></div>
+  </section>
+  <aside>
+    <div class="card">
+      <h3>What this demonstrates</h3>
+      <ul class="muted small">
+        <li><b>Stable external_id</b> per order line — retries cannot duplicate labels.</li>
+        <li>Retry <b>only</b> on 503 <code>queue_full</code> and transport errors; never on 4xx.</li>
+        <li>A job reported <code>sent_unknown</code> is <b>never</b> retried automatically.</li>
+        <li>Status comes from the API (SSE, polling as fallback), never from the 202.</li>
+        <li>Dispatch uses a <b>client</b> token; the admin token is optional and only previews.</li>
+        <li>ZPL payloads are never logged — only ids and byte counts.</li>
+      </ul>
+    </div>
+    <div class="card" id="preview-card" hidden>
+      <h3>Label preview</h3>
+      <div id="preview-slot" class="muted small">—</div>
+    </div>
+    <div class="card">
+      <h3>Event stream</h3>
+      <pre id="events" class="mono small muted">—</pre>
+    </div>
+  </aside>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# local config (contains credentials) — config.example.json is the committed template
+config.json
+config.local.json
+
+# build output
+bin/
+dist/
+cps
+cpsctl
+cps-agent
+vprint
+zplpng
+demo-web
+
+# test/tool output
+*.log
+coverage.out
+*.test
+/labels/
+render.log
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

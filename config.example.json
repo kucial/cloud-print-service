@@ -1,0 +1,98 @@
+{
+  "addr": ":8080",
+  "store_driver": "memory",
+  "status_poll_interval": "15s",
+  "status_stale_after": "45s",
+  "printer_dial_timeout": "3s",
+  "printer_write_timeout": "5s",
+  "printer_read_timeout": "3s",
+  "queue_size_per_printer": 50,
+  "max_attempts": 3,
+  "confirm_timeout": "10s",
+  "job_queue_ttl": "5m",
+  "base_backoff": "500ms",
+  "max_payload_bytes": 1048576,
+  "max_batch_size": 200,
+  "rate_limit_rps": 30,
+  "rate_limit_burst": 100,
+  "token_default_ttl": "90d",
+  "ui": {
+    "enabled": true,
+    "path": "/ui/",
+    "title": "Cloud Print Service"
+  },
+  "render": {
+    "backend": "auto",
+    "labelize_url": ""
+  },
+  "_note": "Break-glass bootstrap keys only. Business systems get tokens issued at runtime: cpsctl token issue --client-id wms --ttl 90d",
+  "api_keys": {
+    "dev-key-erp-0123456789abcdef": {
+      "client_id": "erp",
+      "role": "client"
+    },
+    "dev-key-wms-0123456789abcdef": {
+      "client_id": "wms",
+      "role": "client"
+    },
+    "dev-key-ops-0123456789abcdef": {
+      "client_id": "ops",
+      "role": "admin"
+    }
+  },
+  "printers": [
+    {
+      "printer_id": "wh1-pack-03",
+      "name": "Packing station 3",
+      "site": "wh1",
+      "model": "ZT411",
+      "driver": "zebra9100",
+      "host": "10.20.1.53",
+      "port": 9100,
+      "enabled": true
+    },
+    {
+      "printer_id": "sim-pack-01",
+      "name": "Virtual printer 1 (go run ./cmd/vprint -count 1)",
+      "site": "sim",
+      "model": "ZT411",
+      "driver": "zebra9100",
+      "host": "127.0.0.1",
+      "port": 19100,
+      "enabled": true
+    },
+    {
+      "printer_id": "sim-pack-02",
+      "name": "Virtual printer 2 (go run ./cmd/vprint -count 1)",
+      "site": "sim",
+      "model": "ZT411",
+      "driver": "zebra9100",
+      "host": "127.0.0.1",
+      "port": 19101,
+      "enabled": true
+    },
+    {
+      "printer_id": "dev-mock-01",
+      "name": "Local dev printer (no sockets at all)",
+      "site": "dev",
+      "model": "mock",
+      "driver": "mock",
+      "host": "127.0.0.1",
+      "port": 9100,
+      "enabled": true
+    },
+    {
+      "printer_id": "dev-mock-paperout",
+      "name": "Dev printer simulating paper-out",
+      "site": "dev",
+      "model": "mock",
+      "driver": "mock",
+      "host": "127.0.0.1",
+      "port": 9100,
+      "enabled": true,
+      "mock": {
+        "state": "media_out"
+      }
+    }
+  ]
+}

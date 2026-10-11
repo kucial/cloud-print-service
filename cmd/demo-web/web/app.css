@@ -1,0 +1,33 @@
+/* WMS packing console — the demo module's UI. Deliberately plain: this page is a
+   reference for integrators, not a product. */
+:root{--bg:#0d1117;--panel:#161b22;--line:#26303d;--text:#e6edf3;--muted:#8b98a8;
+      --ok:#3fb950;--warn:#d29922;--bad:#f85149;--accent:#58a6ff;--mono:ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:650}.spacer{flex:1}.muted{color:var(--muted)}
+.pill{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:11.5px;font-family:var(--mono);color:var(--muted)}
+.pill.ok{color:var(--ok);border-color:#1f6f2f}.pill.bad{color:var(--bad);border-color:#7a2b28}
+main{display:grid;grid-template-columns:1fr 340px;gap:18px;padding:18px;max-width:1500px;margin:0 auto}
+@media(max-width:960px){main{grid-template-columns:1fr}}
+h2{font-size:15px;margin:0}h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 8px}
+.bar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.small{font-size:12px}.mono{font-family:var(--mono)}
+ul{margin:0;padding-left:18px}li{margin:3px 0}
+.btn{background:#21262d;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px;cursor:pointer;font:inherit}
+.btn:hover{border-color:var(--accent)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#04121e;font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.order{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px;margin-bottom:10px}
+.order .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.order .id{font-family:var(--mono);font-weight:600}
+.order .meta{color:var(--muted);font-size:12px}
+.lines{margin-top:10px;border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.line{display:flex;align-items:center;gap:10px;font-size:12.5px}
+.line .no{font-family:var(--mono);color:var(--muted);width:34px}
+.state{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 7px}
+.s-printed{color:var(--ok);border-color:#1f6f2f}.s-queued,.s-sending{color:var(--accent);border-color:#1f4e79}
+.s-sent_unknown,.s-failed,.s-rejected,.s-error{color:var(--bad);border-color:#7a2b28}
+.tag{font-family:var(--mono);font-size:11px;color:var(--muted)}
+pre{margin:0;max-height:220px;overflow:auto;white-space:pre-wrap}
+img.preview{background:#fff;border-radius:8px;padding:6px;width:100%}
