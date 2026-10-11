@@ -17,12 +17,12 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
-	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/httpapi"
 	"github.com/kongkx/cloud-print-service/internal/job"
 	"github.com/kongkx/cloud-print-service/internal/metrics"
 	"github.com/kongkx/cloud-print-service/internal/token"
+	"github.com/kongkx/cloud-print-service/internal/virtual"
 )
 
 const (
@@ -33,7 +33,7 @@ const (
 type harness struct {
 	t   *testing.T
 	srv *httptest.Server
-	vps map[string]*fakeprinter.Printer
+	vps map[string]*virtual.Printer
 	job *job.Service
 	tok *token.Service
 	bus *bus.Bus
@@ -45,12 +45,12 @@ type harness struct {
 func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	f := &harness{t: t, vps: map[string]*fakeprinter.Printer{}, met: metrics.New()}
+	f := &harness{t: t, vps: map[string]*virtual.Printer{}, met: metrics.New()}
 	f.bus = bus.New()
 
 	for i := range specs {
 		spec := &specs[i]
-		vp := fakeprinter.New(spec.PrinterID, fakeprinter.Opts{
+		vp := virtual.New(spec.PrinterID, virtual.Opts{
 			Addr: "127.0.0.1:0", Model: spec.Model, Serial: "SN-" + spec.PrinterID,
 			PrintDuration: 30 * time.Millisecond,
 		})
@@ -58,7 +58,7 @@ func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 			t.Fatalf("virtual printer %s: %v", spec.PrinterID, err)
 		}
 		t.Cleanup(func() { _ = vp.Close() })
-		if err := vp.EnableRendering(context.Background(), fakeprinter.RenderOpts{
+		if err := vp.EnableRendering(context.Background(), virtual.RenderOpts{
 			Backend: "zebrash",
 		}); err != nil {
 			t.Fatalf("enable rendering: %v", err)
@@ -164,7 +164,7 @@ func (f *harness) waitJob(key, jobID string, want ...domain.JobState) map[string
 	return nil
 }
 
-func (f *harness) printer(id string) *fakeprinter.Printer { return f.vps[id] }
+func (f *harness) printer(id string) *virtual.Printer { return f.vps[id] }
 
 // ---------------------------------------------------------------- the flow
 
@@ -286,7 +286,7 @@ func TestBusinessSystemFlow(t *testing.T) {
 	}
 
 	// --- 6. consumable runs out ---------------------------------------------------
-	f.printer("wh1-pack-03").Control(fakeprinter.Control{State: "media_out"})
+	f.printer("wh1-pack-03").Control(virtual.Control{State: "media_out"})
 	waitPrinterState(t, f, wmsKey, "wh1-pack-03", "media_out")
 	_, out = f.do("GET", "/api/v1/printers?usable=false", wmsKey, nil)
 	bad := out["items"].([]any)
@@ -303,7 +303,7 @@ func TestBusinessSystemFlow(t *testing.T) {
 
 	// --- 7. printer goes offline, then recovers -----------------------------------
 	before := f.printer("wh1-pack-03").LabelCount()
-	f.printer("wh1-pack-03").Control(fakeprinter.Control{Offline: boolp(true)})
+	f.printer("wh1-pack-03").Control(virtual.Control{Offline: boolp(true)})
 	waitPrinterState(t, f, wmsKey, "wh1-pack-03", "offline")
 
 	code, out = f.do("POST", "/api/v1/jobs", wmsKey, map[string]any{
@@ -318,8 +318,8 @@ func TestBusinessSystemFlow(t *testing.T) {
 		t.Fatal("a job dispatched to an offline printer must never be reported as printed")
 	}
 
-	f.printer("wh1-pack-03").Control(fakeprinter.Control{Offline: boolp(false)})
-	f.printer("wh1-pack-03").Control(fakeprinter.Control{State: "idle"})
+	f.printer("wh1-pack-03").Control(virtual.Control{Offline: boolp(false)})
+	f.printer("wh1-pack-03").Control(virtual.Control{State: "idle"})
 	waitPrinterState(t, f, wmsKey, "wh1-pack-03", "idle")
 
 	// Back in business: a new label prints on the recovered driver.
@@ -369,7 +369,7 @@ func (f *harness) rotate(tokenID string) (string, map[string]any) {
 	return out["token"].(string), out
 }
 
-func waitPreview(t *testing.T, vp *fakeprinter.Printer, index int) {
+func waitPreview(t *testing.T, vp *virtual.Printer, index int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -408,7 +408,7 @@ func TestTwoPrintersAreIndependent(t *testing.T) {
 	key, _ := f.issueToken("erp", "client", "1h")
 
 	// The stuck printer never leaves the printing state: no job on it ever confirms.
-	f.printer("stuck").Control(fakeprinter.Control{State: "always_printing"})
+	f.printer("stuck").Control(virtual.Control{State: "always_printing"})
 
 	_, out := f.do("POST", "/api/v1/jobs", key, map[string]any{
 		"printer_id": "stuck", "external_id": "stuck-1", "zpl": labelBody,

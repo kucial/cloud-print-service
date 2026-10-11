@@ -1,4 +1,4 @@
-package fakeprinter
+package virtual
 
 import (
 	"context"

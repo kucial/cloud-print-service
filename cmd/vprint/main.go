@@ -30,8 +30,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
 	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kongkx/cloud-print-service/internal/virtual"
 )
 
 func main() {
@@ -72,7 +72,7 @@ func main() {
 		}
 	}
 
-	var printers []*fakeprinter.Printer
+	var printers []*virtual.Printer
 	for i := 0; i < *count; i++ {
 		pid := *id
 		port := *basePort + i
@@ -93,7 +93,7 @@ func main() {
 			sn = "VPRT" + strings.ToUpper(strings.ReplaceAll(pid, "-", ""))
 		}
 
-		p := fakeprinter.New(pid, fakeprinter.Opts{
+		p := virtual.New(pid, virtual.Opts{
 			Addr: addr, Model: *model, Serial: sn, PrintDuration: *dur,
 		})
 		if err := p.Start(ctx); err != nil {
@@ -101,14 +101,14 @@ func main() {
 			os.Exit(1)
 		}
 		if *state != "" && *state != "idle" {
-			p.Control(fakeprinter.Control{State: *state})
+			p.Control(virtual.Control{State: *state})
 		}
 		if *renderOn {
 			dir := *renderDir
 			if dir != "" && *count > 1 {
 				dir = dir + "/" + pid
 			}
-			if err := p.EnableRendering(ctx, fakeprinter.RenderOpts{
+			if err := p.EnableRendering(ctx, virtual.RenderOpts{
 				Backend: *backend, LabelizeURL: *labelizeURL, Dir: dir,
 				Options: render.Options{
 					WidthMM: *renderW, HeightMM: *renderH, DPMM: *renderDPMM,
@@ -122,7 +122,7 @@ func main() {
 		printers = append(printers, p)
 
 		_, pPort := p.Addr()
-		gallery := fakeprinter.NewGallery(p, pid)
+		gallery := virtual.NewGallery(p, pid)
 		srv := &http.Server{Addr: aAddr, Handler: gallery, ReadHeaderTimeout: 5 * time.Second}
 		go func() {
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

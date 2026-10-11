@@ -6,7 +6,7 @@
 //
 // It deliberately misbehaves on command: going offline, staying "printing", running
 // out of media, stalling status replies, or dying mid-write.
-package fakeprinter
+package virtual
 
 import (
 	"context"

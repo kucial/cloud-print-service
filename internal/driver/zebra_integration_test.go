@@ -9,18 +9,18 @@ import (
 
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/driver"
-	"github.com/kongkx/cloud-print-service/internal/fakeprinter"
+	"github.com/kongkx/cloud-print-service/internal/virtual"
 )
 
 // These tests drive the real zebra9100 driver against a virtual printer over TCP,
 // i.e. the same sockets, framing and status handshake used with hardware.
 
-func startVirtual(t *testing.T, o fakeprinter.Opts) *fakeprinter.Printer {
+func startVirtual(t *testing.T, o virtual.Opts) *virtual.Printer {
 	t.Helper()
 	if o.Addr == "" {
 		o.Addr = "127.0.0.1:0"
 	}
-	p := fakeprinter.New(t.Name(), o)
+	p := virtual.New(t.Name(), o)
 	if err := p.Start(context.Background()); err != nil {
 		t.Fatalf("start virtual printer: %v", err)
 	}
@@ -28,7 +28,7 @@ func startVirtual(t *testing.T, o fakeprinter.Opts) *fakeprinter.Printer {
 	return p
 }
 
-func driverFor(t *testing.T, vp *fakeprinter.Printer) *driver.Zebra {
+func driverFor(t *testing.T, vp *virtual.Printer) *driver.Zebra {
 	t.Helper()
 	host, port := vp.Addr()
 	n, err := strconv.Atoi(port)
@@ -44,7 +44,7 @@ func driverFor(t *testing.T, vp *fakeprinter.Printer) *driver.Zebra {
 }
 
 func TestZebraSendReachesPrinterIntact(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{PrintDuration: 50 * time.Millisecond})
+	vp := startVirtual(t, virtual.Opts{PrintDuration: 50 * time.Millisecond})
 	z := driverFor(t, vp)
 	ctx := context.Background()
 
@@ -70,7 +70,7 @@ func TestZebraSendReachesPrinterIntact(t *testing.T) {
 }
 
 func TestZebraStatusTracksPrintingState(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{PrintDuration: 600 * time.Millisecond})
+	vp := startVirtual(t, virtual.Opts{PrintDuration: 600 * time.Millisecond})
 	z := driverFor(t, vp)
 	ctx := context.Background()
 
@@ -106,22 +106,22 @@ func TestZebraStatusTracksPrintingState(t *testing.T) {
 }
 
 func TestZebraStatusDecodesConsumables(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{})
+	vp := startVirtual(t, virtual.Opts{})
 	z := driverFor(t, vp)
 	ctx := context.Background()
 
 	cases := []struct {
-		control fakeprinter.Control
+		control virtual.Control
 		want    domain.PrinterState
 	}{
-		{fakeprinter.Control{State: "media_out"}, domain.StateMediaOut},
-		{fakeprinter.Control{State: "media_low"}, domain.StateMediaLow},
-		{fakeprinter.Control{State: "head_error"}, domain.StateHeadError},
-		{fakeprinter.Control{State: "error"}, domain.StateError},
-		{fakeprinter.Control{State: "idle"}, domain.StateIdle},
+		{virtual.Control{State: "media_out"}, domain.StateMediaOut},
+		{virtual.Control{State: "media_low"}, domain.StateMediaLow},
+		{virtual.Control{State: "head_error"}, domain.StateHeadError},
+		{virtual.Control{State: "error"}, domain.StateError},
+		{virtual.Control{State: "idle"}, domain.StateIdle},
 	}
 	for _, tc := range cases {
-		vp.Control(fakeprinter.Control{State: "idle"}) // faults accumulate; reset first
+		vp.Control(virtual.Control{State: "idle"}) // faults accumulate; reset first
 		vp.Control(tc.control)
 		st, err := z.Status(ctx)
 		if err != nil {
@@ -137,7 +137,7 @@ func TestZebraStatusDecodesConsumables(t *testing.T) {
 }
 
 func TestZebraIdentify(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{Model: "ZT411", Serial: "SN-ABC-123"})
+	vp := startVirtual(t, virtual.Opts{Model: "ZT411", Serial: "SN-ABC-123"})
 	z := driverFor(t, vp)
 	info, err := z.Identify(context.Background())
 	if err != nil {
@@ -152,7 +152,7 @@ func TestZebraIdentify(t *testing.T) {
 }
 
 func TestZebraCancelClearsPrinting(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{PrintDuration: 5 * time.Second})
+	vp := startVirtual(t, virtual.Opts{PrintDuration: 5 * time.Second})
 	z := driverFor(t, vp)
 	ctx := context.Background()
 
@@ -174,14 +174,14 @@ func TestZebraCancelClearsPrinting(t *testing.T) {
 }
 
 func TestZebraOfflineIsReportedNotGuessed(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{})
+	vp := startVirtual(t, virtual.Opts{})
 	z := driverFor(t, vp)
 	ctx := context.Background()
 
 	if _, err := z.Status(ctx); err != nil {
 		t.Fatalf("printer should be reachable: %v", err)
 	}
-	vp.Control(fakeprinter.Control{Offline: boolp(true)})
+	vp.Control(virtual.Control{Offline: boolp(true)})
 
 	st, err := z.Status(ctx)
 	if err == nil {
@@ -196,17 +196,17 @@ func TestZebraOfflineIsReportedNotGuessed(t *testing.T) {
 		t.Fatalf("offline send must report 0 bytes so the job stays retryable, got %d", n)
 	}
 
-	vp.Control(fakeprinter.Control{Offline: boolp(false)})
+	vp.Control(virtual.Control{Offline: boolp(false)})
 	if _, err := z.Status(ctx); err != nil {
 		t.Fatalf("printer should recover after coming back online: %v", err)
 	}
 }
 
 func TestZebraPartialWriteIsNotSilentlyRetried(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{})
+	vp := startVirtual(t, virtual.Opts{})
 	z := driverFor(t, vp)
 	ctx := context.Background()
-	vp.Control(fakeprinter.Control{CloseOnPrint: boolp(true)})
+	vp.Control(virtual.Control{CloseOnPrint: boolp(true)})
 
 	// A large payload plus a printer that resets mid-write must report an error. Whether
 	// some bytes landed (n>0, "do not retry") or none did (n=0, "safe to retry") depends on
@@ -235,7 +235,7 @@ func TestZebraPartialWriteIsNotSilentlyRetried(t *testing.T) {
 }
 
 func TestZebraSurvivesPrinterReboot(t *testing.T) {
-	vp := startVirtual(t, fakeprinter.Opts{})
+	vp := startVirtual(t, virtual.Opts{})
 	z := driverFor(t, vp)
 	ctx := context.Background()
 
