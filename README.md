@@ -4,6 +4,7 @@ A small service that sits between ERP/WMS and warehouse label printers.
 **Business systems own the label content (ZPL); CPS owns fleet visibility and safe dispatch.**
 
 > Design, state machine, API contract and failure policy: **[docs/DESIGN.md](docs/DESIGN.md)**
+> What is built, verified and still missing: **[docs/STATUS.md](docs/STATUS.md)**
 
 ```
  ERP / WMS ──token──▶ ┌───────────────────────────────┐ ──ZPL :9100──▶ label printers
