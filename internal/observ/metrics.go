@@ -1,7 +1,7 @@
 // Package metrics is a dependency-free Prometheus text-format registry.
 //
 // Deliberately tiny: the MVP needs a handful of counters/gauges, not a client library.
-package metrics
+package observ
 
 import "sync"
 
@@ -10,7 +10,8 @@ type Registry struct {
 	vals map[string]float64
 }
 
-func New() *Registry { return &Registry{vals: map[string]float64{}} }
+// NewMetrics returns an empty registry.
+func NewMetrics() *Registry { return &Registry{vals: map[string]float64{}} }
 
 // Inc adds 1 to a counter series. labels are alternating key/value pairs.
 func (r *Registry) Inc(name string, labels ...string) { r.Add(name, 1, labels...) }

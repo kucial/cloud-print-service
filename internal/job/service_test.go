@@ -9,16 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
-	"github.com/kongkx/cloud-print-service/internal/metrics"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 )
 
 type harness struct {
 	svc   *Service
 	mgr   *fleet.Manager
-	bus   *bus.Bus
+	bus   *observ.Bus
 	st    *MemoryStore
 	specs []domain.Printer
 }
@@ -26,7 +25,7 @@ type harness struct {
 func newHarness(t *testing.T, specs ...domain.Printer) *harness {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := bus.New()
+	b := observ.NewBus()
 	mgr, err := fleet.NewManager(specs, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
 	if err != nil {
 		t.Fatalf("manager: %v", err)
@@ -36,7 +35,7 @@ func newHarness(t *testing.T, specs ...domain.Printer) *harness {
 	svc := NewService(Config{
 		QueueSize: 5, MaxAttempts: 3, ConfirmTimeout: 300 * time.Millisecond,
 		BaseBackoff: time.Millisecond, QueueTTL: time.Minute,
-	}, st, mgr, b, log, metrics.New())
+	}, st, mgr, b, log, observ.NewMetrics())
 	t.Cleanup(svc.Stop)
 	ctx := context.Background()
 	if err := svc.Start(ctx); err != nil {
@@ -399,7 +398,7 @@ func TestJobStateTerminal(t *testing.T) {
 func TestRejectWhenNotUsable(t *testing.T) {
 	specs := []domain.Printer{mockPrinter("out", &domain.MockCfg{State: "media_out"})}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := bus.New()
+	b := observ.NewBus()
 	mgr, err := fleet.NewManager(specs, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
 	if err != nil {
 		t.Fatal(err)
@@ -408,7 +407,7 @@ func TestRejectWhenNotUsable(t *testing.T) {
 	mgr.ProbeAll(context.Background())
 
 	svc := NewService(Config{QueueSize: 2, MaxAttempts: 1, ConfirmTimeout: 50 * time.Millisecond,
-		MaxPayloadSize: 4096, RejectWhenNotUsable: true}, NewMemoryStore(), mgr, b, log, metrics.New())
+		MaxPayloadSize: 4096, RejectWhenNotUsable: true}, NewMemoryStore(), mgr, b, log, observ.NewMetrics())
 	defer svc.Stop()
 
 	_, _, err = svc.Submit(context.Background(), SubmitRequest{

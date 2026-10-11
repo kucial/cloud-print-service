@@ -12,11 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/job"
-	"github.com/kongkx/cloud-print-service/internal/metrics"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 	"github.com/kongkx/cloud-print-service/internal/render"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
@@ -24,9 +23,9 @@ import (
 type Server struct {
 	mgr      *fleet.Manager
 	jobs     *job.Service
-	bus      *bus.Bus
+	bus      *observ.Bus
 	log      *slog.Logger
-	met      *metrics.Registry
+	met      *observ.Registry
 	auth     *Auth
 	tokens   *token.Service
 	web      WebConfig
@@ -38,8 +37,8 @@ type Server struct {
 }
 
 // New builds the API server. auth may be nil in tests to disable authentication.
-func New(mgr *fleet.Manager, js *job.Service, b *bus.Bus, auth *Auth, tok *token.Service,
-	log *slog.Logger, met *metrics.Registry, maxBatch int, maxPayload int64) *Server {
+func New(mgr *fleet.Manager, js *job.Service, b *observ.Bus, auth *Auth, tok *token.Service,
+	log *slog.Logger, met *observ.Registry, maxBatch int, maxPayload int64) *Server {
 	return &Server{mgr: mgr, jobs: js, bus: b, auth: auth, tokens: tok, log: log, met: met,
 		maxBatch: maxBatch, maxPayload: maxPayload, startedAt: time.Now()}
 }

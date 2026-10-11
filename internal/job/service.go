@@ -12,10 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
-	"github.com/kongkx/cloud-print-service/internal/metrics"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 )
 
 var (
@@ -61,16 +60,16 @@ type Service struct {
 	cfg   Config
 	store Store
 	mgr   *fleet.Manager
-	bus   *bus.Bus
+	bus   *observ.Bus
 	log   *slog.Logger
-	met   *metrics.Registry
+	met   *observ.Registry
 
 	mu      sync.Mutex
 	queues  map[string]chan string
 	running map[string]context.CancelFunc
 }
 
-func NewService(cfg Config, store Store, mgr *fleet.Manager, b *bus.Bus, log *slog.Logger, met *metrics.Registry) *Service {
+func NewService(cfg Config, store Store, mgr *fleet.Manager, b *observ.Bus, log *slog.Logger, met *observ.Registry) *Service {
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = 50
 	}
@@ -496,7 +495,7 @@ func (s *Service) transition(j *domain.Job, state domain.JobState, msg string) {
 	if p, ok := s.mgr.Get(j.PrinterID); ok {
 		p.NoteJob(j.ID, state)
 	}
-	s.bus.Publish(bus.Event{Topic: "job.state", Data: map[string]any{
+	s.bus.Publish(observ.Event{Topic: "job.state", Data: map[string]any{
 		"job_id":      j.ID,
 		"client_id":   j.ClientID,
 		"printer_id":  j.PrinterID,

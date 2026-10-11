@@ -1,5 +1,5 @@
-// Package bus is a tiny in-process pub/sub used for SSE streaming and job callbacks.
-package bus
+// Event fan-out (formerly internal/bus) is a tiny in-process pub/sub used for SSE streaming and job callbacks.
+package observ
 
 import (
 	"sync"
@@ -22,7 +22,8 @@ type Bus struct {
 	nextID int
 }
 
-func New() *Bus { return &Bus{subs: map[int]chan Event{}} }
+// NewBus returns a process-local event fan-out.
+func NewBus() *Bus { return &Bus{subs: map[int]chan Event{}} }
 
 func (b *Bus) Publish(e Event) {
 	if e.At.IsZero() {

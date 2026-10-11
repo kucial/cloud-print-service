@@ -12,13 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/config"
 	"github.com/kongkx/cloud-print-service/internal/driver"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/httpapi"
 	"github.com/kongkx/cloud-print-service/internal/job"
-	"github.com/kongkx/cloud-print-service/internal/metrics"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 	"github.com/kongkx/cloud-print-service/internal/render"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
@@ -45,8 +44,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	b := bus.New()
-	met := metrics.New()
+	b := observ.NewBus()
+	met := observ.NewMetrics()
 
 	// Fleet. Drivers are opened lazily; status is polled in the background.
 	mgr, err := fleet.NewManager(cfg.Printers, log, b, fleet.ManagerOpts{

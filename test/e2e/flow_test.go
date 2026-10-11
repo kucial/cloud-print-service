@@ -15,12 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/fleet"
 	"github.com/kongkx/cloud-print-service/internal/httpapi"
 	"github.com/kongkx/cloud-print-service/internal/job"
-	"github.com/kongkx/cloud-print-service/internal/metrics"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 	"github.com/kongkx/cloud-print-service/internal/token"
 	"github.com/kongkx/cloud-print-service/internal/virtual"
 )
@@ -36,8 +35,8 @@ type harness struct {
 	vps map[string]*virtual.Printer
 	job *job.Service
 	tok *token.Service
-	bus *bus.Bus
-	met *metrics.Registry
+	bus *observ.Bus
+	met *observ.Registry
 	mgr *fleet.Manager
 }
 
@@ -45,8 +44,8 @@ type harness struct {
 func newFleet(t *testing.T, specs ...domain.Printer) *harness {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	f := &harness{t: t, vps: map[string]*virtual.Printer{}, met: metrics.New()}
-	f.bus = bus.New()
+	f := &harness{t: t, vps: map[string]*virtual.Printer{}, met: observ.NewMetrics()}
+	f.bus = observ.NewBus()
 
 	for i := range specs {
 		spec := &specs[i]

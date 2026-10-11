@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
 	"github.com/kongkx/cloud-print-service/internal/driver"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 )
 
 // Manager owns every printer's driver and cached status.
@@ -20,7 +20,7 @@ import (
 // so a hung TCP write can never block an ERP request.
 type Manager struct {
 	log          *slog.Logger
-	bus          *bus.Bus
+	bus          *observ.Bus
 	pollInterval time.Duration
 	staleAfter   time.Duration
 	dialTimeout  time.Duration
@@ -51,7 +51,7 @@ type ManagerOpts struct {
 	ReadTimeout  time.Duration
 }
 
-func NewManager(specs []domain.Printer, log *slog.Logger, b *bus.Bus, o ManagerOpts) (*Manager, error) {
+func NewManager(specs []domain.Printer, log *slog.Logger, b *observ.Bus, o ManagerOpts) (*Manager, error) {
 	if o.PollInterval <= 0 {
 		o.PollInterval = 15 * time.Second
 	}
@@ -223,7 +223,7 @@ func (p *Printer) publishStatus(st domain.Status) {
 	if p.spec.PrinterID == "" {
 		return
 	}
-	p.mgr.bus.Publish(bus.Event{
+	p.mgr.bus.Publish(observ.Event{
 		Topic: "printer.status",
 		Data: map[string]any{
 			"printer_id":  p.spec.PrinterID,

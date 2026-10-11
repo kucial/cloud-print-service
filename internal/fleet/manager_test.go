@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/bus"
 	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 )
 
 // A status probe must not erase the "which document caused this" pointer: operators
@@ -18,7 +18,7 @@ func TestPollPreservesLastJob(t *testing.T) {
 	mgr, err := NewManager([]domain.Printer{
 		{PrinterID: "p1", Name: "p1", Driver: "mock", Host: "x", Enabled: true,
 			Mock: &domain.MockCfg{State: "idle"}},
-	}, log, bus.New(), ManagerOpts{PollInterval: 50 * time.Millisecond})
+	}, log, observ.NewBus(), ManagerOpts{PollInterval: 50 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestUsableRequiresEvidence(t *testing.T) {
 		{PrinterID: "off", Driver: "mock", Host: "x", Enabled: true, Mock: &domain.MockCfg{Offline: true}},
 		{PrinterID: "disabled", Driver: "mock", Host: "x", Enabled: false, Mock: &domain.MockCfg{}},
 		{PrinterID: "ok", Driver: "mock", Host: "x", Enabled: true, Mock: &domain.MockCfg{State: "idle"}},
-	}, log, bus.New(), ManagerOpts{PollInterval: 50 * time.Millisecond})
+	}, log, observ.NewBus(), ManagerOpts{PollInterval: 50 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

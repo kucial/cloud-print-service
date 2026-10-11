@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/metrics"
+	"github.com/kongkx/cloud-print-service/internal/observ"
 	"github.com/kongkx/cloud-print-service/internal/token"
 )
 
@@ -44,7 +44,7 @@ type Auth struct {
 	keys   []keyEntry
 	tokens *token.Service
 	rl     *rateLimiter
-	met    *metrics.Registry
+	met    *observ.Registry
 }
 
 // KeySpec is one bootstrap API key identity.
@@ -53,7 +53,7 @@ type KeySpec struct {
 	Role     string // client | admin
 }
 
-func NewAuth(keys map[string]KeySpec, tokens *token.Service, rps float64, burst int, met *metrics.Registry) *Auth {
+func NewAuth(keys map[string]KeySpec, tokens *token.Service, rps float64, burst int, met *observ.Registry) *Auth {
 	a := &Auth{met: met, tokens: tokens}
 	for secret, k := range keys {
 		a.keys = append(a.keys, keyEntry{token: secret, client: Client{ID: k.ClientID, Role: k.Role}})
