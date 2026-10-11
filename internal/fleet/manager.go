@@ -233,11 +233,24 @@ func (m *Manager) ViewsByIDs(ids []string) []domain.Printer {
 	return out
 }
 
-func (p *Printer) Spec() domain.Printer { return p.spec }
+func (p *Printer) Spec() domain.Printer {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.spec
+}
 
-func (p *Printer) ID() string { return p.spec.PrinterID }
+// ID reads the spec under the lock: Sync rewrites it when a source re-reports a printer.
+func (p *Printer) ID() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.spec.PrinterID
+}
 
-func (p *Printer) Enabled() bool { return p.spec.Enabled }
+func (p *Printer) Enabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.spec.Enabled
+}
 
 func (p *Printer) SetQueueDepth(n int) { p.queueDepth.Store(int64(n)) }
 
@@ -294,13 +307,14 @@ func (p *Printer) View() domain.Printer {
 }
 
 func (p *Printer) publishStatus(st domain.Status) {
-	if p.spec.PrinterID == "" {
+	id := p.ID()
+	if id == "" {
 		return
 	}
 	p.mgr.bus.Publish(observ.Event{
 		Topic: "printer.status",
 		Data: map[string]any{
-			"printer_id":  p.spec.PrinterID,
+			"printer_id":  id,
 			"state":       st.State,
 			"raw":         st.Raw,
 			"detail":      st.Detail,
@@ -316,7 +330,7 @@ func (p *Printer) probe(ctx context.Context) {
 	// point dialling the agent's TCP port for status, and doing so would race the agent's
 	// own (more accurate) report. If the agent stops heart-beating the cached status simply
 	// goes stale, which is how an operator sees "that packing PC is gone".
-	if src := p.mgr.sourceOf(p.spec.PrinterID); src == SourceAgent {
+	if src := p.mgr.sourceOf(p.ID()); src == SourceAgent {
 		return
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, p.mgr.pollInterval)
@@ -339,7 +353,7 @@ func (p *Printer) probe(ctx context.Context) {
 		st.LastJob = p.status.LastJob
 		p.status = st
 		p.mu.Unlock()
-		p.mgr.log.Warn("printer status probe failed", "printer_id", p.spec.PrinterID, "err", err)
+		p.mgr.log.Warn("printer status probe failed", "printer_id", p.ID(), "err", err)
 		p.publishStatus(st)
 		return
 	}
@@ -354,7 +368,7 @@ func (p *Printer) probe(ctx context.Context) {
 	p.status = st
 	p.mu.Unlock()
 	if changed {
-		p.mgr.log.Info("printer state changed", "printer_id", p.spec.PrinterID, "state", st.State)
+		p.mgr.log.Info("printer state changed", "printer_id", p.ID(), "state", st.State)
 	}
 	p.publishStatus(st)
 }
@@ -377,7 +391,7 @@ func (m *Manager) StartPolling(ctx context.Context) {
 			// Probe immediately so the first API call already has data.
 			p.probe(ctx)
 			h := fnv.New32a()
-			_, _ = h.Write([]byte(p.spec.PrinterID))
+			_, _ = h.Write([]byte(p.ID()))
 			stagger := time.Duration(h.Sum32() % uint32(m.pollInterval))
 			t := time.NewTimer(stagger)
 			defer t.Stop()
@@ -407,7 +421,7 @@ func (m *Manager) pollOne(ctx context.Context, p *Printer) {
 	}
 	p.probe(ctx)
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(p.spec.PrinterID))
+	_, _ = h.Write([]byte(p.ID()))
 	t := time.NewTimer(time.Duration(h.Sum32() % uint32(m.pollInterval)))
 	defer t.Stop()
 	for {
