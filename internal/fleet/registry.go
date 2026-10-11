@@ -125,6 +125,35 @@ func (r *Registry) Remove(printerID, source, sourceRef string) bool {
 	return true
 }
 
+// RemoveMissing drops the claims of one source that are not in keep. Used to reconcile an
+// agent's re-registration: a printer it no longer reports stops being dispatchable.
+func (r *Registry) RemoveMissing(source, sourceRef string, keep []string) []string {
+	keepSet := make(map[string]bool, len(keep))
+	for _, id := range keep {
+		keepSet[id] = true
+	}
+	r.mu.Lock()
+	removed := []string{}
+	for id, claims := range r.claims {
+		kept := claims[:0]
+		for _, c := range claims {
+			if c.source == source && (sourceRef == "" || c.sourceRef == sourceRef) && !keepSet[id] {
+				removed = append(removed, id)
+				continue
+			}
+			kept = append(kept, c)
+		}
+		if len(kept) == 0 {
+			delete(r.claims, id)
+			continue
+		}
+		r.claims[id] = kept
+	}
+	r.mu.Unlock()
+	sort.Strings(removed)
+	return removed
+}
+
 // RemoveSource drops every claim from one source (an agent went away).
 func (r *Registry) RemoveSource(source, sourceRef string) []string {
 	r.mu.Lock()

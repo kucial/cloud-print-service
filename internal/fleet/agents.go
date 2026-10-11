@@ -74,6 +74,16 @@ func (ar *AgentRegistry) Register(p RegisterPayload) (Agent, error) {
 	if err := ar.fleet.UpsertMany(SourceAgent, p.AgentID, p.Printers); err != nil {
 		return Agent{}, err
 	}
+	// An agent that re-registers with fewer printers has lost one (unplugged, moved).
+	// Reconcile so a printer the agent no longer reports stops being dispatchable through
+	// it, instead of quietly hanging around.
+	ids := make([]string, 0, len(p.Printers))
+	for _, pr := range p.Printers {
+		ids = append(ids, pr.PrinterID)
+	}
+	if removed := ar.fleet.RemoveMissing(SourceAgent, p.AgentID, ids); len(removed) > 0 && ar.log != nil {
+		ar.log.Info("agent re-registered without printers", "agent_id", p.AgentID, "removed", removed)
+	}
 
 	ar.mu.Lock()
 	a := ar.agents[p.AgentID]
@@ -83,10 +93,6 @@ func (ar *AgentRegistry) Register(p RegisterPayload) (Agent, error) {
 	}
 	a.ID, a.Site, a.Hostname, a.OS, a.Version, a.AgentAddr = p.AgentID, p.Site, p.Hostname, p.OS, p.Version, p.AgentAddr
 	a.LastSeen = time.Now().UTC()
-	ids := make([]string, 0, len(p.Printers))
-	for _, pr := range p.Printers {
-		ids = append(ids, pr.PrinterID)
-	}
 	sort.Strings(ids)
 	a.Printers = ids
 	out := *a
@@ -116,7 +122,16 @@ func (ar *AgentRegistry) Heartbeat(p HeartbeatPayload) error {
 	a.LastSeen = time.Now().UTC()
 	ar.mu.Unlock()
 
+	ar.mu.RLock()
+	owned := make(map[string]bool, len(a.Printers))
+	for _, id := range a.Printers {
+		owned[id] = true
+	}
+	ar.mu.RUnlock()
 	for printerID, st := range p.Status {
+		if !owned[printerID] {
+			continue // a heartbeat can only speak for the agent's own printers
+		}
 		ar.mgr.ApplyStatus(printerID, st)
 	}
 	return nil
@@ -124,14 +139,27 @@ func (ar *AgentRegistry) Heartbeat(p HeartbeatPayload) error {
 
 // Status pushes a single printer status from an agent.
 func (ar *AgentRegistry) Status(agentID, printerID string, st domain.Status) error {
-	ar.mu.RLock()
+	ar.mu.Lock()
 	a, ok := ar.agents[agentID]
-	ar.mu.RUnlock()
 	if !ok {
+		ar.mu.Unlock()
 		return fmt.Errorf("unknown agent %q", agentID)
 	}
-	ar.mgr.ApplyStatus(printerID, st)
+	owns := false
+	for _, id := range a.Printers {
+		if id == printerID {
+			owns = true
+			break
+		}
+	}
 	a.LastSeen = time.Now().UTC()
+	ar.mu.Unlock()
+	if !owns {
+		// An agent reporting a printer it does not serve is either misconfigured or
+		// misbehaving; accepting it would let one agent poison another's printers.
+		return fmt.Errorf("agent %q does not serve printer %q", agentID, printerID)
+	}
+	ar.mgr.ApplyStatus(printerID, st)
 	return nil
 }
 

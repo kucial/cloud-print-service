@@ -47,6 +47,9 @@ type Config struct {
 	ConfirmTimeout time.Duration
 	QueueTTL       time.Duration
 	BaseBackoff    time.Duration
+	// SettleFor is how long a printer that never shows "printing" has before idle is
+	// accepted as confirmation. Default 1s.
+	SettleFor      time.Duration
 	MaxPayloadSize int64
 	// RejectWhenNotUsable refuses dispatch to a printer whose cached status shows a
 	// consumable/error condition. Off by default: the caller usually prefers to try and
@@ -85,6 +88,9 @@ func NewService(cfg Config, st store.Store, mgr *fleet.Manager, b *observ.Bus, l
 	}
 	if cfg.BaseBackoff <= 0 {
 		cfg.BaseBackoff = 500 * time.Millisecond
+	}
+	if cfg.SettleFor <= 0 {
+		cfg.SettleFor = time.Second
 	}
 	if cfg.MaxPayloadSize <= 0 {
 		cfg.MaxPayloadSize = 1 << 20
@@ -295,12 +301,27 @@ func (s *Service) worker(ctx context.Context, printerID string, q chan string) {
 		case <-ctx.Done():
 			return
 		case id := <-q:
-			s.execute(ctx, printerID, id)
+			s.executeSafely(ctx, printerID, id)
 			if p, ok := s.mgr.Get(printerID); ok {
 				p.SetQueueDepth(len(q))
 			}
 		}
 	}
+}
+
+// executeSafely runs a job and contains a panic to that job: a driver or store bug
+// must never take the printer's worker down and strand the whole queue.
+func (s *Service) executeSafely(ctx context.Context, printerID, jobID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("panic executing job", "printer_id", printerID, "job_id", jobID, "panic", r)
+			s.met.Inc("cps_dispatch_panics_total", "printer_id", printerID)
+			if j, err := s.st.GetJob(context.Background(), jobID); err == nil {
+				s.fail(context.Background(), j, fmt.Sprintf("internal panic: %v", r))
+			}
+		}
+	}()
+	s.execute(ctx, printerID, jobID)
 }
 
 // execute runs one job to a terminal state, retrying only failures that provably
@@ -314,6 +335,11 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	}
 	if j.State != domain.JobQueued {
 		return // cancelled before we got to it
+	}
+	// Re-check state right before touching the printer: a job cancelled between load and
+	// now must never print.
+	if j.State != domain.JobQueued {
+		return
 	}
 	if time.Since(j.QueuedAt) > s.cfg.QueueTTL {
 		s.fail(loadCtx, j, "queued_too_long: job waited "+time.Since(j.QueuedAt).Truncate(time.Second).String()+" before dispatch")
@@ -421,29 +447,55 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	s.finish(ctx, j, domain.JobSentUnknown)
 }
 
-// confirm waits for the printer to leave the printing state. It is evidence, not proof:
-// absence of a reply is reported as `sent_unknown`, never silently as success.
+// confirm decides whether the label printed. It is evidence, not proof: absence of a
+// reply is reported as `sent_unknown`, never silently as success.
+//
+// The subtlety: a printer takes a moment to engage after the bytes land, so an immediate
+// `idle` is ambiguous - it might be "not started yet". To avoid declaring printed on a
+// label that never began, confirmation waits briefly for the printer to show busy before
+// accepting idle as "finished". A printer that never shows busy within the settle window
+// gets idle-as-printed only after the settle time has passed.
 func (s *Service) confirm(ctx context.Context, p *fleet.Printer) bool {
 	deadline := time.Now().Add(s.cfg.ConfirmTimeout)
-	for time.Now().Before(deadline) {
+	// The settle window must land strictly inside the deadline, or the "accept idle after
+	// settle" branch can never fire before the loop gives up.
+	settle := time.Now().Add(s.cfg.SettleFor)
+	if limit := time.Now().Add(s.cfg.ConfirmTimeout / 3); settle.After(limit) {
+		settle = limit
+	}
+	sawBusy := false
+	// Poll faster than the settle window, or a short confirm timeout can never observe
+	// a fast printer before it elapses.
+	pollEvery := 100 * time.Millisecond
+	if s.cfg.SettleFor < pollEvery {
+		pollEvery = s.cfg.SettleFor / 2
+	}
+	if pollEvery <= 0 {
+		pollEvery = 50 * time.Millisecond
+	}
+	for {
 		st, err := p.Status(ctx)
 		if err == nil {
-			if st.State.Busy() {
-				if !sleepCtx(ctx, 250*time.Millisecond) {
-					return false
+			switch {
+			case st.State.Busy():
+				sawBusy = true
+			case st.State.BlocksUse():
+				return false // consumable-out or an error is never a confirmation
+			default:
+				// idle/unknown: confident once the printer has been seen busy, or after
+				// the settle window for printers that report no busy state.
+				if sawBusy || time.Now().After(settle) {
+					return true
 				}
-				continue
 			}
-			if st.State.BlocksUse() {
-				return false // printer is out of media / in error: not a confirmation
-			}
-			return true
 		}
-		if !sleepCtx(ctx, 300*time.Millisecond) {
+		if time.Now().After(deadline) {
+			return false
+		}
+		if !sleepCtx(ctx, pollEvery) {
 			return false
 		}
 	}
-	return false
 }
 
 func backoff(base time.Duration, attempt int) time.Duration {

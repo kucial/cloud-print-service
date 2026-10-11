@@ -47,7 +47,20 @@ func (m *Manager) Sync(ctx context.Context) error {
 		existing, ok := m.printers[spec.PrinterID]
 		if ok {
 			existing.mu.Lock()
-			existing.spec = spec
+			// A moved endpoint or a changed driver needs a fresh driver; the old one
+			// would keep writing to the previous address.
+			if existing.spec.Host != spec.Host || existing.spec.Port != spec.Port || existing.spec.Driver != spec.Driver {
+				existing.drv.Close()
+				d, err := m.build(spec)
+				if err == nil {
+					existing.drv = d.drv
+					existing.spec = spec
+				} else {
+					m.log.Error("cannot rebuild driver after the endpoint moved", "printer_id", spec.PrinterID, "err", err)
+				}
+			} else {
+				existing.spec = spec
+			}
 			existing.mu.Unlock()
 			continue
 		}

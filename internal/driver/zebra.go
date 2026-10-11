@@ -93,21 +93,21 @@ func (z *Zebra) Send(ctx context.Context, data []byte) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	if z.printCon == nil {
-		c, err := z.dial(ctx)
-		if err != nil {
-			return 0, err // 0 bytes -> caller may retry
-		}
-		z.printCon = c
+	// The print socket is per-job, not pooled across jobs: a printer that rebooted since
+	// the last job would have a half-open socket whose write "succeeds" into the kernel
+	// buffer, and the job layer could no longer tell whether a byte reached the printer.
+	// A fresh dial keeps "0 bytes written" as the reliable, retryable signal it is.
+	z.dropPrint()
+	c, err := z.dial(ctx)
+	if err != nil {
+		return 0, err // 0 bytes -> caller may retry
 	}
+	z.printCon = c
 	_ = z.printCon.SetWriteDeadline(deadlineFor(ctx, z.writeTimeout))
 	n, err := z.printCon.Write(data)
-	if err != nil {
-		// The stream position is now unknown; drop the socket.
-		z.dropPrint()
-		return n, err
-	}
-	return n, nil
+	// Whatever happened, the socket is now single-use: the next job opens a fresh one.
+	z.dropPrint()
+	return n, err
 }
 
 func (z *Zebra) dropPrint() {
@@ -143,19 +143,25 @@ func (z *Zebra) query(ctx context.Context, cmd string, maxBytes int) (string, er
 			return raw, nil
 		}
 		lastErr = err
-		if ctx.Err() != nil || !isConnErr(err) {
+		if ctx.Err() != nil || !IsConnErr(err) {
 			break
 		}
 	}
 	return "", lastErr
 }
 
-func isConnErr(err error) bool {
-	var ne net.Error
-	if errors.As(err, &ne) {
-		return true
+// IsConnErr reports whether err means the socket itself is dead and the query may be
+// redialed. Exported because the classification is load-bearing: timeouts must not retry.
+func IsConnErr(err error) bool {
+	if isTimeout(err) {
+		return false // a slow printer is not a dead socket; redialing wastes a cycle
 	}
 	return errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE)
+}
+
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 func (z *Zebra) queryOnce(ctx context.Context, cmd string, maxBytes int) (string, error) {
@@ -196,13 +202,15 @@ func (z *Zebra) queryOnce(ctx context.Context, cmd string, maxBytes int) (string
 			if len(acc) > 0 {
 				break // partial reply is still useful
 			}
-			if errors.Is(err, io.EOF) {
-				z.dropStatus()
-			}
+			// A read error (timeout included) means the next probe might read this
+			// command's late reply as the answer to its own - drop the socket so each
+			// query starts aligned.
+			z.dropStatus()
 			return string(acc), err
 		}
 	}
 	if len(acc) == 0 {
+		z.dropStatus()
 		return "", fmt.Errorf("no reply to %s from %s", strings.TrimSpace(cmd), z.addr())
 	}
 	return string(acc), nil
@@ -239,6 +247,9 @@ func (z *Zebra) Cancel(ctx context.Context) error {
 	}
 	_ = z.printCon.SetWriteDeadline(deadlineFor(ctx, z.writeTimeout))
 	_, err := z.printCon.Write([]byte("~JA"))
+	if err != nil {
+		z.dropPrint()
+	}
 	return err
 }
 
