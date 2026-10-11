@@ -281,19 +281,27 @@ func (p *Printer) Cached() domain.Status {
 }
 
 // Send dispatches bytes. Returns bytes flushed; err with n>0 means no retry.
-func (p *Printer) Send(ctx context.Context, data []byte) (int, error) {
-	return p.drv.Send(ctx, data)
+// driver returns the live driver. Sync may rebuild it when a printer moves endpoints, so
+// every access goes through this one place.
+func (p *Printer) driver() driver.Driver {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.drv
 }
 
-func (p *Printer) Status(ctx context.Context) (domain.Status, error) { return p.drv.Status(ctx) }
+func (p *Printer) Send(ctx context.Context, data []byte) (int, error) {
+	return p.driver().Send(ctx, data)
+}
 
-func (p *Printer) Cancel(ctx context.Context) error { return p.drv.Cancel(ctx) }
+func (p *Printer) Status(ctx context.Context) (domain.Status, error) { return p.driver().Status(ctx) }
+
+func (p *Printer) Cancel(ctx context.Context) error { return p.driver().Cancel(ctx) }
 
 func (p *Printer) Identify(ctx context.Context) (map[string]string, error) {
-	return p.drv.Identify(ctx)
+	return p.driver().Identify(ctx)
 }
 
-func (p *Printer) Close() { _ = p.drv.Close() }
+func (p *Printer) Close() { _ = p.driver().Close() }
 
 // NoteJob records the last job seen on this printer, so a dashboard opened after the fact
 // still shows which document produced the current state.
@@ -370,7 +378,7 @@ func (p *Printer) probe(ctx context.Context) {
 		p.publishStatus(st)
 		return
 	}
-	if !p.spec.Enabled {
+	if !p.Enabled() {
 		st.State = domain.StateDisabled
 	}
 	p.mu.Lock()
