@@ -314,7 +314,7 @@ func agentCmd(args []string) error {
 			if l, ok := m["printers"].([]any); ok {
 				pn = len(l)
 			}
-			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%d\t%v\n",
+			fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
 				m["id"], m["site"], m["hostname"], m["os"], m["version"], m["agent_addr"],
 				pn, ago(fmt.Sprint(m["last_seen"])))
 		}

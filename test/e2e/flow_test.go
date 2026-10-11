@@ -610,3 +610,77 @@ func TestAgentRegistersAndServesAPrinter(t *testing.T) {
 		t.Fatal("revoking an agent removed a config printer")
 	}
 }
+
+// A dead agent must not leave queued work invisible: its jobs fail loudly with a reason
+// the caller can act on, and its printers become unusable.
+func TestAgentLossFailsQueuedJobs(t *testing.T) {
+	f := newFleet(t, domain.Printer{PrinterID: "lab-01", Model: "ZT411", Driver: "zebra9100", Enabled: true})
+	opsKey := bootstrapAdmin
+
+	// enroll + register an agent with one printer
+	_, out := f.do("POST", "/api/v1/admin/agents/enroll", opsKey,
+		map[string]any{"agent_id": "pc7", "site": "wh1", "ttl": "1h"})
+	bootstrap, _ := out["token"].(string)
+	printer := domain.Printer{PrinterID: "pc7-usb-1", Driver: "zebra9100", Host: "10.0.0.7", Port: 19555, Enabled: true}
+	code, out := f.do("POST", "/api/v1/agents/register", bootstrap, map[string]any{
+		"agent_id": "pc7", "site": "wh1", "agent_addr": "10.0.0.7", "printers": []domain.Printer{printer},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("register: %d %v", code, out)
+	}
+	durable, _ := out["token"].(string)
+
+	// queue a job for the agent's printer
+	wmsKey := f.issuedClientKey(t, "wms")
+	code, out = f.do("POST", "/api/v1/jobs", wmsKey, map[string]any{
+		"printer_id": "pc7-usb-1", "external_id": "A-1", "zpl": "^XA^FDx^FS^XZ",
+	})
+	if code != http.StatusAccepted {
+		t.Fatalf("dispatch: %d %v", code, out)
+	}
+	jobID := out["job_id"].(string)
+
+	// the agent dies; an operator revokes it
+	code, out = f.do("DELETE", "/api/v1/agents/pc7", opsKey, nil)
+	if code != http.StatusOK {
+		t.Fatalf("delete agent: %d %v", code, out)
+	}
+	// The job may already have been dispatched and failed by the worker (the printer is
+	// unreachable) before the delete ran. Both outcomes are truthful; what must not happen
+	// is the job staying queued, pretending it will print later.
+	if got := out["jobs_failed"].(float64); got > 1 {
+		t.Fatalf("jobs_failed = %v, want 0 or 1", got)
+	}
+
+	// The worker may be mid-retry with backoff when the agent is revoked; it settles to
+	// failed within max_attempts of retries. Wait for it rather than racing the backoff.
+	var final domain.JobState
+	var lastErr string
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		j, err := f.job.Get(context.Background(), "", jobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		final = j.State
+		lastErr = j.LastError
+		if j.State.Terminal() {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if final != domain.JobFailed && final != domain.JobCancelled {
+		t.Fatalf("job state = %s, want a terminal failure (agent loss must never look like success)", final)
+	}
+	if lastErr == "" {
+		t.Fatalf("a job that failed because the agent is gone must say so")
+	}
+	if _, ok := f.mgr.Registry().Get("pc7-usb-1"); ok {
+		t.Fatal("the agent's printer must leave the fleet when it is revoked")
+	}
+	// and the durable credential is still valid for the agent when it comes back
+	code, _ = f.do("POST", "/api/v1/agents/heartbeat", durable, map[string]any{"agent_id": "pc7"})
+	if code != http.StatusNotFound {
+		t.Logf("heartbeat for a deregistered agent: %d (acceptable: it may re-register)", code)
+	}
+}

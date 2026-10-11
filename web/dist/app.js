@@ -142,6 +142,8 @@ function guessRole() { return 'admin'; } // any token that gets in is treated as
 const NAV = [
   ['overview', 'Overview'],
   ['printers', 'Printers'],
+  ['agents', 'Agents'],
+  ['discovery', 'Discovery'],
   ['jobs', 'Jobs'],
   ['tokens', 'Tokens'],
   ['preview', 'Preview'],
@@ -287,6 +289,8 @@ function paint() {
   if (!view) return;
   if (state.route === 'overview') return viewOverview(view);
   if (state.route === 'printers') return viewPrinters(view);
+  if (state.route === 'agents') return viewAgents(view);
+  if (state.route === 'discovery') return viewDiscovery(view);
   if (state.route === 'jobs') return viewJobs(view);
   if (state.route === 'tokens') return viewTokens(view);
   if (state.route === 'preview') return viewPreview(view);
@@ -431,6 +435,96 @@ function viewPrinters(view) {
   view.replaceChildren(head);
 }
 const sel0 = (p) => p.queue_depth || 0;
+
+async function viewAgents(view) {
+  const box = view;
+  try {
+    const r = await api('/agents');
+    const items = r.items || [];
+    box.replaceChildren(el('section', {},
+      el('div', { class: 'toolbar' },
+        el('h2', { style: 'margin:0;flex:1' }, 'Edge agents'),
+        el('button', { class: 'btn', onclick: () => viewAgents(view) }, 'Refresh')),
+      items.length ? el('table', {},
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'agent'), el('th', {}, 'site'), el('th', {}, 'host'), el('th', {}, 'os'),
+          el('th', {}, 'version'), el('th', {}, 'address'), el('th', {}, 'printers'),
+          el('th', {}, 'last seen'), el('th', {}, ''),
+        )),
+        el('tbody', {}, items.map((a) => el('tr', {},
+          el('td', { class: 'mono' }, a.id),
+          el('td', { class: 'mono' }, a.site || '—'),
+          el('td', { class: 'mono muted' }, a.hostname || '—'),
+          el('td', { class: 'mono muted' }, a.os || '—'),
+          el('td', { class: 'mono muted' }, a.version || '—'),
+          el('td', { class: 'mono muted' }, a.agent_addr || '—'),
+          el('td', { class: 'mono' }, String((a.printers || []).length)),
+          el('td', { class: 'mono muted' }, ago(a.last_seen)),
+          el('td', { class: 'right' }, el('button', { class: 'btn danger', onclick: () => dereg(a.id) }, 'remove')),
+        ))),
+      ) : el('div', { class: 'empty' }, 'No agents enrolled yet. Run cps-agent on a packing PC.'),
+    ));
+  } catch (err) {
+    box.replaceChildren(el('div', { class: 'empty' }, err.message));
+  }
+}
+
+async function dereg(id) {
+  if (!confirm(`Remove agent ${id} and its printers?`)) return;
+  try { await api(`/agents/${id}`, { method: 'DELETE' }); toast('removed', 'ok'); refresh(); }
+  catch (e) { toast(e.message, 'bad'); }
+}
+
+async function viewDiscovery(view) {
+  const box = view;
+  try {
+    const r = await api('/admin/discovery/candidates');
+    const items = r.items || [];
+    box.replaceChildren(el('section', {},
+      el('div', { class: 'toolbar' },
+        el('h2', { style: 'margin:0;flex:1' }, 'Discovered (not yet printers)'),
+        el('button', { class: 'btn', onclick: async () => { await api('/admin/discovery/scan', { method: 'POST' }); viewDiscovery(view); } }, 'Scan now')),
+      el('p', { class: 'muted', style: 'margin-top:-6px;font-size:12px' },
+        'Discovery finds devices on the LAN; adopting one makes it dispatchable. Nothing becomes a printer on its own.'),
+      items.length ? el('table', {},
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'device'), el('th', {}, 'model'), el('th', {}, 'serial'),
+          el('th', {}, 'address'), el('th', {}, 'seen'), el('th', {}, 'identified'), el('th', {}, ''),
+        )),
+        el('tbody', {}, items.map((c) => el('tr', {},
+          el('td', { class: 'mono' }, c.device_key),
+          el('td', { class: 'mono' }, c.model || '—'),
+          el('td', { class: 'mono muted' }, c.serial || '—'),
+          el('td', { class: 'mono muted' }, c.host ? `${c.host}:${c.port || 9100}` : '—'),
+          el('td', { class: 'mono muted' }, ago(c.last_seen)),
+          el('td', {}, (c.detail && c.detail.identified === 'true')
+            ? el('span', { class: 'pill ok' }, 'yes') : el('span', { class: 'pill' }, 'no')),
+          el('td', { class: 'right' }, el('div', { class: 'row', style: 'justify-content:flex-end' },
+            el('button', { class: 'btn primary', onclick: () => adopt(c.device_key) }, 'adopt'),
+            el('button', { class: 'btn danger', onclick: () => dismiss(c.device_key) }, 'dismiss'),
+          )),
+        ))),
+      ) : el('div', { class: 'empty' }, 'Nothing found. Is a printer on the network?'),
+    ));
+  } catch (err) {
+    box.replaceChildren(el('div', { class: 'empty' }, err.message));
+  }
+}
+
+async function adopt(key) {
+  const id = prompt('Printer id (site-aware, e.g. wh1-pack-04):');
+  if (!id) return;
+  const site = prompt('Site (e.g. wh1):', '') || '';
+  try {
+    await api(`/admin/discovery/candidates/${key}/adopt`, { method: 'POST', body: { printer_id: id, site } });
+    toast('adopted ' + id, 'ok');
+    refresh();
+  } catch (e) { toast(e.message, 'bad'); }
+}
+async function dismiss(key) {
+  try { await api(`/admin/discovery/candidates/${key}/dismiss`, { method: 'POST', body: {} }); toast('dismissed', 'ok'); }
+  catch (e) { toast(e.message, 'bad'); }
+}
 
 function viewJobs(view) {
   const f = state.filter;

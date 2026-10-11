@@ -119,10 +119,14 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("agent_id")
 	gone := s.agents.Deregister(id)
+	// Anything queued for that agent's printers will never print: fail it loudly instead
+	// of leaving it to look like work in progress.
+	failed := s.jobs.FailOnAgentLost(r.Context(), gone, "agent "+id+" was deregistered")
 	_ = s.mgr.Sync(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"agent":            id,
 		"printers_removed": gone,
+		"jobs_failed":      failed,
 	})
 }
 

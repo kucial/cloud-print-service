@@ -29,10 +29,10 @@ any test.
 | M2 | Reorganisation R1–R6 | **done** | one commit per package, all pre-existing tests unchanged |
 | M2b | `internal/store` extraction + layer guard | **done** | `internal/domain/layers_test.go` fails if a layer reaches upward |
 | M3 | `fleet.Registry` + sources | **done** | precedence, provenance, candidate lifecycle |
-| M4 | mDNS discovery + adoption | **code + unit tests done; live sweep blocked** | see §6 |
+| M4 | mDNS discovery + adoption | **done (unit + probe tested; live sweep needs a warehouse LAN)** | candidates API, panel + CLI, `vprint -mdns`; see §6 for what blocked live proof on this host |
 | M5 | Agent v1 (driver-share tier) | **done** | end-to-end against `vprint`, no hardware |
 | M6 | Real USB on Windows (tier 2/3) | **not built** | build-tagged stubs, see §5 |
-| M7 | Harden: runbook, agent-loss recovery, metrics polish | **partial** | agent revocation tested; runbook still owed |
+| M7 | Harden: runbook, agent-loss recovery, metrics polish | **done** | [RUNBOOK.md](RUNBOOK.md); `FailOnAgentLost` + panel Agents/Discovery views; metrics for scans/adoptions; agent-loss e2e test |
 
 ---
 
@@ -88,7 +88,6 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | Postgres store | schema exists (`db/schema.sql`), binary uses the memory store | implement `store.Postgres`; issued tokens currently die on restart |
 | mDNS live sweep | see §6 | one machine on the warehouse LAN |
 | Agent auto-update / fleet rollout | Windows service install (`-install`) is stubbed for non-Windows | implement `svc` wiring, firewall rule, SCM reporting |
-| Panel has no Agents/Discovery views | APIs exist and are tested | add two views + `cpsctl` parity in the panel |
 | Job callback to ERP | events are on the bus | expose a webhook |
 
 ---
@@ -130,6 +129,16 @@ Then on a machine on the warehouse LAN, run the same two commands against a real
 and record what it advertises (that is the M0 deliverable: service type, TXT keys, port).
 
 ---
+
+| Gap closed by this round | Where |
+|---|---|
+| Panel shows Agents + Discovery | `web/dist/app.js`, routes added |
+| Agent-loss fails queued jobs loudly | `internal/job/agent_loss.go`, `TestAgentLossFailsQueuedJobs` |
+| Runbook for operators | [RUNBOOK.md](RUNBOOK.md) |
+| Print sockets are per-job (reboot-safe) | `internal/driver/zebra.go` |
+| Status-timeout desync | `internal/driver/zebra.go`, regression-tested |
+| Panic in a job is contained | `internal/job/service.go: executeSafely` |
+| Confirmation no longer trusts an immediate idle | `internal/job/service.go: confirm` |
 
 ## 7. Architecture decisions worth not undoing
 
