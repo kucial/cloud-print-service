@@ -56,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/printers", s.listPrinters)
 	apiMux.HandleFunc("GET /api/v1/printers/status", s.bulkStatus)
 	apiMux.HandleFunc("GET /api/v1/printers/{printer_id}", s.getPrinter)
+	apiMux.HandleFunc("PATCH /api/v1/printers/{printer_id}", RequireAdmin(s.updatePrinter))
 	apiMux.HandleFunc("GET /api/v1/printers/{printer_id}/status", s.getPrinterStatus)
 	apiMux.HandleFunc("GET /api/v1/printers/{printer_id}/jobs", s.listPrinterJobs)
 	apiMux.HandleFunc("POST /api/v1/printers/{printer_id}/test", RequireAdmin(s.testPrint))
@@ -200,6 +201,33 @@ func (s *Server) getPrinter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, p.View())
+}
+
+func (s *Server) updatePrinter(w http.ResponseWriter, r *http.Request) {
+	printerID := r.PathValue("printer_id")
+	var body struct {
+		Name        *string `json:"name"`
+		Site        *string `json:"site"`
+		Remark      *string `json:"remark"`
+		CustomLabel *string `json:"custom_label"`
+		Enabled     *bool   `json:"enabled"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
+		return
+	}
+	p, err := s.mgr.Registry().UpdateMetadata(printerID, body.Name, body.Site, body.Remark, body.CustomLabel, body.Enabled)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "printer_not_found", err.Error())
+		return
+	}
+	_ = s.mgr.Sync(r.Context())
+	live, ok := s.mgr.Get(printerID)
+	if ok && live != nil {
+		writeJSON(w, http.StatusOK, live.View())
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
 }
 
 func (s *Server) getPrinterStatus(w http.ResponseWriter, r *http.Request) {

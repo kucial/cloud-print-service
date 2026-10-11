@@ -68,9 +68,11 @@ type Printer struct {
 	Site      string `json:"site"`
 	Model     string `json:"model"`
 	Driver    string `json:"driver"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Enabled   bool   `json:"enabled"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	Enabled     bool   `json:"enabled"`
+	Remark      string `json:"remark,omitempty"`
+	CustomLabel string `json:"custom_label,omitempty"`
 
 	// Live fields, filled by the printer manager.
 	Usable     bool   `json:"usable"`

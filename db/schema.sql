@@ -8,10 +8,12 @@ create table if not exists printers (
   site        text not null default '',
   model       text not null default '',
   driver      text not null,                  -- zebra9100 | tsc9100 | mock
-  host        text not null,
-  port        int  not null default 9100,
-  enabled     boolean not null default true,
-  created_at  timestamptz not null default now(),
+  host         text not null,
+  port         int  not null default 9100,
+  enabled      boolean not null default true,
+  remark       text not null default '',
+  custom_label text not null default '',
+  created_at   timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 create index if not exists printers_site_enabled_idx on printers (site, enabled);

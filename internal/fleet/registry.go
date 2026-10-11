@@ -99,6 +99,36 @@ func (r *Registry) UpsertMany(source, sourceRef string, ps []domain.Printer) err
 	return nil
 }
 
+// UpdateMetadata updates user-editable metadata (name, site, remark, custom_label, enabled)
+// on all claims for the specified printer.
+func (r *Registry) UpdateMetadata(printerID string, name, site, remark, customLabel *string, enabled *bool) (domain.Printer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	claims, ok := r.claims[printerID]
+	if !ok || len(claims) == 0 {
+		return domain.Printer{}, fmt.Errorf("fleet: printer %q not found", printerID)
+	}
+	for i := range claims {
+		p := &claims[i].printer
+		if name != nil {
+			p.Name = *name
+		}
+		if site != nil {
+			p.Site = *site
+		}
+		if remark != nil {
+			p.Remark = *remark
+		}
+		if customLabel != nil {
+			p.CustomLabel = *customLabel
+		}
+		if enabled != nil {
+			p.Enabled = *enabled
+		}
+	}
+	return claims[0].printer, nil
+}
+
 // Remove drops one source's claim. The printer survives if another source still claims it,
 // which is what lets an operator delete a config entry while an agent keeps reporting.
 func (r *Registry) Remove(printerID, source, sourceRef string) bool {
