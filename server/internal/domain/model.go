@@ -270,9 +270,8 @@ func (p *Printer) Normalize() {
 			p.MediaOrientation = "normal"
 		}
 	}
-	if p.PrintDirection == "" {
-		p.PrintDirection = "top_first"
-	}
+	// PrintDirection is left empty when undeclared: it is a physical fact of how the
+	// printer feeds (no Zebra query reports it), and a guessed default reads as truth.
 
 	// 4. CJK font support
 	if p.CJKFont != "" {

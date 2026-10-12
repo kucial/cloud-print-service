@@ -65,8 +65,8 @@ func TestPrinterNormalize(t *testing.T) {
 	if p1.Orientation != "normal" || p1.MediaOrientation != "normal" {
 		t.Errorf("expected normal orientation, got %q", p1.Orientation)
 	}
-	if p1.PrintDirection != "top_first" {
-		t.Errorf("expected top_first print direction, got %q", p1.PrintDirection)
+	if p1.PrintDirection != "" {
+		t.Errorf("an undeclared print direction must stay empty, not be guessed; got %q", p1.PrintDirection)
 	}
 	if p1.ResolutionSource != "config" || p1.DPIResolvedFromHI != false {
 		t.Errorf("expected config resolution source without HI verification")

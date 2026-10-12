@@ -65,8 +65,8 @@ export const en = {
   orientation_inverted: 'Inverted (180°)',
   orientation_portrait: 'Portrait',
   orientation_landscape: 'Landscape',
-  direction_top_first: 'Top-First (Standard Feed)',
-  direction_bottom_first: 'Bottom-First (Reverse Feed)',
+  direction_top_first: 'Top-first (label top exits first)',
+  direction_bottom_first: 'Bottom-first (label top exits last)',
   job_state_detail_label: 'State Detail & Guarantees',
   sent_unknown_resolve_title: 'Manual Verification Required',
   sent_unknown_resolve_desc: 'Bytes were sent to the printer, but physical execution was unconfirmed. Please physically inspect the printer tray before resolving.',
@@ -356,6 +356,7 @@ export const en = {
   diag_label_top_confirm: 'Confirm: saved on printer',
   diag_dots: 'dots',
   diag_sent: 'Sent {cmd}: {note}',
+  not_set: 'Not set',
 };
 
 export type TranslationKey = keyof typeof en;

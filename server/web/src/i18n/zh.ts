@@ -67,8 +67,8 @@ export const zh: Record<TranslationKey, string> = {
   orientation_inverted: '反向旋转 (180°)',
   orientation_portrait: '纵向 (Portrait)',
   orientation_landscape: '横向 (Landscape)',
-  direction_top_first: '顶部先出 (常规出纸)',
-  direction_bottom_first: '底部先出 (反向出纸)',
+  direction_top_first: '顶部先出（标签顶端先出纸）',
+  direction_bottom_first: '底部先出（标签顶端最后出纸）',
   job_state_detail_label: '状态详细说明与保障',
   sent_unknown_resolve_title: '需要人工物理确认',
   sent_unknown_resolve_desc: '报文已发送至打印机端口，但未收到物理出纸确认。请前往打印机物理托盘确认是否出纸，以避免产生重单。',
@@ -358,4 +358,5 @@ export const zh: Record<TranslationKey, string> = {
   diag_label_top_confirm: '确认：将保存到打印机',
   diag_dots: '点',
   diag_sent: '已发送 {cmd}：{note}',
+  not_set: '未设置',
 };

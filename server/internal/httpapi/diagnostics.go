@@ -35,6 +35,8 @@ type declaredMedia struct {
 	MediaWidthMM  float64 `json:"media_width_mm,omitempty"`
 	MediaHeightMM float64 `json:"media_height_mm,omitempty"`
 	DPI           int     `json:"dpi,omitempty"`
+	// Feed direction is physical: no Zebra query reports it, so it is only ever declared.
+	PrintDirection string `json:"print_direction,omitempty"`
 }
 
 type diagnosticsWarning struct {
@@ -55,7 +57,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 	rep := diagnosticsReport{
 		PrinterID: p.ID(), CheckedAt: time.Now().UTC(), Errors: map[string]string{},
 		Declared: declaredMedia{PaperSize: spec.PaperSize, MediaWidthMM: spec.MediaWidthMM,
-			MediaHeightMM: spec.MediaHeightMM, DPI: spec.DPI},
+			MediaHeightMM: spec.MediaHeightMM, DPI: spec.DPI, PrintDirection: spec.PrintDirection},
 		Warnings: []diagnosticsWarning{},
 	}
 
@@ -125,6 +127,10 @@ func compareMedia(d declaredMedia, c *printer.HostConfig, st *domain.Status) []d
 	if c.LabelTopDots != 0 || c.LeftPosDots != 0 {
 		add("offset_set", "print offset is adjusted on the printer (label top %+d, left %+d dots)",
 			c.LabelTopDots, c.LeftPosDots)
+	}
+	if d.PrintDirection == "" {
+		add("direction_undeclared", "feed direction is not declared and the printer cannot report it: "+
+			"look at a printed label — if its top comes out of the printer last, set bottom_first")
 	}
 	if c.Language != "" && !strings.HasPrefix(strings.ToUpper(c.Language), "ZPL") {
 		add("not_zpl", "printer language is %q; ZPL labels may not print", c.Language)

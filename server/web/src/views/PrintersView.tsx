@@ -397,8 +397,8 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
   const [mediaHeightMm, setMediaHeightMm] = useState<number | undefined>(p.media_height_mm);
   const [dpi, setDpi] = useState<number | undefined>(p.dpi);
   const [dpmm, setDpmm] = useState<number | undefined>(p.dpmm);
-  const [orientation, setOrientation] = useState(p.orientation || 'normal');
-  const [printDirection, setPrintDirection] = useState(p.print_direction || 'top_first');
+  const [orientation, setOrientation] = useState(p.orientation || '');
+  const [printDirection, setPrintDirection] = useState(p.print_direction || '');
   const [cjkFont, setCjkFont] = useState(p.cjk_font || '');
   const [cjkSupported, setCjkSupported] = useState(p.cjk_supported || false);
   const [enabled, setEnabled] = useState(p.enabled);
@@ -576,6 +576,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                 <div className="form-group mb-0">
                   <label>{t('orientation_label')}</label>
                   <select value={orientation} onChange={(e) => setOrientation(e.target.value)}>
+                    <option value="">{t('not_set')}</option>
                     <option value="normal">{t('orientation_normal')}</option>
                     <option value="inverted">{t('orientation_inverted')}</option>
                     <option value="portrait">{t('orientation_portrait')}</option>
@@ -585,6 +586,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                 <div className="form-group mb-0">
                   <label>{t('print_direction_label')}</label>
                   <select value={printDirection} onChange={(e) => setPrintDirection(e.target.value)}>
+                    <option value="">{t('not_set')}</option>
                     <option value="top_first">{t('direction_top_first')}</option>
                     <option value="bottom_first">{t('direction_bottom_first')}</option>
                   </select>
@@ -739,7 +741,12 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
               <div className="detail-item">
                 <span className="detail-label">{t('orientation_label')}</span>
                 <span className="detail-val text-sm font-mono">
-                  {p.orientation || 'normal'} · {p.print_direction || 'top_first'}
+                  {p.orientation || t('not_set')} ·{' '}
+                  {p.print_direction === 'bottom_first'
+                    ? t('direction_bottom_first')
+                    : p.print_direction === 'top_first'
+                      ? t('direction_top_first')
+                      : t('not_set')}
                 </span>
               </div>
               <div className="detail-item">

@@ -10,6 +10,7 @@ import (
 func TestDiagnosticsReportsPrinterSetup(t *testing.T) {
 	declared := mockSpec("p1", &domain.MockCfg{})
 	declared.PaperSize = "100x150mm"
+	declared.PrintDirection = "bottom_first"
 	ts := newTestServer(t, declared, mockSpec("bare", &domain.MockCfg{}))
 
 	res, body := do(t, ts, "GET", "/api/v1/printers/p1/diagnostics", opsKey, "")
@@ -27,8 +28,12 @@ func TestDiagnosticsReportsPrinterSetup(t *testing.T) {
 	// No declared paper size: the report says what the printer is set to.
 	_, body = do(t, ts, "GET", "/api/v1/printers/bare/diagnostics", opsKey, "")
 	ws := body["warnings"].([]any)
-	if len(ws) != 1 || ws[0].(map[string]any)["code"] != "media_undeclared" {
-		t.Fatalf("want media_undeclared, got %v", ws)
+	codes := map[any]bool{}
+	for _, w := range ws {
+		codes[w.(map[string]any)["code"]] = true
+	}
+	if len(ws) != 2 || !codes["media_undeclared"] || !codes["direction_undeclared"] {
+		t.Fatalf("want media_undeclared and direction_undeclared, got %v", ws)
 	}
 
 	if res, _ := do(t, ts, "GET", "/api/v1/printers/p1/diagnostics", wmsKey, ""); res.StatusCode != http.StatusForbidden {
