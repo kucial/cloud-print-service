@@ -244,4 +244,5 @@ export interface Diagnostics {
   warnings: { code: string; message: string }[];
   errors?: Record<string, string>;
   raw_config?: string;
+  cjk_fonts: { name: string; size: number }[];
 }

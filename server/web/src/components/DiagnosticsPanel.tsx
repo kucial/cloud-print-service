@@ -134,6 +134,10 @@ export const DiagnosticsPanel: React.FC<{
             {c && row(t('diag_darkness_speed'), `${c.darkness ?? '—'} · ${c.print_speed ?? '—'}`)}
             {c && row(t('diag_language'), c.language)}
             {c && row(t('diag_head_usage'), c.head_usage)}
+            {row(
+              t('diag_cjk_fonts'),
+              diag.cjk_fonts?.length ? diag.cjk_fonts.map((f) => f.name).join(', ') : t('diag_none'),
+            )}
           </div>
 
           <form className="adjust-card" onSubmit={saveOffsets}>

@@ -369,6 +369,8 @@ export const en = {
   diag_offsets_save: 'Save offsets',
   diag_offsets_saved: 'Offsets saved on the printer',
   diag_calibrate_note: 'Re-measures the label gap (~JC). Feeds a few blank labels.',
+  diag_cjk_fonts: 'CJK fonts on printer',
+  diag_none: 'None',
 };
 
 export type TranslationKey = keyof typeof en;

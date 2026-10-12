@@ -371,4 +371,6 @@ export const zh: Record<TranslationKey, string> = {
   diag_offsets_save: '保存偏移',
   diag_offsets_saved: '偏移已保存到打印机',
   diag_calibrate_note: '重新测量标签间隙（~JC），会走纸数张空白标签。',
+  diag_cjk_fonts: '打印机中文字体',
+  diag_none: '无',
 };
