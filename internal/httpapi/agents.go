@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/config"
-	"github.com/kongkx/cloud-print-service/internal/domain"
-	"github.com/kongkx/cloud-print-service/internal/fleet"
-	"github.com/kongkx/cloud-print-service/internal/token"
+	"github.com/kucial/cloud-print-service/internal/config"
+	"github.com/kucial/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/fleet"
+	"github.com/kucial/cloud-print-service/internal/token"
 )
 
 // Agent-facing endpoints.

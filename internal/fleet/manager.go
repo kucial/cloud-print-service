@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
-	"github.com/kongkx/cloud-print-service/internal/driver"
-	"github.com/kongkx/cloud-print-service/internal/observ"
+	"github.com/kucial/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/driver"
+	"github.com/kucial/cloud-print-service/internal/observ"
 )
 
 // Manager owns every printer's driver and cached status.

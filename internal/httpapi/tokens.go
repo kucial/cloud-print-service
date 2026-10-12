@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/config"
-	"github.com/kongkx/cloud-print-service/internal/token"
+	"github.com/kucial/cloud-print-service/internal/config"
+	"github.com/kucial/cloud-print-service/internal/token"
 )
 
 // Token administration for business-system integrations.

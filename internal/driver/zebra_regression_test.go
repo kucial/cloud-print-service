@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/driver"
-	"github.com/kongkx/cloud-print-service/internal/virtual"
+	"github.com/kucial/cloud-print-service/internal/driver"
+	"github.com/kucial/cloud-print-service/internal/virtual"
 )
 
 // A printer that reboots between jobs must not silently eat a job: the previous socket

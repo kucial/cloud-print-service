@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/observ"
-	"github.com/kongkx/cloud-print-service/internal/token"
+	"github.com/kucial/cloud-print-service/internal/observ"
+	"github.com/kucial/cloud-print-service/internal/token"
 )
 
 type ctxKey int

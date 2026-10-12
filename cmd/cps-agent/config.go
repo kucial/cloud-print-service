@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/domain"
 )
 
 // Config is the agent's on-disk state. Created on first enrollment.

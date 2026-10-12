@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kucial/cloud-print-service/internal/render"
 )
 
 // Printer is one virtual printer bound to an address.

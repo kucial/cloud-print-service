@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kucial/cloud-print-service/internal/render"
 )
 
 // SetRenderer wires the ZPL preview engine used by POST /api/v1/admin/preview.

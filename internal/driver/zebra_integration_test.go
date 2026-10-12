@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
-	"github.com/kongkx/cloud-print-service/internal/driver"
-	"github.com/kongkx/cloud-print-service/internal/virtual"
+	"github.com/kucial/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/driver"
+	"github.com/kucial/cloud-print-service/internal/virtual"
 )
 
 // These tests drive the real zebra9100 driver against a virtual printer over TCP,

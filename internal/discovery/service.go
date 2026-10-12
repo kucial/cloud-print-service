@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/fleet"
+	"github.com/kucial/cloud-print-service/internal/fleet"
 )
 
 // Probe finds devices and reports them as candidates. Implementations are per mechanism

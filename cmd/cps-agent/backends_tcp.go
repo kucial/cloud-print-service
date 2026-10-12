@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/domain"
 )
 
 // Tier 1 backend: a driver-provided local TCP share.

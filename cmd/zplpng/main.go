@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kucial/cloud-print-service/internal/render"
 )
 
 func main() {

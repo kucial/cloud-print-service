@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
-	"github.com/kongkx/cloud-print-service/internal/observ"
-	"github.com/kongkx/cloud-print-service/internal/store"
+	"github.com/kucial/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/observ"
+	"github.com/kucial/cloud-print-service/internal/store"
 )
 
 // FailOnAgentLost fails the queued jobs of every printer the departed agent owned.

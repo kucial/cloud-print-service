@@ -49,7 +49,7 @@ func internalImports(t *testing.T, pkg string) []string {
 		t.Fatalf("import %s: %v", dir, err)
 	}
 	var out []string
-	const prefix = "github.com/kongkx/cloud-print-service/"
+	const prefix = "github.com/kucial/cloud-print-service/"
 	for _, imp := range pkgObj.Imports {
 		if !strings.HasPrefix(imp, prefix) {
 			continue

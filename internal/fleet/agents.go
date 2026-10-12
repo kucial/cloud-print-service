@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
-	"github.com/kongkx/cloud-print-service/internal/observ"
+	"github.com/kucial/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/observ"
 )
 
 // Agent is an enrolled edge process — typically one per packing PC — that makes local

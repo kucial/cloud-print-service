@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/render"
+	"github.com/kucial/cloud-print-service/internal/render"
 )
 
 // RenderOpts configures label previews.

@@ -12,16 +12,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/config"
-	"github.com/kongkx/cloud-print-service/internal/discovery"
-	"github.com/kongkx/cloud-print-service/internal/driver"
-	"github.com/kongkx/cloud-print-service/internal/fleet"
-	"github.com/kongkx/cloud-print-service/internal/httpapi"
-	"github.com/kongkx/cloud-print-service/internal/job"
-	"github.com/kongkx/cloud-print-service/internal/observ"
-	"github.com/kongkx/cloud-print-service/internal/render"
-	"github.com/kongkx/cloud-print-service/internal/store"
-	"github.com/kongkx/cloud-print-service/internal/token"
+	"github.com/kucial/cloud-print-service/internal/config"
+	"github.com/kucial/cloud-print-service/internal/discovery"
+	"github.com/kucial/cloud-print-service/internal/driver"
+	"github.com/kucial/cloud-print-service/internal/fleet"
+	"github.com/kucial/cloud-print-service/internal/httpapi"
+	"github.com/kucial/cloud-print-service/internal/job"
+	"github.com/kucial/cloud-print-service/internal/observ"
+	"github.com/kucial/cloud-print-service/internal/render"
+	"github.com/kucial/cloud-print-service/internal/store"
+	"github.com/kucial/cloud-print-service/internal/token"
 )
 
 func rendererName(r render.Renderer) string {

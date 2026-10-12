@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/observ"
-	"github.com/kongkx/cloud-print-service/internal/token"
+	"github.com/kucial/cloud-print-service/internal/observ"
+	"github.com/kucial/cloud-print-service/internal/token"
 )
 
 // A token's kind must survive the trip through verification into the request context:

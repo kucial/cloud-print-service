@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/domain"
 )
 
 // Duration is a time.Duration that reads from JSON as "15s" / "2m".

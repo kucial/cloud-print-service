@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/domain"
 )
 
 func TestOpenAPISpecsAndDocs(t *testing.T) {

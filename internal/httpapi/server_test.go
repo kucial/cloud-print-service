@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
-	"github.com/kongkx/cloud-print-service/internal/fleet"
-	"github.com/kongkx/cloud-print-service/internal/job"
-	"github.com/kongkx/cloud-print-service/internal/observ"
-	"github.com/kongkx/cloud-print-service/internal/render"
-	"github.com/kongkx/cloud-print-service/internal/store"
-	"github.com/kongkx/cloud-print-service/internal/token"
+	"github.com/kucial/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/fleet"
+	"github.com/kucial/cloud-print-service/internal/job"
+	"github.com/kucial/cloud-print-service/internal/observ"
+	"github.com/kucial/cloud-print-service/internal/render"
+	"github.com/kucial/cloud-print-service/internal/store"
+	"github.com/kucial/cloud-print-service/internal/token"
 )
 
 const (

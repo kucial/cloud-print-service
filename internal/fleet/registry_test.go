@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/domain"
 )
 
 func spec(id, site, host string, port int) domain.Printer {

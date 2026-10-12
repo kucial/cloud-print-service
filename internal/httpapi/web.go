@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kongkx/cloud-print-service/web"
+	"github.com/kucial/cloud-print-service/web"
 )
 
 // WebConfig controls the embedded operator panel.
