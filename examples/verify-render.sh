@@ -60,8 +60,8 @@ echo
 curl -sSL -o "$WORK/label.zpl"  "$ZPL_URL"
 curl -sSL -o "$WORK/ref.png"    "$REF_URL"
 
-go build -o "$WORK/vprint" ./cmd/vprint
-go build -o "$WORK/cps"    ./cmd/cps
+go build -o "$WORK/vprint" ./vprint/cmd/vprint
+go build -o "$WORK/cps"    ./server/cmd/cps
 
 "$WORK/vprint" -id verify-printer -listen ":$PRINT_PORT" -admin ":$ADMIN_PORT" \
   -render -render-width-mm "$WIDTH" -render-height-mm "$HEIGHT" -render-dpmm "$DPMM" \

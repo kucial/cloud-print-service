@@ -10,9 +10,10 @@ node_modules/
 /cps
 /cpsctl
 /cps-agent
-/vprint
+/vprint/vprint
 /zplpng
 /demo-web
+/business-demo/business-demo
 
 # test/tool output
 *.log

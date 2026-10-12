@@ -1,0 +1,132 @@
+# Local network-topology mimic — NOT a deployment manifest.
+#
+# Each component ships on its own (server/Dockerfile, vprint/Dockerfile,
+# business-demo/Dockerfile). This file just wires them the way a real site looks:
+#
+#   office net:   business-demo ──HTTP──▶ cps
+#   printer LAN:                         cps ──ZPL :9100──▶ vprint-*  (+ mDNS discovery)
+#
+# The business system has no route to the printers; only CPS sits on both networks.
+#
+#   docker compose -f dev/docker-compose.yml up --build
+#
+# Offline / no registry access? Point the builds at images you already have:
+#   GO_IMAGE=golang:alpine RUNTIME_IMAGE=alpine:latest SERVER_RUNTIME_IMAGE=alpine:latest GOPROXY=https://goproxy.cn \
+#     docker compose -f dev/docker-compose.yml up --build
+#
+#   CPS panel        http://localhost:8080/ui/   (token: dev-key-ops-0123456789abcdef)
+#   business-demo    http://localhost:8090
+#   vprint galleries http://localhost:19200 · :19201 · :19202
+name: cps-dev
+
+networks:
+  office:
+  printer-lan:
+
+x-vprint: &vprint
+  build:
+    context: ..
+    dockerfile: vprint/Dockerfile
+    args: &img-args
+      GO_IMAGE: ${GO_IMAGE:-golang:1.26-alpine}
+      RUNTIME_IMAGE: ${RUNTIME_IMAGE:-gcr.io/distroless/static-debian12:nonroot}
+      GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+  image: cps-dev/vprint
+  restart: unless-stopped
+  networks: [printer-lan]
+
+services:
+  cps:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+      args:
+        GO_IMAGE: ${GO_IMAGE:-golang:1.26-alpine}
+        RUNTIME_IMAGE: ${SERVER_RUNTIME_IMAGE:-alpine:3.22}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+    image: cps-dev/server
+    restart: unless-stopped
+    command: ["-config", "/etc/cps/config.json"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./cps.config.json:/etc/cps/config.json:ro
+    networks: [office, printer-lan]
+    depends_on: [vprint-shipping, vprint-carton, vprint-dock3]
+
+  # 4"x6" outbound pallet & shipping roll
+  vprint-shipping:
+    <<: *vprint
+    command:
+      - -id=sim-pack-01
+      - -listen=:9100
+      - -admin=:19200
+      - -serial=VPRTSHIP4X6
+      - -render
+      - -paper-size=4x6
+      - -dpi=203
+      - -cjk-font=ANSD.TTF
+      - -orientation=normal
+      - -print-direction=top_first
+      - -mdns
+      - -mdns-name=Outbound Shipping 4x6
+    ports:
+      - "19100:9100"
+      - "19200:19200"
+
+  # 100x50mm carton & remainder tail roll
+  vprint-carton:
+    <<: *vprint
+    command:
+      - -id=sim-pack-02
+      - -listen=:9100
+      - -admin=:19200
+      - -serial=VPRTCARTON100X50
+      - -render
+      - -paper-size=100x50mm
+      - -dpi=300
+      - -orientation=normal
+      - -print-direction=top_first
+      - -mdns
+      - -mdns-name=Carton Pack 100x50
+    ports:
+      - "19101:9100"
+      - "19201:19200"
+
+  # 100x150mm warehouse station 3 (with CJK font)
+  vprint-dock3:
+    <<: *vprint
+    command:
+      - -id=wh1-pack-03
+      - -listen=:9100
+      - -admin=:19200
+      - -serial=VPRTDOCK3
+      - -render
+      - -paper-size=100x150mm
+      - -dpi=203
+      - -cjk-font=SIMSUN.FNT
+      - -orientation=normal
+      - -print-direction=top_first
+      - -mdns
+      - -mdns-name=Dock 3 Pallet
+    ports:
+      - "19102:9100"
+      - "19202:19200"
+
+  business-demo:
+    build:
+      context: ../business-demo
+      args: *img-args
+    image: cps-dev/business-demo
+    restart: unless-stopped
+    command:
+      - -url=http://cps:8080
+      - -addr=:8090
+      - -token=dev-key-erp-0123456789abcdef
+      - -admin-token=dev-key-ops-0123456789abcdef
+    ports:
+      - "8090:8090"
+    networks: [office]
+    depends_on:
+      cps:
+        condition: service_healthy

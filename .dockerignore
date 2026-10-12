@@ -1,5 +1,11 @@
 .git
-.gitignore
+.github
+bin/
+docs/
+dev/
+business-demo/
+**/node_modules
+**/.vite
 *.log
 config.json
-bin/
+config.local.json

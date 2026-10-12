@@ -83,7 +83,7 @@ two.
 ## Operator checklist for a new site
 
 1. One machine on the warehouse LAN, any OS.
-2. `cp config.example.json config.json`; set `addr`, the admin `api_keys`, and the site's
+2. `cp server/config.example.json config.json`; set `addr`, the admin `api_keys`, and the site's
    printers (or leave the fleet empty and use discovery).
 3. `cpsctl token issue --client-id erp --ttl 90d` and hand the secret to the ERP team.
 4. `docker compose up` (or run the binary). Confirm `/readyz`.

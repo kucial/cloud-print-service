@@ -1,0 +1,1287 @@
+openapi: 3.0.3
+info:
+  title: Cloud Print Service API
+  description: |
+    Cloud printing service for ERP and WMS business systems.
+    Provides fleet visibility, status query, and safe label dispatch for industrial thermal printers.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Current Service Instance (API v1)
+  - url: /
+    description: Service Root (Ops & Specs)
+
+tags:
+  - name: Fleet Visibility
+    description: Printer discovery, status monitoring, roll size configuration, and hardware queries.
+  - name: Print Jobs
+    description: Idempotent label dispatch, queue management, cancellation, and physical retry audits.
+  - name: Real-Time Events
+    description: Server-Sent Events (SSE) streaming live printer and job state transitions.
+  - name: API Tokens
+    description: Credential issuance, hashing, rotation, and revocation for business integrations.
+  - name: Edge Agents
+    description: Management of local PC agents forwarding USB label printers as network endpoints.
+  - name: Network Discovery
+    description: mDNS / DNS-SD discovery and human-controlled adoption of warehouse LAN printers.
+  - name: Template Preview
+    description: Server-side ZPL compilation and rasterization for previewing without printing.
+  - name: System & Observability
+    description: Health probes, Prometheus metrics, and OpenAPI documentation endpoints.
+
+paths:
+  # ---------------------------------------------------------------- Fleet Visibility
+  /printers:
+    get:
+      tags:
+        - Fleet Visibility
+      summary: List Printers
+      description: Returns all registered printers, optionally filtered by site, model, roll size, or usability.
+      parameters:
+        - name: site
+          in: query
+          schema:
+            type: string
+          description: Filter by warehouse or site code (e.g. wh1)
+        - name: model
+          in: query
+          schema:
+            type: string
+          description: Filter by printer hardware model
+        - name: paper_size
+          in: query
+          schema:
+            type: string
+          description: Filter by installed roll size (e.g. 4x6, 4x2, 2x1)
+        - name: usable
+          in: query
+          schema:
+            type: boolean
+          description: Filter by operational usability
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+          description: Filter by administrative enabled status
+      responses:
+        '200':
+          description: List of printers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Printer'
+                  count:
+                    type: integer
+
+  /printers/status:
+    get:
+      tags:
+        - Fleet Visibility
+      summary: Bulk Printer Status
+      description: High-performance bulk status endpoint for warehouse dashboards (single round-trip).
+      parameters:
+        - name: ids
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of printer IDs. If omitted, returns all printers.
+        - name: site
+          in: query
+          schema:
+            type: string
+        - name: paper_size
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Bulk fleet status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetStatusResponse'
+
+  /printers/{printer_id}:
+    get:
+      tags:
+        - Fleet Visibility
+      summary: Get Printer Details
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Printer detail and current status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Printer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Fleet Visibility
+      summary: Update Printer Attributes
+      description: Update user-editable attributes (display name, site, custom label, remark, roll size). Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                site:
+                  type: string
+                remark:
+                  type: string
+                custom_label:
+                  type: string
+                paper_size:
+                  type: string
+                media_width_mm:
+                  type: number
+                media_height_mm:
+                  type: number
+                dpi:
+                  type: integer
+                dpmm:
+                  type: number
+                orientation:
+                  type: string
+                media_orientation:
+                  type: string
+                print_direction:
+                  type: string
+                cjk_supported:
+                  type: boolean
+                cjk_font:
+                  type: string
+                fonts:
+                  type: array
+                  items:
+                    type: string
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated printer view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Printer'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /printers/{printer_id}/status:
+    get:
+      tags:
+        - Fleet Visibility
+      summary: Get Single Printer Status
+      description: Serves cached snapshot without touching physical TCP socket.
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  printer_id:
+                    type: string
+                  usable:
+                    type: boolean
+                  queue_depth:
+                    type: integer
+                  status:
+                    $ref: '#/components/schemas/PrinterStatus'
+
+  /printers/{printer_id}/jobs:
+    get:
+      tags:
+        - Fleet Visibility
+      summary: List Recent Printer Jobs
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Recent jobs on this printer
+
+  /printers/{printer_id}/test:
+    post:
+      tags:
+        - Fleet Visibility
+      summary: Dispatch Test Label
+      description: Prints a built-in diagnostic test label. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Test label accepted and queued
+
+  /printers/{printer_id}/identify:
+    post:
+      tags:
+        - Fleet Visibility
+      summary: Query Printer Hardware Identity (~HI)
+      description: Probes printer for model, serial, and firmware revision. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Hardware identity map
+
+  /printers/probe:
+    post:
+      tags:
+        - Fleet Visibility
+      summary: Probe All Printers
+      description: Triggers an immediate refresh of all printer status caches. Admin only.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Probing initiated
+
+  # ---------------------------------------------------------------- Print Jobs
+  /jobs:
+    post:
+      tags:
+        - Print Jobs
+      summary: Dispatch Print Job (Idempotent)
+      description: |
+        Dispatches a ZPL print job to a target printer.
+        Anchored on `(client_id, external_id)` for strict idempotency: duplicate requests return `200` with `replayed: true`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+          description: Optional idempotency key (defaults to external_id)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitJobRequest'
+      responses:
+        '202':
+          description: Job accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+        '200':
+          description: Job already submitted and replayed (idempotent deduplication)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+        '409':
+          description: Idempotency conflict (same external_id with different payload) or printer disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: |
+            Invalid request or unprocessable payload.
+            Machine-readable `error.reason` codes:
+            - `payload_too_large`: Payload exceeds maximum allowed size (default 1MB / 1,048,576 bytes; configurable via `max_payload_bytes`)
+            - `payload_empty`: Payload has zero length
+            - `missing_payload`: Neither `zpl` nor `payload_base64` was supplied
+            - `duplicate_payload`: Both `zpl` and `payload_base64` were supplied
+            - `invalid_base64`: `payload_base64` is not valid base64
+            - `missing_printer_id`: `printer_id` is required
+            - `missing_external_id`: `external_id` (or `Idempotency-Key`) is required for safe retries
+            - `invalid_copies`: copies must be between 1 and 50
+            - `invalid_page_copies`: page copies array count doesn't match multi-page ZPL format count
+            - `invalid_priority`: priority must be `normal` or `high`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Printer queue is full (backpressure)
+
+    get:
+      tags:
+        - Print Jobs
+      summary: List Jobs
+      description: Queries jobs with filters. Scoped to the authenticated client.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [queued, sending, printed, sent_unknown, failed, cancelled]
+        - name: external_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of jobs
+
+  /jobs/raw:
+    post:
+      tags:
+        - Print Jobs
+      summary: Dispatch Raw Octet-Stream ZPL Job
+      description: Send raw binary ZPL payload to avoid base64 overhead.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: external_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: biz_ref
+          in: query
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '202':
+          description: Job accepted
+
+  /jobs/batch:
+    post:
+      tags:
+        - Print Jobs
+      summary: Batch Dispatch Jobs
+      description: Submit up to 200 jobs in one batch. Handled independently per item.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/SubmitJobRequest'
+      responses:
+        '200':
+          description: Batch processing result
+
+  /jobs/{job_id}:
+    get:
+      tags:
+        - Print Jobs
+      summary: Get Job Details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{job_id}/cancel:
+    post:
+      tags:
+        - Print Jobs
+      summary: Cancel Job
+      description: Aborts a queued or in-flight job.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job cancelled
+        '409':
+          description: Job already terminal (cannot be cancelled)
+
+  /jobs/{job_id}/resolve:
+    post:
+      tags:
+        - Print Jobs
+      summary: Manually Resolve Sent-Unknown Job
+      description: |
+        Allows an operator to resolve a job in `sent_unknown` state after visual verification in the warehouse.
+        - `resolution: printed`: Confirms the physical label was observed on the printer tray.
+        - `resolution: failed`: Confirms the physical label did not print, enabling the client to safely retry.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution]
+              properties:
+                resolution:
+                  type: string
+                  enum: [printed, failed]
+                note:
+                  type: string
+                  description: Optional verification note (e.g. "Checked tray, label #88213 is present")
+      responses:
+        '200':
+          description: Job resolved and transitioned to terminal state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Job is not in sent_unknown state or invalid resolution value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{job_id}/attempts:
+    get:
+      tags:
+        - Print Jobs
+      summary: Get Job Socket Retry Attempts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Physical send attempts log
+
+  # ---------------------------------------------------------------- Real-Time Events
+  /events:
+    get:
+      tags:
+        - Real-Time Events
+      summary: Real-Time SSE Event Stream
+      description: Subscribes to Server-Sent Events for `printer.status` and `job.state` transitions.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: topics
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of topics (e.g. printer.status,job.state)
+        - name: printer_ids
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # ---------------------------------------------------------------- API Tokens
+  /admin/tokens:
+    post:
+      tags:
+        - API Tokens
+      summary: Issue API Token
+      description: Issue a business or operator credential. The secret is returned exactly once. Admin only.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id]
+              properties:
+                client_id:
+                  type: string
+                role:
+                  type: string
+                  enum: [client, admin]
+                  default: client
+                ttl:
+                  type: string
+                  example: 90d
+                note:
+                  type: string
+      responses:
+        '201':
+          description: Token created with secret
+
+    get:
+      tags:
+        - API Tokens
+      summary: List Issued Tokens
+      description: List tokens with metadata (secrets are never stored or returned). Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: client_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tokens list
+
+  /admin/tokens/{token_id}:
+    delete:
+      tags:
+        - API Tokens
+      summary: Revoke Token
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Token revoked
+
+  /admin/tokens/{token_id}/rotate:
+    post:
+      tags:
+        - API Tokens
+      summary: Rotate Token
+      description: Revokes the old secret and generates a new secret with identical identity. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: New secret generated
+
+  # ---------------------------------------------------------------- Edge Agents
+  /agents:
+    get:
+      tags:
+        - Edge Agents
+      summary: List Edge Agents
+      description: Returns all enrolled edge agents and their health status.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of enrolled edge agents
+
+  /agents/{agent_id}:
+    delete:
+      tags:
+        - Edge Agents
+      summary: Remove Edge Agent
+      description: Deregisters an agent and removes all printers solely claimed by it. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent removed
+
+  /agents/register:
+    post:
+      tags:
+        - Edge Agents
+      summary: Agent Registration
+      description: Called by cps-agent to register local USB printers. Exchanging a bootstrap token returns a durable credential.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, agent_addr]
+              properties:
+                agent_id:
+                  type: string
+                site:
+                  type: string
+                hostname:
+                  type: string
+                os:
+                  type: string
+                version:
+                  type: string
+                agent_addr:
+                  type: string
+                printers:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Printer'
+      responses:
+        '200':
+          description: Registration successful
+
+  /agents/heartbeat:
+    post:
+      tags:
+        - Edge Agents
+      summary: Agent Heartbeat
+      description: Refreshes agent liveness and pushes local printer status snapshots.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id]
+              properties:
+                agent_id:
+                  type: string
+                status:
+                  type: object
+                  additionalProperties:
+                    $ref: '#/components/schemas/PrinterStatus'
+      responses:
+        '200':
+          description: Heartbeat accepted
+
+  /agents/{agent_id}/printers/{printer_id}/status:
+    post:
+      tags:
+        - Edge Agents
+      summary: Agent Push Single Printer Status
+      description: Pushes immediate status change for a locally connected printer.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrinterStatus'
+      responses:
+        '200':
+          description: Status update accepted
+
+  /admin/agents/enroll:
+    post:
+      tags:
+        - Edge Agents
+      summary: Enroll Agent (Generate Bootstrap Token)
+      description: Issues a single-use bootstrap token for packing PC deployment. Admin only.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id]
+              properties:
+                agent_id:
+                  type: string
+                site:
+                  type: string
+                ttl:
+                  type: string
+      responses:
+        '201':
+          description: One-time agent bootstrap token
+
+  # ---------------------------------------------------------------- Network Discovery
+  /admin/discovery:
+    get:
+      tags:
+        - Network Discovery
+      summary: Discovery Status
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Status of network discovery service
+
+  /admin/discovery/scan:
+    post:
+      tags:
+        - Network Discovery
+      summary: Trigger Discovery Scan
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Scan results and candidates
+
+  /admin/discovery/candidates:
+    get:
+      tags:
+        - Network Discovery
+      summary: List Discovered Candidates
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: dismissed
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of candidates
+
+  /admin/discovery/candidates/{device_key}/adopt:
+    post:
+      tags:
+        - Network Discovery
+      summary: Adopt Candidate into Fleet
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [printer_id]
+              properties:
+                printer_id:
+                  type: string
+                site:
+                  type: string
+                name:
+                  type: string
+                paper_size:
+                  type: string
+                media_width_mm:
+                  type: number
+                media_height_mm:
+                  type: number
+                dpi:
+                  type: integer
+                dpmm:
+                  type: number
+                orientation:
+                  type: string
+                media_orientation:
+                  type: string
+                print_direction:
+                  type: string
+                cjk_supported:
+                  type: boolean
+                cjk_font:
+                  type: string
+                fonts:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Candidate adopted into active fleet
+
+  /admin/discovery/candidates/{device_key}/dismiss:
+    post:
+      tags:
+        - Network Discovery
+      summary: Dismiss Candidate
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Candidate dismissed
+
+  # ---------------------------------------------------------------- Template Preview
+  /admin/preview:
+    post:
+      tags:
+        - Template Preview
+      summary: Render ZPL Preview Image
+      description: Compiles and rasterizes ZPL into an image (PNG/SVG/PDF) at exact aspect ratio without printing. Admin only.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [zpl]
+              properties:
+                zpl:
+                  type: string
+                width_mm:
+                  type: number
+                  default: 101.6
+                height_mm:
+                  type: number
+                  default: 152.4
+                dpmm:
+                  type: integer
+                  default: 8
+                grayscale:
+                  type: boolean
+                  default: false
+                upright:
+                  type: boolean
+                  default: true
+                format:
+                  type: string
+                  enum: [png, svg, pdf]
+                  default: png
+      responses:
+        '200':
+          description: Rendered image binary
+          headers:
+            X-Render-Backend:
+              schema:
+                type: string
+            X-Render-Width-Dots:
+              schema:
+                type: integer
+            X-Render-Height-Dots:
+              schema:
+                type: integer
+            X-Render-Duration-Ms:
+              schema:
+                type: integer
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/svg+xml:
+              schema:
+                type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  # ---------------------------------------------------------------- System & Observability
+  /healthz:
+    get:
+      tags:
+        - System & Observability
+      summary: Liveness Probe
+      description: Unauthenticated liveness check for container orchestrators.
+      responses:
+        '200':
+          description: Service is healthy
+
+  /readyz:
+    get:
+      tags:
+        - System & Observability
+      summary: Readiness Probe
+      description: Unauthenticated readiness check verifying data store and registry status.
+      responses:
+        '200':
+          description: Service is ready to serve traffic
+
+  /metrics:
+    get:
+      tags:
+        - System & Observability
+      summary: Prometheus Metrics
+      description: Standard Prometheus text-format exposition metrics for scraping.
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /openapi.json:
+    get:
+      tags:
+        - System & Observability
+      summary: OpenAPI Specification (JSON)
+      responses:
+        '200':
+          description: Raw OpenAPI JSON document
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /openapi.yaml:
+    get:
+      tags:
+        - System & Observability
+      summary: OpenAPI Specification (YAML)
+      responses:
+        '200':
+          description: Raw OpenAPI YAML document
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+
+  schemas:
+    Printer:
+      type: object
+      properties:
+        printer_id:
+          type: string
+        name:
+          type: string
+        site:
+          type: string
+        model:
+          type: string
+        driver:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        enabled:
+          type: boolean
+        usable:
+          type: boolean
+        queue_depth:
+          type: integer
+        remark:
+          type: string
+        custom_label:
+          type: string
+        paper_size:
+          type: string
+          description: Standard roll size tag (e.g. 4x6, 100x150mm, 4x2, 2x1)
+        media_width_mm:
+          type: number
+          description: Physical roll width in mm
+        media_height_mm:
+          type: number
+          description: Physical roll height / pitch in mm
+        dpi:
+          type: integer
+          description: Print resolution in dots per inch (e.g. 203, 300, 600)
+        dpmm:
+          type: number
+          description: Print resolution in dots per mm (e.g. 8, 12, 24)
+        orientation:
+          type: string
+          description: Label orientation (normal, inverted, portrait, landscape)
+        media_orientation:
+          type: string
+          description: Media feed alignment
+        print_direction:
+          type: string
+          description: Print feed direction (top_first, bottom_first)
+        cjk_supported:
+          type: boolean
+          description: Whether printer has CJK font installed
+        cjk_font:
+          type: string
+          description: Primary CJK font identifier (e.g. SIMSUN.FNT, ANSD.TTF)
+        fonts:
+          type: array
+          items:
+            type: string
+          description: Installed font identifiers
+        status:
+          $ref: '#/components/schemas/PrinterStatus'
+
+    PrinterStatus:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [idle, printing, busy, media_low, media_out, ribbon_low, ribbon_out, head_error, error, offline, disabled, unknown]
+        raw:
+          type: string
+        detail:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+
+    FleetStatusResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        usable:
+          type: integer
+        not_usable:
+          type: integer
+        observed_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Printer'
+
+    SubmitJobRequest:
+      type: object
+      required: [printer_id, external_id]
+      properties:
+        printer_id:
+          type: string
+        external_id:
+          type: string
+        zpl:
+          type: string
+        payload_base64:
+          type: string
+        copies:
+          type: integer
+          default: 1
+        page_copies:
+          type: array
+          items:
+            type: integer
+          description: Targeted copy counts per ^XA...^XZ format page (e.g. [4, 1] for 4 full cartons + 1 tail remainder carton). If an entry is 0, that page is omitted.
+        priority:
+          type: string
+          enum: [normal, high]
+          default: normal
+        biz_ref:
+          type: string
+        meta:
+          type: object
+          additionalProperties:
+            type: string
+
+    JobAcceptedResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        state:
+          type: string
+        printer_id:
+          type: string
+        external_id:
+          type: string
+        replayed:
+          type: boolean
+        links:
+          type: object
+          properties:
+            self:
+              type: string
+
+    Job:
+      type: object
+      properties:
+        job_id:
+          type: string
+        client_id:
+          type: string
+        external_id:
+          type: string
+        printer_id:
+          type: string
+        state:
+          type: string
+          enum: [queued, sending, printed, sent_unknown, failed, cancelled]
+          description: |
+            Lifecycle position of the dispatch job:
+            - `queued`: Accepted by CPS, placed in per-printer FIFO queue.
+            - `sending`: Worker dialed printer TCP socket and is actively transmitting bytes.
+            - `printed`: Confirmed physical print. All payload bytes reached socket AND printer status query (^HS) confirmed physical completion and return to idle.
+            - `sent_unknown`: Unconfirmed physical outcome. Bytes were written to socket, but confirmation timed out, connection dropped, or service restarted. Terminal for auto-retry to prevent duplicate physical labels on packages. Resolved manually by operator physical inspection.
+            - `failed`: Job failed before transmission or partial socket write. Zero bytes confirmed on printer; safe to retry.
+            - `cancelled`: Cancelled by operator while waiting in queue before transmission started.
+        state_detail:
+          type: string
+          description: Detailed explanation of current state guarantees and safety rules
+        status_message:
+          type: string
+          description: Short human-readable summary suitable for business console displays
+        payload_bytes:
+          type: integer
+        copies:
+          type: integer
+        page_copies:
+          type: array
+          items:
+            type: integer
+          description: Distribution of copy counts across format pages
+        attempts:
+          type: integer
+        last_error:
+          type: string
+        biz_ref:
+          type: string
+        queued_at:
+          type: string
+          format: date-time
+        sent_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Broad error classification (e.g. invalid_request, printer_not_found, queue_full)
+            reason:
+              type: string
+              description: Specific granular machine-readable error reason for business UI logic
+            message:
+              type: string
+              description: Human-readable error description
+            details:
+              type: object
+              description: Optional diagnostic metadata (e.g. max_payload_bytes, queue_depth)
+
+  responses:
+    NotFound:
+      description: Entity not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Action requires higher privileges (e.g. admin role)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

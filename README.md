@@ -29,13 +29,13 @@ Out of scope on purpose: ZPL rendering in the service, USB print agents, documen
 ## Operator panel
 
 ```bash
-go run ./cmd/cps -config config.json     # then open http://localhost:8080/ → redirects to /ui/
+go run ./server/cmd/cps -config server/config.example.json     # then open http://localhost:8080/ → redirects to /ui/
 ```
 
 Embedded in the binary and served from the **same origin as the API** — the mihomo/clash
 pattern, deliberately:
 
-- **No second deployment, no CORS, no node toolchain.** `web/dist` is compiled in with
+- **No second deployment, no CORS, no node toolchain.** `server/web/dist` is compiled in with
   `go:embed`; the panel is plain HTML/CSS/JS with zero dependencies, because a warehouse
   laptop may have no internet.
 - **Same auth as the API.** Paste an admin token (bootstrap key or an issued one); it is
@@ -58,7 +58,7 @@ Disable or relocate it:
 "ui": { "enabled": true, "path": "/ui/", "title": "Cloud Print Service" }
 ```
 
-## Reference integration (`cmd/demo-web`)
+## Reference integration (`business-demo`)
 
 A WMS packing console that is meant to be **read**, not deployed. It shows the six rules a
 correct ERP/WMS integration follows — stable `external_id`, retry only on `503 queue_full`
@@ -67,8 +67,8 @@ the API (never from the `202`), and use a *client* token for dispatch with the a
 reserved for previews.
 
 ```bash
-cpsctl token issue --client-id wms --ttl 90d
-go run ./cmd/demo-web -token cps_live_…            # http://localhost:8090
+go run ./server/cmd/cpsctl token issue --client-id wms --ttl 90d
+go run ./business-demo -token cps_live_…            # http://localhost:8090
 ```
 
 Its **Resend** button re-submits a whole wave unchanged; every line must come back
@@ -83,14 +83,14 @@ resend OK-8801 (×2)       → still 1 label
 
 ```bash
 # 1. two virtual printers with rendered previews (gallery on :19200)
-go run ./cmd/vprint -count 2 -id wh1-pack -render -render-dir /tmp/labels
+go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render -render-dir /tmp/labels
 
 # 2. the service
-cp config.example.json config.json
-go run ./cmd/cps -config config.json
+cp server/config.example.json config.json
+go run ./server/cmd/cps -config config.json
 
 # 3. give the WMS a credential
-go run ./cmd/cpsctl token issue --client-id wms --ttl 90d
+go run ./server/cmd/cpsctl token issue --client-id wms --ttl 90d
 export WMS_KEY=cps_live_…
 
 # 4. see the fleet, print a label
@@ -128,17 +128,17 @@ retry 3× without a second label → printer runs out of paper → dashboard fla
 the credential. `test/e2e/flow_test.go` is the same story in Go, driving a virtual printer
 over a real socket.
 
-## Virtual printer (`cmd/vprint`)
+## Virtual printer (`vprint/cmd/vprint`)
 
 ```bash
-go run ./cmd/vprint -count 3 -id wh1-pack -base-port 19100 -base-admin-port 19200 \
+go run ./vprint/cmd/vprint -count 3 -id wh1-pack -base-port 19100 -base-admin-port 19200 \
   -render -render-dir /tmp/labels -print-duration 300ms
 ```
 
 - **Print port** — raw ZPL, answers `^HS` (host status), `~HI` (model/serial), `~JA` (cancel).
   Counts each `^XA…^XZ` as one label, so "did we double print?" has a real answer.
 - **Gallery / control port** (`http://localhost:19200`)
-  - `GET /` — every label rendered to PNG next to its ZPL
+  - `GET /` — real-time web view with auto-refresh, fault injection dropdown, and label gallery
   - `GET /labels/{n}/image`, `GET /labels/{n}/zpl`
   - `POST /control` — `{"state":"media_out"}`, `{"offline":true}`,
     `{"close_on_print":true}` (dies mid-write), `{"status_delay_ms":2000}`,
@@ -146,9 +146,8 @@ go run ./cmd/vprint -count 3 -id wh1-pack -base-port 19100 -base-admin-port 1920
 - **Rendering** — in-process [zebrash](https://github.com/swiftpush/zebrash) (Go, MIT) by
   default, no container. For the widest command coverage and Labelary-calibrated output, run
   [labelize](https://github.com/GOODBOY008/labelize) and pass
-  `-render-backend labelize -labelize-url http://localhost:8090`
-  (`docker compose --profile sim up labelize`).
-- Standalone rendering without any service: `go run ./cmd/zplpng label.zpl -o label.png`
+  `-render-backend labelize -labelize-url http://localhost:8090`.
+- Standalone rendering without any service: `go run ./vprint/cmd/zplpng label.zpl -o label.png`
   (`--format svg|pdf` also works).
 - `^POI` labels come out rotated 180° — physically what the printer does. Pass
   `-render-upright` (or `-upright` to zplpng) for the readable orientation that published
@@ -188,23 +187,28 @@ cannot tell them apart.
 ## Layout
 
 ```
-cmd/cps/          service entrypoint: config → drivers → poller → job workers → HTTP
-cmd/cpsctl/       admin CLI (issue/list/rotate/revoke tokens, printers, test label)
-cmd/vprint/       virtual printers + label gallery + fault injection
-cmd/demo-web/     reference WMS integration (release waves, idempotency tests)
-cmd/zplpng/       ZPL → PNG/SVG/PDF from a file or stdin
-web/dist/         operator panel (embedded via go:embed, no build step)
-internal/printer/ Driver interface, zebra9100 + mock, status cache & poller
-internal/job/     validation, idempotency, per-printer FIFO, retry, cancel
-internal/api/     HTTP handlers, auth, rate limit, SSE, token admin
-internal/token/   token issuing, hashing, verification, rotation
-internal/render/  ZPL → image: zebrash (default) or labelize
-internal/fakeprinter/  virtual printer + gallery, built on internal/render
-internal/bus/     in-process pub/sub for events
-internal/metrics/ dependency-free Prometheus text registry
-db/schema.sql     production schema (Postgres)
-test/e2e/         flow test: virtual printers + real HTTP API + issued tokens
-docs/DESIGN.md    the design document
+server/
+  cmd/cps/        service entrypoint: config → drivers → poller → job workers → HTTP
+  cmd/cpsctl/     admin CLI (issue/list/rotate/revoke tokens, printers, test label)
+  cmd/cps-agent/  edge agent: USB + discovery + status push
+  internal/       domain, fleet, job, driver, store, token, observ, discovery, httpapi
+  web/            operator panel (embedded via go:embed, no build step needed)
+  db/schema.sql   production schema (Postgres)
+  test/e2e/       flow test: virtual printers + real HTTP API + issued tokens
+  Dockerfile      server container (cps + cpsctl)
+vprint/
+  cmd/vprint/     virtual Zebra network printer + web gallery + fault injection
+  cmd/zplpng/     standalone ZPL → PNG/SVG/PDF renderer CLI
+  virtual/        virtual printer socket engine & gallery HTTP handler
+  Dockerfile      vprint standalone container
+business-demo/    reference WMS packing console (separate module; talks only over HTTP)
+  web/            embedded React operator UI
+  Dockerfile      business-demo standalone container
+pkg/
+  render/         shared ZPL rasterizer abstraction (zebrash / labelize)
+dev/
+  docker-compose.yml  network topology simulation (office net vs printer LAN)
+  cps.config.json     dev configuration wiring the simulated fleet
 ```
 
 ## Design decisions worth knowing
@@ -236,7 +240,7 @@ Shape of it:
 | `cps` | server: fleet registry, dispatch, status, API, panel, discovery coordinator |
 | `vprint` | virtual network printer (also the test double for the agent) |
 | `cps-agent` | edge agent: USB + local discovery, TCP forwarder, enroll/heartbeat |
-| `demo-web` ✅ | business-module **integration reference** — a WMS-like console (see [cmd/demo-web/README.md](cmd/demo-web/README.md)) |
+| `business-demo` ✅ | business-module **integration reference** — a WMS-like console (see [business-demo/README.md](business-demo/README.md)) |
 | `cpsctl` | admin CLI |
 
 The design decision that makes the agent cheap: **a USB printer behind the agent is

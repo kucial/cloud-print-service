@@ -1,0 +1,165 @@
+{
+  "addr": ":8080",
+  "store_driver": "memory",
+  "status_poll_interval": "15s",
+  "status_stale_after": "45s",
+  "printer_dial_timeout": "3s",
+  "printer_write_timeout": "5s",
+  "printer_read_timeout": "3s",
+  "queue_size_per_printer": 50,
+  "max_attempts": 3,
+  "confirm_timeout": "10s",
+  "job_queue_ttl": "5m",
+  "base_backoff": "500ms",
+  "max_payload_bytes": 1048576,
+  "max_batch_size": 200,
+  "rate_limit_rps": 30,
+  "rate_limit_burst": 100,
+  "token_default_ttl": "90d",
+  "ui": {
+    "enabled": true,
+    "path": "/ui/",
+    "title": "Cloud Print Service"
+  },
+  "render": {
+    "backend": "auto",
+    "labelize_url": ""
+  },
+  "_note": "Break-glass bootstrap keys only. Business systems get tokens issued at runtime: cpsctl token issue --client-id wms --ttl 90d",
+  "api_keys": {
+    "dev-key-erp-0123456789abcdef": {
+      "client_id": "erp",
+      "role": "client"
+    },
+    "dev-key-wms-0123456789abcdef": {
+      "client_id": "wms",
+      "role": "client"
+    },
+    "dev-key-ops-0123456789abcdef": {
+      "client_id": "ops",
+      "role": "admin"
+    }
+  },
+  "printers": [
+    {
+      "printer_id": "wh1-pack-03",
+      "name": "Packing station 3",
+      "site": "wh1",
+      "model": "ZT411",
+      "driver": "zebra9100",
+      "host": "127.0.0.1",
+      "port": 19102,
+      "enabled": true,
+      "paper_size": "100x150mm",
+      "media_width_mm": 100.0,
+      "media_height_mm": 150.0,
+      "dpi": 203,
+      "dpmm": 8,
+      "orientation": "normal",
+      "media_orientation": "normal",
+      "print_direction": "top_first",
+      "cjk_supported": true,
+      "cjk_font": "SIMSUN.FNT",
+      "fonts": ["0", "SIMSUN.FNT"],
+      "custom_label": "Pack-03",
+      "remark": "Near dock 3, shipping roll loaded"
+    },
+    {
+      "printer_id": "sim-pack-01",
+      "name": "Virtual printer 1 (Shipping 4x6)",
+      "site": "sim",
+      "model": "ZT411",
+      "driver": "zebra9100",
+      "host": "127.0.0.1",
+      "port": 19100,
+      "enabled": true,
+      "paper_size": "4x6",
+      "media_width_mm": 101.6,
+      "media_height_mm": 152.4,
+      "dpi": 203,
+      "dpmm": 8,
+      "orientation": "normal",
+      "media_orientation": "normal",
+      "print_direction": "top_first",
+      "cjk_supported": true,
+      "cjk_font": "ANSD.TTF",
+      "fonts": ["0", "ANSD.TTF"],
+      "custom_label": "Outbound-4x6",
+      "remark": "Standard 4x6 pallet & shipping label roll"
+    },
+    {
+      "printer_id": "sim-pack-02",
+      "name": "Virtual printer 2 (Carton 100x50mm)",
+      "site": "sim",
+      "model": "ZT411",
+      "driver": "zebra9100",
+      "host": "127.0.0.1",
+      "port": 19101,
+      "enabled": true,
+      "paper_size": "100x50mm",
+      "media_width_mm": 100.0,
+      "media_height_mm": 50.0,
+      "dpi": 300,
+      "dpmm": 12,
+      "orientation": "normal",
+      "media_orientation": "normal",
+      "print_direction": "top_first",
+      "cjk_supported": false,
+      "custom_label": "Carton-100x50",
+      "remark": "100x50mm carton & bin label roll"
+    },
+    {
+      "printer_id": "dev-mock-01",
+      "name": "Local dev printer (Item 50x25mm)",
+      "site": "dev",
+      "model": "mock",
+      "driver": "mock",
+      "host": "127.0.0.1",
+      "port": 9100,
+      "enabled": true,
+      "paper_size": "50x25mm",
+      "media_width_mm": 50.8,
+      "media_height_mm": 25.4,
+      "dpi": 203,
+      "dpmm": 8,
+      "orientation": "normal",
+      "media_orientation": "normal",
+      "print_direction": "top_first",
+      "cjk_supported": true,
+      "cjk_font": "SIMSUN.FNT",
+      "custom_label": "ItemTag-50x25",
+      "remark": "50x25mm (2x1) item SKU & barcode roll"
+    },
+    {
+      "printer_id": "dev-mock-paperout",
+      "name": "Dev printer simulating paper-out",
+      "site": "dev",
+      "model": "mock",
+      "driver": "mock",
+      "host": "127.0.0.1",
+      "port": 9100,
+      "enabled": true,
+      "paper_size": "4x6",
+      "media_width_mm": 101.6,
+      "media_height_mm": 152.4,
+      "dpi": 203,
+      "dpmm": 8,
+      "custom_label": "PaperOut-Sim",
+      "mock": {
+        "state": "media_out"
+      }
+    }
+  ],
+  "discovery": {
+    "enabled": true,
+    "types": [
+      "_pdl-datastream._tcp",
+      "_printer._tcp",
+      "_ipp._tcp"
+    ],
+    "interval": "60s",
+    "candidate_ttl": "10m",
+    "verify": true,
+    "site": ""
+  }
+}

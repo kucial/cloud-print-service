@@ -35,12 +35,18 @@ jobs:
       - name: build (CGO_ENABLED=0)
         run: |
           CGO_ENABLED=0 go build ./...
-          for b in cps cpsctl vprint demo-web zplpng; do
-            CGO_ENABLED=0 go build -o /tmp/$b ./cmd/$b
+          for b in cps cpsctl cps-agent; do
+            CGO_ENABLED=0 go build -o /tmp/$b ./server/cmd/$b
           done
+          for b in vprint zplpng; do
+            CGO_ENABLED=0 go build -o /tmp/$b ./vprint/cmd/$b
+          done
+          (cd business-demo && CGO_ENABLED=0 go build -o /tmp/business-demo .)
 
       - name: test -race
-        run: go test -race -count=1 ./...
+        run: |
+          go test -race -count=1 ./...
+          (cd business-demo && go test -race -count=1 ./...)
 
   e2e:
     name: end-to-end (virtual printers)
@@ -55,13 +61,13 @@ jobs:
       # The flow test boots virtual printers and the real HTTP API, issues tokens and
       # injects printer faults. It is the acceptance test for the whole product.
       - name: flow test
-        run: go test -count=1 -v -run 'TestBusinessSystemFlow|TestTwoPrintersAreIndependent|TestTenantIsolation' ./test/e2e/
+        run: go test -count=1 -v -run 'TestBusinessSystemFlow|TestTwoPrintersAreIndependent|TestTenantIsolation' ./server/test/e2e/
 
       - name: scripted flow against a live service
         run: |
           set -euo pipefail
-          go build -o /tmp/cps ./cmd/cps
-          go build -o /tmp/vprint ./cmd/vprint
+          go build -o /tmp/cps ./server/cmd/cps
+          go build -o /tmp/vprint ./vprint/cmd/vprint
 
           /tmp/vprint -count 2 -id sim -base-port 19100 -base-admin-port 19200 -render >/tmp/vprint.log 2>&1 &
           sleep 2
@@ -73,7 +79,7 @@ jobs:
               if .printer_id == "sim-pack-01" then .port = $p1
               elif .printer_id == "sim-pack-02" then .port = $p2
               else . end)
-          ' config.example.json > /tmp/ci.json
+          ' server/config.example.json > /tmp/ci.json
 
           /tmp/cps -config /tmp/ci.json >/tmp/cps.log 2>&1 &
           sleep 2
@@ -102,4 +108,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - run: docker build -t cps:ci .
+      - name: build server image
+        run: docker build -f server/Dockerfile -t cps:ci .
+      - name: build vprint image
+        run: docker build -f vprint/Dockerfile -t vprint:ci .
+      - name: build business-demo image
+        run: docker build -f business-demo/Dockerfile -t business-demo:ci business-demo/

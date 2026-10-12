@@ -163,17 +163,30 @@ one function so it can be tuned per model without touching the service.
 
 ---
 
-## 6. Job lifecycle
+## 6. Job lifecycle & state semantics
 
 ```
                     ┌──────────────► cancelled      (queued, operator/system abort)
                     │
-  queued ──► sending ──► printed       (dispatched + confirmed)
-     │           │   ├─► sent_unknown  (dispatched, confirmation missing → needs human check)
-     │           │   └─► failed        (error BEFORE any byte reached the printer)
+  queued ──► sending ──► printed       (dispatched + physically confirmed via ^HS)
+     │           │   ├─► sent_unknown  (bytes sent, confirmation missing → needs human check)
+     │           │   └─► failed        (error BEFORE any byte reached printer socket)
      │           └─── retryable error ──► back to sending (attempt n+1, bounded)
      └──► failed (queue TTL / superseded / validation)
 ```
+
+#### Meaning of states: is `printed` "confirmed" or "bytes on wire"?
+
+- **`printed` means physically confirmed by the printer.**
+  It is **not** merely "all bytes reached the socket". CPS maintains a dedicated secondary status socket to each printer. After the full byte stream is flushed on the print socket, CPS probes the printer (`^HS`) and verifies that the printer transitioned into physical printing and returned to normal/idle without an error state. Only upon this confirmation is the job marked `printed`.
+- **`sent_unknown`: what is it, when does it happen, and is it ever resolved?**
+  - **What it is**: Bytes reached the printer socket, but CPS could not obtain hardware confirmation that the label printed (e.g. status probe timed out, printer severed connection immediately after write, or CPS was restarted while the job was in-flight).
+  - **Why automated retries halt**: In warehouse operations, blindly re-sending an unconfirmed job causes duplicate labels on physical cartons or pallets. To prevent split shipments and inventory corruption, CPS refuses to auto-retry ambiguous outcomes.
+  - **How it is resolved**: A warehouse operator performs visual verification at the printer tray. Once verified, the operator resolves the job via `POST /api/v1/jobs/{job_id}/resolve` (or directly in the Web UI):
+    - `resolution: "printed"`: Operator confirms the physical label is on the tray.
+    - `resolution: "failed"`: Operator confirms the label never emerged, safely releasing the ERP/WMS or operator to dispatch a reprint.
+- **`failed`**: The job encountered an error **before** any byte was written to the printer socket (e.g. unreachable host, DNS failure, or exceeded queue TTL). It is provably safe to retry.
+- **`cancelled`**: The job was cancelled by an admin while still waiting in the FIFO queue before transmission.
 
 **The one rule that matters:** *after a byte is flushed to the printer, we never auto-retry.*
 
@@ -190,9 +203,9 @@ So:
 
 ### Job fields
 
-`id` (uuid), `client_id`, `external_id` (business id), `printer_id`, `state`, `payload_ref`,
-`payload_bytes`, `payload_sha256`, `copies`, `attempts`, `last_error`, `created_at`, `sent_at`,
-`finished_at`, `biz_ref`, `meta`.
+`id` (uuid), `client_id`, `external_id` (business id), `printer_id`, `state`, `state_detail`,
+`status_message`, `payload_ref`, `payload_bytes`, `payload_sha256`, `copies`, `page_copies`,
+`attempts`, `last_error`, `created_at`, `sent_at`, `finished_at`, `biz_ref`, `meta`.
 
 ---
 
@@ -238,14 +251,56 @@ Base path `/api/v1`. JSON in/out (UTF-8). One exception: `POST /jobs/raw` takes
 
 ### 7.2 Dispatch
 
-| Method | Path | Role |
-|---|---|---|
-| POST | `/jobs` | client |
-| POST | `/jobs/raw` | client |
-| POST | `/jobs/batch` | client |
-| GET | `/jobs/{job_id}` | client (scoped to own client_id) |
-| GET | `/jobs` | client — `?printer_id=&state=&from=&to=&external_id=&limit=&cursor=` |
-| POST | `/jobs/{job_id}/cancel` | client |
+| Method | Path | Role | Description |
+|---|---|---|---|
+| POST | `/jobs` | client | Dispatch a print job (idempotent on `external_id`) |
+| POST | `/jobs/raw` | client | Raw binary payload dispatch (`application/octet-stream`) |
+| POST | `/jobs/batch` | client | Multi-job batch dispatch (per-item independent acceptance) |
+| GET | `/jobs/{job_id}` | client | Read job state, status message, and attempts |
+| GET | `/jobs` | client | Query jobs (`?printer_id=&state=&from=&to=&external_id=&limit=&cursor=`) |
+| POST | `/jobs/{job_id}/cancel` | client | Cancel a queued job before transmission |
+| POST | `/jobs/{job_id}/resolve` | client/admin | Manually resolve a `sent_unknown` job (`printed` or `failed`) |
+
+#### Maximum payload size & HTTP 422 Unprocessable Entity
+
+- **Payload Size Limit**: Configured by `max_payload_bytes` (default `1,048,576` bytes / `1 MB`). Payloads exceeding this limit return HTTP `422` with `error.reason: "payload_too_large"`.
+- **Structured Error Response**:
+```jsonc
+{
+  "error": {
+    "code": "invalid_request",          // broad error classification
+    "reason": "payload_too_large",       // stable granular reason for UI localization
+    "message": "invalid request: payload exceeds maximum allowed size (1048576 bytes limit)",
+    "details": {
+      "reason": "payload_too_large",
+      "max_payload_bytes": 1048576
+    }
+  }
+}
+```
+
+| HTTP Status | Error `code` | Error `reason` | When it happens / How client handles |
+|---|---|---|---|
+| **400** | `invalid_request` | `invalid_json`, `unknown_field` | Malformed JSON or unknown JSON fields in request |
+| **401** | `unauthorized` | — | Missing or invalid Bearer token |
+| **403** | `forbidden` | — | Client token attempted an admin operation (e.g. token issuance) |
+| **404** | `printer_not_found` | — | `printer_id` does not exist in the fleet registry |
+| **404** | `job_not_found` | — | `job_id` does not exist or belongs to another client tenant |
+| **409** | `idempotency_conflict` | — | Same `external_id` re-submitted with a different payload hash. Stop and investigate! |
+| **409** | `printer_disabled` | — | Target printer is administratively disabled (`enabled: false`) |
+| **409** | `printer_not_usable` | — | Target printer is offline or in error state (when `reject_when_not_usable` is true) |
+| **409** | `not_cancellable` | — | Job already reached `printed`, `sent_unknown`, or `failed` |
+| **422** | `invalid_request` | `payload_too_large` | ZPL payload exceeds `max_payload_bytes` (default 1 MB) |
+| **422** | `invalid_request` | `payload_empty` | Payload was provided but is 0 bytes |
+| **422** | `invalid_request` | `missing_payload` | Neither `zpl` nor `payload_base64` was supplied |
+| **422** | `invalid_request` | `duplicate_payload` | Both `zpl` and `payload_base64` were supplied in the same request |
+| **422** | `invalid_request` | `invalid_base64` | `payload_base64` string is malformed |
+| **422** | `invalid_request` | `missing_printer_id` | `printer_id` is missing or empty |
+| **422** | `invalid_request` | `missing_external_id` | `external_id` (or `Idempotency-Key`) is missing |
+| **422** | `invalid_request` | `invalid_copies` | `copies` is not between 1 and 50 |
+| **422** | `invalid_request` | `invalid_page_copies` | `page_copies` array length does not match multi-page ZPL format count |
+| **422** | `invalid_request` | `invalid_priority` | `priority` is not `normal` or `high` |
+| **503** | `queue_full` | — | Printer FIFO queue is full (default 50). **Retry with backoff + jitter!** |
 
 **POST /jobs**
 
@@ -600,7 +655,7 @@ The failure modes that matter here are all *systemic* (a printer is offline, a s
 mid-write, a document is retried). They cannot be found by unit-testing a parser, so the
 tooling is built around a **virtual printer that misbehaves on command**.
 
-### 15.1 `cmd/vprint` — printer simulator
+### 15.1 `vprint` — printer simulator
 
 | Capability | Why it exists |
 |---|---|
@@ -613,7 +668,7 @@ tooling is built around a **virtual printer that misbehaves on command**.
 | `POST /control {"status_delay_ms":2000}` | slow status → poll timeouts, stale flags |
 | `POST /control {"state":"media_out"}` | consumable alarms on the dashboard |
 
-Rendering is pluggable (`internal/render`):
+Rendering is pluggable (`pkg/render`):
 
 | Backend | What it is | When |
 |---|---|---|
@@ -644,15 +699,15 @@ PASS: render pipeline matches the published reference
 The same check runs offline in `TestRenderMatchesUPSReference` (the payload is committed as
 a fixture; the reference is cached and the test skips without network).
 
-`cmd/zplpng` renders a file or stdin with the same backends — useful when you want to check
+`vprint/cmd/zplpng` renders a file or stdin with the same backends — useful when you want to check
 one label without starting a fleet.
 
 ### 15.2 Test layers
 
 ```
-internal/printer/zebra_test.go            ^HS decoding table (unit)
-internal/printer/zebra_integration_test.go real driver vs virtual printer over TCP
-internal/job/service_test.go              retry policy, idempotency, FIFO, tenant isolation
+server/internal/driver/zebra_test.go            ^HS decoding table (unit)
+server/internal/driver/zebra_integration_test.go real driver vs virtual printer over TCP
+server/internal/job/service_test.go              retry policy, idempotency, FIFO, tenant isolation
 internal/api/server_test.go               HTTP contract: auth, error codes, SSE, limits
 internal/render/render_test.go            both backends, determinism, failure surfacing
 internal/token/token_test.go              hashing, expiry, rotation, purge

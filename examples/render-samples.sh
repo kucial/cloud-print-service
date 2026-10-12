@@ -21,12 +21,12 @@ emit() { # emit <name> <zpl> [extra zplpng flags...]
   # PNG is what the gallery serves, so a PNG failure is fatal; other formats are
   # best-effort because the upstream backends cover different command subsets
   # (e.g. the SVG backend cannot encode every ^GF graphic field).
-  if ! go run ./cmd/zplpng "$OUT/$name.zpl" -o "$OUT/$name.png" "$@" 2>>"$OUT/render.log"; then
+  if ! go run ./vprint/cmd/zplpng "$OUT/$name.zpl" -o "$OUT/$name.png" "$@" 2>>"$OUT/render.log"; then
     echo "  $name: PNG render FAILED (see $OUT/render.log)" >&2
     return 1
   fi
   local note=""
-  if ! go run ./cmd/zplpng "$OUT/$name.zpl" -o "$OUT/$name.svg" --format svg "$@" 2>>"$OUT/render.log"; then
+  if ! go run ./vprint/cmd/zplpng "$OUT/$name.zpl" -o "$OUT/$name.svg" --format svg "$@" 2>>"$OUT/render.log"; then
     note="   (svg unsupported for this sample)"
   fi
   printf '  %-18s %s%s\n' "$name" "$OUT/$name.png" "$note"
@@ -63,7 +63,7 @@ emit carrier-4x6 \
 
 # Deliberately broken input: the renderer must fail loudly, not emit a blank label.
 printf 'this is not zpl' > "$OUT/broken.zpl"
-if go run ./cmd/zplpng "$OUT/broken.zpl" -o "$OUT/broken.png" "$@" 2>>"$OUT/render.log"; then
+if go run ./vprint/cmd/zplpng "$OUT/broken.zpl" -o "$OUT/broken.png" "$@" 2>>"$OUT/render.log"; then
   echo "  WARNING: invalid ZPL rendered without error" >&2
 else
   printf '  %-18s %s\n' "broken" "rejected, see $OUT/render.log"

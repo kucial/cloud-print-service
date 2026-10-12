@@ -120,7 +120,7 @@ never make a wrong device dispatchable. The unit tests pin the candidate lifecyc
 To close it out:
 
 ```bash
-go run ./cmd/vprint -mdns -mdns-name "Lab Packer 1"        # terminal 1
+go run ./vprint/cmd/vprint -mdns -mdns-name "Lab Packer 1"        # terminal 1
 curl -XPOST -H "Authorization: Bearer $ADMIN" \
      localhost:8080/api/v1/admin/discovery/scan | jq        # terminal 2
 ```
@@ -185,6 +185,6 @@ f032494  fix(discovery): default the mDNS probe's service types
 1. **M0 on real hardware** (30 min): one packing PC + one printer → capture what it
    advertises, confirm tier 1 or decide tier 2 is needed.
 2. **Windows USB tier 2** (WinUSB, `-tags winusb`): the only path to true USB-only support
-   (D1). Cross-compile check: `GOOS=windows GOARCH=amd64 go build ./cmd/cps-agent`.
+   (D1). Cross-compile check: `GOOS=windows GOARCH=amd64 go build ./server/cmd/cps-agent`.
 3. **Postgres store** (unblocks durable tokens + job history): `store.Postgres` against the
    existing schema, then re-issue-free restarts.
