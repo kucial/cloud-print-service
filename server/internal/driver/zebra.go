@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 )
 
@@ -219,7 +220,7 @@ func (z *Zebra) queryOnce(ctx context.Context, cmd string, maxBytes int) (string
 // Status probes with the ZPL host status command. Falls back to reachability-only when the
 // model does not answer, so the API contract stays intact (state becomes `unknown`).
 func (z *Zebra) Status(ctx context.Context) (domain.Status, error) {
-	raw, err := z.query(ctx, "^HS", 128)
+	raw, err := z.query(ctx, printer.CmdHostStatus, 256)
 	now := time.Now()
 	if err != nil {
 		st := domain.Status{State: domain.StateOffline, ObservedAt: now, Detail: "status query failed"}
@@ -263,6 +264,14 @@ func (z *Zebra) Cancel(ctx context.Context) error {
 //	12: Serial number
 //	13: Firmware version
 func ParseHIResponse(raw string) (model, serial, firmware string, dpi int, dpmm float64, cjkFont string) {
+	if !strings.Contains(raw, "=") {
+		// Real firmware: MODEL,Vfirmware,dpmm,memory — no serial, no font list.
+		if id, ok := printer.ParseHostID(raw); ok {
+			model, firmware, dpmm = id.Model, id.Firmware, id.DPMM
+			dpi = dpiFromDPMM(dpmm)
+		}
+		return
+	}
 	for _, kv := range splitFields(raw) {
 		parts := strings.SplitN(kv, "=", 2)
 		if len(parts) != 2 {
@@ -366,79 +375,26 @@ func (z *Zebra) Close() error {
 	return nil
 }
 
-// ParseHostStatus decodes a ZPL ^HS reply: ^HS<device>,<media>,<ribbon>,<head>^HS
-//
-// Raw is always preserved, so a model whose semantics differ can be fixed here alone.
-// See docs/DESIGN.md §5 — verify this table against the actual fleet (milestone M1).
+// ParseHostStatus decodes a host status reply: real firmware's three-line ~HS answer, or
+// the legacy ^HS<device>,<media>,<ribbon>,<head>^HS form. See printer.ParseHostStatus.
 func ParseHostStatus(raw []byte) (domain.Status, bool) {
-	s := strings.TrimSpace(string(raw))
-	if s == "" {
-		return domain.Status{State: domain.StateUnknown, Detail: "empty host status reply"}, false
-	}
-	st := domain.Status{Raw: s}
-
-	seg := s
-	if i := strings.Index(seg, "^HS"); i >= 0 {
-		seg = seg[i+3:]
-	}
-	nums := intsIn(seg)
-	if len(nums) == 0 {
-		st.State = domain.StateUnknown
-		st.Detail = "no numeric fields in host status reply"
-		return st, false
-	}
-	device := nums[0]
-	media := at(nums, 1)
-	ribbon := at(nums, 2)
-	head := at(nums, 3)
-
-	switch {
-	case head == 1:
-		st.State = domain.StateHeadError
-	case device == 3:
-		st.State = domain.StateError
-	case ribbon == 2:
-		st.State = domain.StateRibbonOut
-	case media == 2:
-		st.State = domain.StateMediaOut
-	case device == 1:
-		st.State = domain.StatePrinting
-	case device == 2:
-		st.State = domain.StateBusy
-	case media == 1 || ribbon == 1:
-		st.State = domain.StateMediaLow
-	default:
-		st.State = domain.StateIdle
-	}
-	st.Detail = fmt.Sprintf("device=%d media=%d ribbon=%d head=%d", device, media, ribbon, head)
-	return st, true
+	state, detail, ok := printer.ParseHostStatus(string(raw))
+	return domain.Status{Raw: strings.TrimSpace(string(raw)), State: state, Detail: detail}, ok
 }
 
-func at(s []int, i int) int {
-	if i < len(s) {
-		return s[i]
+// dpiFromDPMM maps the dots-per-mm a printer reports to its nominal resolution.
+func dpiFromDPMM(dpmm float64) int {
+	switch int(dpmm) {
+	case 0:
+		return 0
+	case 6:
+		return 152
+	case 8:
+		return 203
+	case 12:
+		return 300
+	case 24:
+		return 600
 	}
-	return 0
-}
-
-func intsIn(s string) []int {
-	var out []int
-	cur := strings.Builder{}
-	flush := func() {
-		if cur.Len() > 0 {
-			if n, err := strconv.Atoi(cur.String()); err == nil {
-				out = append(out, n)
-			}
-			cur.Reset()
-		}
-	}
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			cur.WriteRune(r)
-		} else {
-			flush()
-		}
-	}
-	flush()
-	return out
+	return int(dpmm*25.4 + 0.5)
 }

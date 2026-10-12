@@ -31,7 +31,7 @@ any test.
 | M3 | `fleet.Registry` + sources | **done** | precedence, provenance, candidate lifecycle |
 | M4 | mDNS discovery + adoption | **done (unit + probe tested; live sweep needs a warehouse LAN)** | candidates API, panel + CLI, `vprint -mdns`; see §6 for what blocked live proof on this host |
 | M5 | Agent v1 (driver-share tier) | **done** | end-to-end against `vprint`, no hardware |
-| M6 | Real USB on Windows (tier 2/3) | **not built** | build-tagged stubs, see §5 |
+| M6 | Real USB (printer-class driver) | **built** | pure Go via `usbprint.sys` (Windows) / `usblp` (Linux); opt-in libusb on macOS (`-tags usb_libusb`). Verified end to end on a real GK888t over libusb; Windows/Linux paths unit-tested only |
 | M7 | Harden: runbook, agent-loss recovery, metrics polish | **done** | [RUNBOOK.md](RUNBOOK.md); `FailOnAgentLost` + panel Agents/Discovery views; metrics for scans/adoptions; agent-loss e2e test |
 
 ---
@@ -73,7 +73,7 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | `cps` | done | server: fleet registry, dispatch queue, status poller, REST API, embedded panel, ZPL preview, discovery, agent surface |
 | `cpsctl` | done | admin CLI: tokens, printers, **agents**, **discover** |
 | `vprint` | done | virtual network printer: real ZPL, `^HS`/`~HI`/`~JA`, renders every label, gallery, fault injection, `-mdns` advertise |
-| `cps-agent` | done (tier 1) | edge agent: discover, forward, register, heartbeat, status push |
+| `cps-agent` | done (TCP share + USB) | edge agent: discover, forward, register, heartbeat, status push |
 | `demo-web` | done | reference WMS integration (open source, meant to be read) |
 | `zplpng` | done | dev tool: file/stdin → PNG/SVG/PDF |
 
@@ -83,8 +83,8 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 
 | Gap | Why | Next step |
 |---|---|---|
-| **Raw USB (tier 2/3)** | Windows-first means WinUSB via `x/sys/windows` or libusb; both are build-tagged stubs so the default build stays pure Go with no native deps | implement WinUSB behind `-tags winusb`; verify on one real packing PC |
-| **Tier 1 is what ships today** | most Windows packing PCs get a driver TCP share, which needs no privileges at all | measure on real hardware before investing in tier 2 |
+| **USB on Windows not yet run on hardware** | the agent opens `usbprint.sys` interfaces directly (no driver swap, coexists with ZDesigner); compiled and unit-tested, never run on a Windows PC | run the release zip on one packing PC with a USB Zebra |
+| **Real printers speak `~HS`, not `^HS`** | server, agent and vprint used a made-up `^HS` reply until the GK888t capture; now real three-line `~HS` is sent and decoded (`pkg/printer`), legacy `^HS` still parsed. `~HS` has no media/ribbon-low flags | `~HQES` on Link-OS printers for low warnings |
 | Postgres store | schema exists (`db/schema.sql`), binary uses the memory store | implement `store.Postgres`; issued tokens currently die on restart |
 | mDNS live sweep | see §6 | one machine on the warehouse LAN |
 | Agent auto-update / fleet rollout | Windows service (`-enroll <token> -install`: SCM, recovery restarts, firewall rule, ACL'd config, `agent.log`) is built and exercised by the `agent-windows` CI job; binaries come from `release-agent.yml` (`agent-v*` tags), unsigned | code-sign the `.exe`; self-update or MSI/Intune rollout |

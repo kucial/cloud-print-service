@@ -494,6 +494,26 @@ func (p *Printer) writeReply(c net.Conn, b []byte) {
 	_, _ = c.Write(b)
 }
 
+// hostStatusReply answers ~HS the way real firmware does: three STX…ETX framed lines
+// (ZPL II manual, ~HS). ~HS has no "low" flags, so media/ribbon low read as idle, exactly
+// as they would on a real printer. Caller holds p.mu.
+func (p *Printer) hostStatusReply() []byte {
+	b := func(v bool) int {
+		if v {
+			return 1
+		}
+		return 0
+	}
+	paperOut, paused, bufFull := b(p.media == 2), b(p.device == 3), b(p.device == 2)
+	formats := b(p.printing || p.device == 1)
+	headUp, ribbonOut := b(p.head == 1), b(p.ribbon == 2)
+	return []byte(fmt.Sprintf(
+		"\x02030,%d,%d,1245,%03d,%d,0,0,000,0,0,0\x03\r\n"+
+			"\x02001,0,%d,%d,0,2,4,0,%08d,1,000\x03\r\n"+
+			"\x021234,0\x03\r\n",
+		paperOut, paused, formats, bufFull, headUp, ribbonOut, formats))
+}
+
 // parseStatus extracts a host command from the buffer. On the print socket only
 // buffer-leading control commands are honoured, so label content is never mistaken
 // for a command.
@@ -502,6 +522,14 @@ func (p *Printer) parseStatus(buf []byte, isStatus bool) (reply, rest []byte, ok
 	if !isStatus && !strings.HasPrefix(trimmed, "~") {
 		return nil, buf, false
 	}
+	if i := indexOf(buf, "~HS"); i >= 0 {
+		rest = append([]byte(nil), buf[i+3:]...)
+		p.mu.Lock()
+		reply = p.hostStatusReply()
+		p.mu.Unlock()
+		return reply, rest, true
+	}
+	// Legacy form spoken by servers before they switched to real firmware's ~HS.
 	if i := indexOf(buf, "^HS"); i >= 0 {
 		rest = append([]byte(nil), buf[i+3:]...)
 		p.mu.Lock()
@@ -602,7 +630,7 @@ func (p *Printer) recordLabel(zpl string) {
 
 func looksLikeStatusQuery(b []byte) bool {
 	s := strings.TrimSpace(string(b))
-	return strings.HasPrefix(s, "^HS") || strings.HasPrefix(s, "~HI") || strings.HasPrefix(s, "~JA")
+	return strings.HasPrefix(s, "~HS") || strings.HasPrefix(s, "^HS") || strings.HasPrefix(s, "~HI") || strings.HasPrefix(s, "~JA")
 }
 
 func indexOf(b []byte, sub string) int {

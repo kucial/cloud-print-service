@@ -92,11 +92,13 @@ func (s *tcpShare) query(ctx context.Context, cmd string) (string, error) {
 			lastErr = err
 			continue
 		}
-		_ = s.ctl.SetReadDeadline(time.Now().Add(3 * time.Second))
-		buf := make([]byte, 256)
-		n, err := s.ctl.Read(buf)
-		if n > 0 {
-			return string(buf[:n]), nil
+		conn := s.ctl
+		reply, err := readReply(func(p []byte, d time.Duration) (int, error) {
+			_ = conn.SetReadDeadline(time.Now().Add(d))
+			return conn.Read(p)
+		}, cmd, 3*time.Second)
+		if err == nil {
+			return reply, nil
 		}
 		lastErr = err
 	}
@@ -131,7 +133,7 @@ func (s *tcpSink) Write(ctx context.Context, p []byte) (int, error) {
 }
 
 func (s *tcpSink) Status(ctx context.Context) (agentapi.Status, error) {
-	raw, err := s.share.query(ctx, "^HS")
+	raw, err := s.share.query(ctx, printer.CmdHostStatus)
 	now := time.Now().UTC()
 	if err != nil {
 		return agentapi.Status{State: printer.StateOffline, ObservedAt: now, Detail: err.Error()}, err
@@ -151,93 +153,22 @@ func (s *tcpSink) Close() error {
 
 // Identify reads model/serial over `~HI`.
 func (s *tcpShare) Identify(ctx context.Context) (model string, serial string, err error) {
-	raw, err := s.query(ctx, "~HI")
+	raw, err := s.query(ctx, printer.CmdHostID)
 	if err != nil {
 		return "", "", err
 	}
-	for _, kv := range strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == '\n' }) {
-		parts := strings.SplitN(kv, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		switch parts[0] {
-		case "9":
-			model = strings.TrimSpace(parts[1])
-		case "12":
-			serial = strings.TrimSpace(parts[1])
-		}
+	id, ok := printer.ParseHostID(raw)
+	if !ok {
+		return "", "", fmt.Errorf("unrecognised ~HI reply %q", raw)
 	}
-	return model, serial, nil
+	return id.Model, id.Serial, nil
 }
 
-// ParseHostStatus decodes a `^HS<device>,<media>,<ribbon>,<head>^HS` reply.
-//
-// The table mirrors server/internal/driver's zebra decoder; the agent keeps its own copy so
-// pushing a status from a USB device does not drag the whole driver package (and its
-// sockets) onto the packing PC.
+// ParseHostStatus decodes a host status reply (real ~HS or legacy ^HS form) for a
+// heartbeat. The decoding itself lives in pkg/printer, shared with the server.
 func ParseHostStatus(raw string, observedAt time.Time) agentapi.Status {
-	st := agentapi.Status{Raw: strings.TrimSpace(raw), ObservedAt: observedAt, State: printer.StateUnknown}
-	seg := st.Raw
-	if i := strings.Index(seg, "^HS"); i >= 0 {
-		seg = seg[i+3:]
-	}
-	if j := strings.Index(seg, "^FS"); j >= 0 {
-		seg = seg[:j]
-	}
-	nums := parseInts(seg)
-	if len(nums) == 0 {
-		st.Detail = "no numeric fields in host status reply"
-		return st
-	}
-	at := func(i int) int {
-		if i < len(nums) {
-			return nums[i]
-		}
-		return 0
-	}
-	device, media, ribbon, head := nums[0], at(1), at(2), at(3)
-	st.Detail = fmt.Sprintf("device=%d media=%d ribbon=%d head=%d", device, media, ribbon, head)
-	switch {
-	case head == 1:
-		st.State = printer.StateHeadError
-	case device == 3:
-		st.State = printer.StateError
-	case ribbon == 2:
-		st.State = printer.StateRibbonOut
-	case media == 2:
-		st.State = printer.StateMediaOut
-	case device == 1:
-		st.State = printer.StatePrinting
-	case device == 2:
-		st.State = printer.StateBusy
-	case media == 1 || ribbon == 1:
-		st.State = printer.StateMediaLow
-	default:
-		st.State = printer.StateIdle
-	}
-	return st
-}
-
-func parseInts(s string) []int {
-	var out []int
-	cur := strings.Builder{}
-	flush := func() {
-		if cur.Len() > 0 {
-			if n, err := strconv.Atoi(cur.String()); err == nil {
-				out = append(out, n)
-			}
-			cur.Reset()
-		}
-	}
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			cur.WriteRune(r)
-		} else {
-			flush()
-		}
-	}
-	flush()
-	return out
+	state, detail, _ := printer.ParseHostStatus(raw)
+	return agentapi.Status{Raw: strings.TrimSpace(raw), State: state, Detail: detail, ObservedAt: observedAt}
 }
 
 // probeBackends finds usable printers, cheapest tier first.
@@ -268,12 +199,10 @@ func probeBackends(ctx context.Context, log *slog.Logger) ([]Backend, error) {
 		log.Info("found local printer share", "port", p, "model", model, "serial", serial)
 		out = append(out, share)
 	}
-	if n := len(usbBackends(ctx, log)); n > 0 {
-		out = append(out, usbBackends(ctx, log)...)
-	}
+	out = append(out, usbBackends(ctx, log)...)
 	if len(out) == 0 {
-		return nil, fmt.Errorf("no local printers found on ports %v "+
-			"(USB backends are build-tagged; see docs/PLAN-agent-discovery.md §6.3)", ports)
+		return nil, fmt.Errorf("no local printers found: no USB printer answered and nothing "+
+			"identified as a printer on local ports %v", ports)
 	}
 	return out, nil
 }

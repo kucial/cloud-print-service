@@ -115,7 +115,8 @@ func TestZebraStatusDecodesConsumables(t *testing.T) {
 		want    domain.PrinterState
 	}{
 		{virtual.Control{State: "media_out"}, domain.StateMediaOut},
-		{virtual.Control{State: "media_low"}, domain.StateMediaLow},
+		// ~HS has no low-media flag, so a real printer (and vprint) reads idle here.
+		{virtual.Control{State: "media_low"}, domain.StateIdle},
 		{virtual.Control{State: "head_error"}, domain.StateHeadError},
 		{virtual.Control{State: "error"}, domain.StateError},
 		{virtual.Control{State: "idle"}, domain.StateIdle},
@@ -130,7 +131,7 @@ func TestZebraStatusDecodesConsumables(t *testing.T) {
 		if st.State != tc.want {
 			t.Fatalf("control %v → state %q (raw %q), want %q", tc.control, st.State, st.Raw, tc.want)
 		}
-		if !strings.HasPrefix(st.Raw, "^HS") {
+		if !strings.HasPrefix(st.Raw, "\x02") {
 			t.Fatalf("raw reply not preserved: %q", st.Raw)
 		}
 	}

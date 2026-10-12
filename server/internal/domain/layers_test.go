@@ -18,7 +18,7 @@ const module = "github.com/kucial/cloud-print-service/"
 // layers maps a package (module-relative path) to what it may import from this module.
 var layers = map[string][]string{
 	"server/internal/domain":    {"pkg/printer"},
-	"server/internal/driver":    {"server/internal/domain"},
+	"server/internal/driver":    {"server/internal/domain", "pkg/printer"},
 	"server/internal/store":     {"server/internal/domain"},
 	"server/internal/observ":    {},
 	"server/internal/config":    {"server/internal/domain"},

@@ -41,8 +41,10 @@ type localPrinter struct {
 // query answers a host command (`^HS`, `~HI`) on the printer's control connection and
 // returns the reply for the server.
 func (p *localPrinter) query(ctx context.Context, cmd string) (string, error) {
-	if ts, ok := p.backend.(*tcpShare); ok {
-		return ts.query(ctx, cmd)
+	if q, ok := p.backend.(interface {
+		query(context.Context, string) (string, error)
+	}); ok {
+		return q.query(ctx, cmd)
 	}
 	return "", fmt.Errorf("backend %s cannot answer host queries", p.backend.Name())
 }
@@ -98,11 +100,15 @@ func (a *agent) serveLocal(ctx context.Context, backends []Backend) error {
 			port++
 			continue
 		}
+		model := b.Name()
+		if m, ok := b.(interface{ Model() string }); ok && m.Model() != "" {
+			model = m.Model()
+		}
 		p := &localPrinter{
 			Printer: agentapi.Printer{
 				PrinterID: id, Name: b.Name(), Site: a.cfg.Site,
 				Driver: "zebra9100", Host: a.cfg.Host, Port: port, Enabled: true,
-				Model: b.Name(),
+				Model: model,
 			},
 			backend: b, sink: sink, ln: ln,
 		}
@@ -170,7 +176,8 @@ func (a *agent) serveConn(ctx context.Context, p *localPrinter, conn net.Conn) {
 func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chunk []byte) bool {
 	trimmed := strings.TrimLeft(string(chunk), " \r\n\t")
 	switch {
-	case strings.HasPrefix(trimmed, "^HS"), strings.HasPrefix(trimmed, "~HI"):
+	case strings.HasPrefix(trimmed, printer.CmdHostStatus), strings.HasPrefix(trimmed, printer.CmdHostID),
+		strings.HasPrefix(trimmed, "^HS"): // ^HS: servers before the switch to real ~HS
 		reply, err := p.query(ctx, string(chunk))
 		if err != nil {
 			a.log.Warn("host query failed", "printer_id", p.PrinterID, "err", err)

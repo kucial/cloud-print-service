@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -241,7 +242,8 @@ func TestBusinessSystemFlow(t *testing.T) {
 	if st["state"] != "idle" {
 		t.Fatalf("printer state = %v, want idle", st["state"])
 	}
-	if st["raw"] != "^HS0,0,0,0^HS" {
+	// Real firmware's ~HS reply: three STX…ETX framed lines, kept verbatim.
+	if raw, _ := st["raw"].(string); !strings.HasPrefix(raw, "\x02030,") || strings.Count(raw, "\x03") != 3 {
 		t.Fatalf("raw host status should be preserved for troubleshooting, got %v", st["raw"])
 	}
 
