@@ -3,16 +3,16 @@ config.json
 config.local.json
 
 # build output
-bin/
-dist/
+/bin/
+/dist/
 node_modules/
-web/node_modules/
-cps
-cpsctl
-cps-agent
-vprint
-zplpng
-demo-web
+**/node_modules/
+/cps
+/cpsctl
+/cps-agent
+/vprint
+/zplpng
+/demo-web
 
 # test/tool output
 *.log

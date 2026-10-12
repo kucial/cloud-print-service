@@ -9,11 +9,11 @@ import (
 
 // The console UI is embedded like the server panel: one binary, nothing to deploy.
 //
-//go:embed all:web
+//go:embed all:web/dist
 var uiAssets embed.FS
 
 func (a *app) uiHandler() http.Handler {
-	sub, err := fs.Sub(uiAssets, "web")
+	sub, err := fs.Sub(uiAssets, "web/dist")
 	if err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "ui unavailable: "+err.Error(), http.StatusInternalServerError)

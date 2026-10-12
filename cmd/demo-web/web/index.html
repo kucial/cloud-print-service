@@ -1,114 +1,13 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WMS Packing Console — Multi-Roll Size Dispatch</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WMS Packing Console — Multi-Roll Size Auto-Routing</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23000000'/><rect x='6' y='8' width='20' height='7' rx='2' fill='%230A84FF'/><rect x='6' y='18' width='14' height='6' rx='2' fill='%2330D158'/></svg>">
-  <link rel="stylesheet" href="app.css">
 </head>
 <body>
-  <header class="ios-glass-bar topbar">
-    <div class="brand">
-      <span class="brand-icon">📦</span>
-      <div>
-        <div class="brand-title">WMS Packing Console</div>
-        <div class="brand-sub">Multi-Roll Size Auto-Routing Reference</div>
-      </div>
-    </div>
-
-    <div class="spacer"></div>
-
-    <div class="header-actions">
-      <span class="badge-pill font-mono" id="server-status">
-        <span class="pulse-dot"></span>
-        <span id="server-url">connecting…</span>
-      </span>
-      <button class="btn btn-sm btn-secondary" id="reload">
-        <span>Refresh</span>
-      </button>
-    </div>
-  </header>
-
-  <!-- Installed Printer Rolls Banner -->
-  <section class="rolls-strip">
-    <div class="strip-container">
-      <div class="strip-header">
-        <span class="strip-label">Installed Printer Rolls</span>
-        <span class="strip-sub text-muted">Printers are dedicated to specific roll installations</span>
-      </div>
-      <div class="rolls-grid" id="rolls-fleet">
-        <div class="text-muted text-sm py-2">Loading printer rolls…</div>
-      </div>
-    </div>
-  </section>
-
-  <main class="main-layout">
-    <section class="orders-section">
-      <div class="section-topbar">
-        <div>
-          <h2>Outbound Orders (Multi-Spec Package Waves)</h2>
-          <p class="text-muted text-xs mt-0.5">
-            Each line produces a distinct document format and auto-routes to a printer loaded with that exact roll size.
-          </p>
-        </div>
-      </div>
-
-      <div id="orders-list"></div>
-    </section>
-
-    <aside class="sidebar-section">
-      <div class="card ios-card">
-        <h3>Architecture: Paper Size Routing</h3>
-        <p class="text-muted text-xs leading-relaxed mb-3">
-          Label printers cannot change paper on the fly. In real warehouse automation, different jobs require different rolls:
-        </p>
-        <div class="roll-types-list">
-          <div class="roll-type-item">
-            <span class="badge-roll roll-4x6">4"×6"</span>
-            <div>
-              <div class="font-medium text-xs">Pallet / Outbound Shipping</div>
-              <div class="text-xs text-muted">101.6 × 152.4 mm · Full Carrier format</div>
-            </div>
-          </div>
-          <div class="roll-type-item">
-            <span class="badge-roll roll-4x2">4"×2"</span>
-            <div>
-              <div class="font-medium text-xs">Carton Box / Container</div>
-              <div class="text-xs text-muted">101.6 × 50.8 mm · Packing station barcode</div>
-            </div>
-          </div>
-          <div class="roll-type-item">
-            <span class="badge-roll roll-2x1">2"×1"</span>
-            <div>
-              <div class="font-medium text-xs">Item SKU / Bin Pick Tag</div>
-              <div class="text-xs text-muted">50.8 × 25.4 mm · Individual piece tag</div>
-            </div>
-          </div>
-        </div>
-        <p class="text-muted text-xs mt-3 mb-0">
-          <strong>Idempotency Rule:</strong> Re-dispatching an order replays the exact same <code>external_id</code> per line, ensuring zero double-printing.
-        </p>
-      </div>
-
-      <div class="card ios-card" id="preview-card" hidden>
-        <div class="flex items-center justify-between mb-2">
-          <h3>Rendered Label Preview</h3>
-          <span class="text-xs font-mono text-muted" id="preview-dim">—</span>
-        </div>
-        <div id="preview-slot" class="preview-viewport text-muted text-xs text-center">—</div>
-      </div>
-
-      <div class="card ios-card">
-        <div class="flex items-center justify-between mb-2">
-          <h3>Live Dispatch Stream</h3>
-          <span class="pulse-dot"></span>
-        </div>
-        <pre id="events-log" class="events-box font-mono">—</pre>
-      </div>
-    </aside>
-  </main>
-
-  <script src="app.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

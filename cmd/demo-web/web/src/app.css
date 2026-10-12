@@ -57,17 +57,48 @@ body {
   align-items: center;
   gap: 10px;
 }
-.brand-icon {
-  font-size: 20px;
+.brand-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .brand-title {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.2px;
+  white-space: nowrap;
 }
 .brand-sub {
   font-size: 11px;
   color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .brand-title {
+    font-size: 13.5px;
+  }
+  .brand-sub {
+    display: none;
+  }
+  .header-actions {
+    gap: 5px;
+  }
+  .pill {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  .rolls-strip {
+    padding: 10px 12px;
+  }
+  .main-layout {
+    padding: 12px;
+    gap: 14px;
+  }
 }
 
 .spacer {
