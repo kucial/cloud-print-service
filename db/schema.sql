@@ -31,6 +31,7 @@ create table if not exists jobs (
   payload_bytes   int  not null,
   payload_sha256  text not null,
   copies          int  not null default 1,
+  page_copies     jsonb not null default '[]'::jsonb,
   priority        text not null default 'normal',
   biz_ref         text not null default '',
   meta            jsonb not null default '{}'::jsonb,

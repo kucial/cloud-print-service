@@ -11,7 +11,7 @@ interface OrderCardProps {
   onRelease: (id: string) => void;
   onResend: (id: string) => void;
   onSelectPrinter: (orderId: string, lineNo: number, printerId: string) => void;
-  onPreview: (orderId: string, lineNo: number) => void;
+  onPreview: (orderId: string, lineNo: number, page?: number) => void;
 }
 
 export const OrderCard: React.FC<OrderCardProps> = ({
@@ -81,7 +81,7 @@ interface LineItemRowProps {
   line: Line;
   printers: PrinterSummary[];
   onSelectPrinter: (orderId: string, lineNo: number, printerId: string) => void;
-  onPreview: (orderId: string, lineNo: number) => void;
+  onPreview: (orderId: string, lineNo: number, page?: number) => void;
 }
 
 const LineItemRow: React.FC<LineItemRowProps> = ({
@@ -116,10 +116,22 @@ const LineItemRow: React.FC<LineItemRowProps> = ({
       <div className="line-spec-badge">
         <span className="line-icon">{icon}</span>
         <div>
-          <div className="line-spec-title">{l.label_name}</div>
+          <div className="line-spec-title flex items-center gap-1.5 flex-wrap">
+            <span>{l.label_name}</span>
+            {l.copies && l.copies > 1 && (
+              <span className="badge-pill badge-primary text-xs" style={{ fontSize: '10px', padding: '1px 5px' }}>
+                ×{l.copies} labels
+              </span>
+            )}
+          </div>
           <div className="line-spec-size font-mono">
             {l.width_mm} × {l.height_mm} mm
           </div>
+          {l.pack_breakdown && (
+            <div className="text-xs font-mono text-accent mt-0.5 flex items-center gap-1" style={{ fontSize: '11px' }}>
+              <span>📦</span> {l.pack_breakdown}
+            </div>
+          )}
         </div>
         <span className={`badge-roll ${rollClass}`}>{l.paper_size}</span>
       </div>
@@ -154,13 +166,32 @@ const LineItemRow: React.FC<LineItemRowProps> = ({
       </div>
 
       <div className="line-status-wrap">
-        <button
-          className="btn btn-xs btn-secondary"
-          onClick={() => onPreview(orderId, l.no)}
-          title="Preview rendered label at true aspect ratio"
-        >
-          <Eye size={12} /> {t('preview_btn')}
-        </button>
+        {l.page_copies && l.page_copies.length > 1 ? (
+          <div className="flex items-center gap-1">
+            <button
+              className="btn btn-xs btn-secondary"
+              onClick={() => onPreview(orderId, l.no, 1)}
+              title="Preview Standard Full Box Format (Page 1)"
+            >
+              <Eye size={12} /> P1 (×{l.page_copies[0]})
+            </button>
+            <button
+              className="btn btn-xs btn-secondary"
+              onClick={() => onPreview(orderId, l.no, 2)}
+              title="Preview Tail Remainder Box Format (Page 2)"
+            >
+              <Eye size={12} /> P2 {l.page_copies[1] > 0 ? `(Tail ×${l.page_copies[1]})` : '(Omitted)'}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-xs btn-secondary"
+            onClick={() => onPreview(orderId, l.no)}
+            title="Preview rendered label at true aspect ratio"
+          >
+            <Eye size={12} /> {t('preview_btn')}
+          </button>
+        )}
 
         <span className={`state-badge s-${s?.state || 'queued'}`}>
           {s?.state ? (t(`state_${s.state}` as any) || s.state) : t('not_released')}

@@ -122,7 +122,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handlePreview = async (orderId: string, lineNo: number) => {
+  const handlePreview = async (orderId: string, lineNo: number, page?: number) => {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
     const line = order.lines.find((l) => l.no === lineNo);
@@ -130,9 +130,10 @@ export const App: React.FC = () => {
 
     setPreviewLoading(true);
     setPreviewError(null);
-    setPreviewDim(`${line.paper_size} (${line.width_mm}×${line.height_mm}mm)`);
+    const pageLabel = page ? ` · Page ${page}${page === 2 ? ' (Tail Box)' : ' (Full Box)'}` : '';
+    setPreviewDim(`${line.paper_size} (${line.width_mm}×${line.height_mm}mm)${pageLabel}`);
 
-    const imgUrl = api.getLinePreviewUrl(orderId, lineNo);
+    const imgUrl = api.getLinePreviewUrl(orderId, lineNo, page);
 
     // Pre-test the preview image
     const img = new Image();

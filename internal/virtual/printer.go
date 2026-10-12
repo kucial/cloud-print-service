@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -497,9 +498,38 @@ func (p *Printer) parseStatus(buf []byte, isStatus bool) (reply, rest []byte, ok
 	return nil, buf, false
 }
 
+func parsePQQuantity(zpl string) int {
+	upper := strings.ToUpper(zpl)
+	idx := strings.Index(upper, "^PQ")
+	if idx == -1 {
+		idx = strings.Index(upper, "~PQ")
+	}
+	if idx == -1 {
+		return 1
+	}
+	after := upper[idx+3:]
+	var digits []byte
+	for i := 0; i < len(after); i++ {
+		c := after[i]
+		if c >= '0' && c <= '9' {
+			digits = append(digits, c)
+		} else {
+			break
+		}
+	}
+	if len(digits) == 0 {
+		return 1
+	}
+	if q, err := strconv.Atoi(string(digits)); err == nil && q > 0 {
+		return q
+	}
+	return 1
+}
+
 func (p *Printer) recordLabel(zpl string) {
+	qty := parsePQQuantity(zpl)
 	p.mu.Lock()
-	p.labelCount++
+	p.labelCount += qty
 	index := p.labelCount
 	p.labels = append(p.labels, Label{
 		Index:      index,

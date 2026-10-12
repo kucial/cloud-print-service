@@ -407,3 +407,37 @@ func TestReadyzReflectsPrinterCount(t *testing.T) {
 		t.Fatalf("status = %d, want 503 when no printers are configured", resp.StatusCode)
 	}
 }
+
+func TestSubmitJobWithPageCopies(t *testing.T) {
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
+
+	// Submit a 2-page job with page_copies: [4, 1]
+	body := `{
+		"printer_id": "p1",
+		"external_id": "api-tail-01",
+		"zpl": "^XA^FDBox 12^FS^XZ^XA^FDTail 2^FS^XZ",
+		"page_copies": [4, 1]
+	}`
+	resp, reply := do(t, ts, "POST", "/api/v1/jobs", erpKey, body)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: %+v", resp.StatusCode, reply)
+	}
+	jobID, ok := reply["job_id"].(string)
+	if !ok || jobID == "" {
+		t.Fatalf("missing job_id: %+v", reply)
+	}
+
+	// Fetch job details: verify copies == 5 and page_copies == [4, 1]
+	getResp, getReply := do(t, ts, "GET", "/api/v1/jobs/"+jobID, erpKey, "")
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("get job failed: %d, %+v", getResp.StatusCode, getReply)
+	}
+	if copies, _ := getReply["copies"].(float64); copies != 5 {
+		t.Fatalf("expected job copies == 5, got %v", copies)
+	}
+	pc, ok := getReply["page_copies"].([]any)
+	if !ok || len(pc) != 2 || pc[0].(float64) != 4 || pc[1].(float64) != 1 {
+		t.Fatalf("unexpected page_copies: %+v", getReply["page_copies"])
+	}
+}
+

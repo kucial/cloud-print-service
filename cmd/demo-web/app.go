@@ -59,6 +59,9 @@ type Line struct {
 	PaperSize       string         `json:"paper_size"`       // "4x6", "4x2", "2x1"
 	WidthMM         float64        `json:"width_mm"`
 	HeightMM        float64        `json:"height_mm"`
+	Copies          int            `json:"copies"`           // Total physical label copies
+	PageCopies      []int          `json:"page_copies,omitempty"` // Page-targeted copy distribution [Full, Tail]
+	PackBreakdown   string         `json:"pack_breakdown,omitempty"` // e.g. "4 Full (Qty 6) + 1 Tail (Qty 2)"
 	SelectedPrinter string         `json:"selected_printer"` // manual override if set
 	TargetPrinter   string         `json:"target_printer"`   // computed target printer
 	ZPL             string         `json:"-"`
@@ -270,18 +273,26 @@ func (a *app) Release(ctx context.Context, orderID string) ([]dispatchResult, er
 		go func(i int, line *Line, externalID, printer string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			res, err := a.cli.dispatch(ctx, map[string]any{
+			copies := line.Copies
+			if copies <= 0 {
+				copies = 1
+			}
+			dispatchBody := map[string]any{
 				"printer_id":  printer,
 				"external_id": externalID,
 				"biz_ref":     ord.ID,
 				"zpl":         line.ZPL,
-				"copies":      1,
+				"copies":      copies,
 				"meta": map[string]string{
 					"module":     "demo-web",
 					"order":      ord.ID,
 					"paper_size": line.PaperSize,
 				},
-			})
+			}
+			if len(line.PageCopies) > 0 {
+				dispatchBody["page_copies"] = line.PageCopies
+			}
+			res, err := a.cli.dispatch(ctx, dispatchBody)
 			if err != nil {
 				a.log.Warn("dispatch rejected", "order", ord.ID, "line", line.No, "printer", printer, "err", err)
 			}
@@ -522,7 +533,7 @@ func errors_IsEOF(err error) bool { return err == io.EOF || err == context.Cance
 
 // generateOrders creates multi-line warehouse packages with distinct label sizes:
 //   - Line 1: Outbound Shipping & Pallet Label (4"x6") -> routed to 4x6 printer
-//   - Line 2: Carton / Case Box Label          (4"x2") -> routed to 4x2 printer
+//   - Line 2: Multi-Page Carton with Tail Box  (4"x2") -> page_copies [Full, Tail]
 //   - Line 3: Item SKU / Bin Pick Tag          (2"x1") -> routed to 2x1 printer
 func generateOrders(seed int64) []*Order {
 	rng := rand.New(rand.NewSource(seed))
@@ -547,18 +558,54 @@ func generateOrders(seed int64) []*Order {
 			PaperSize: "4x6",
 			WidthMM:   101.6,
 			HeightMM:  152.4,
+			Copies:    1,
 			ZPL:       shippingLabel4x6(ord),
 		})
 
-		// Line 2: 4"x2" Carton / Case Label
+		// Line 2: 4"x2" Carton Label with Tail Remainder Box handling
+		var (
+			fullBoxes, fullQty, tailQty int
+			pageCopies                  []int
+			breakdown                   string
+		)
+		if i == 0 {
+			// Order 0: 26 EA total, box cap 6 -> 4 full boxes (qty 6) + 1 tail box (qty 2)
+			fullBoxes, fullQty, tailQty = 4, 6, 2
+			pageCopies = []int{4, 1}
+			breakdown = "4 Full (Qty 6) + 1 Tail (Qty 2)"
+		} else if i == 1 {
+			// Order 1: 24 EA total, box cap 6 -> 4 full boxes (qty 6) + 0 tail (suppressed)
+			fullBoxes, fullQty, tailQty = 4, 6, 0
+			pageCopies = []int{4, 0}
+			breakdown = "4 Full (Qty 6, 0 Tail / Suppressed)"
+		} else {
+			fullBoxes = 2 + rng.Intn(4)
+			fullQty = 6
+			tailQty = rng.Intn(6)
+			if tailQty > 0 {
+				pageCopies = []int{fullBoxes, 1}
+				breakdown = fmt.Sprintf("%d Full (Qty %d) + 1 Tail (Qty %d)", fullBoxes, fullQty, tailQty)
+			} else {
+				pageCopies = []int{fullBoxes, 0}
+				breakdown = fmt.Sprintf("%d Full (Qty %d, 0 Tail)", fullBoxes, fullQty)
+			}
+		}
+		totalCopies := fullBoxes
+		if tailQty > 0 {
+			totalCopies++
+		}
+
 		ord.Lines = append(ord.Lines, Line{
-			No:        2,
-			LabelType: "carton_4x2",
-			LabelName: "Carton Box Label",
-			PaperSize: "4x2",
-			WidthMM:   101.6,
-			HeightMM:  50.8,
-			ZPL:       cartonLabel4x2(ord),
+			No:            2,
+			LabelType:     "carton_4x2",
+			LabelName:     "Carton Box Labels (Tail-Aware)",
+			PaperSize:     "4x2",
+			WidthMM:       101.6,
+			HeightMM:      50.8,
+			Copies:        totalCopies,
+			PageCopies:    pageCopies,
+			PackBreakdown: breakdown,
+			ZPL:           cartonMultiPageLabel4x2(ord, fullBoxes, fullQty, tailQty),
 		})
 
 		// Line 3: 2"x1" Item SKU Pick Tag
@@ -569,6 +616,7 @@ func generateOrders(seed int64) []*Order {
 			PaperSize: "2x1",
 			WidthMM:   50.8,
 			HeightMM:  25.4,
+			Copies:    1,
 			ZPL:       itemLabel2x1(ord),
 		})
 
@@ -599,20 +647,43 @@ func shippingLabel4x6(o *Order) string {
 	}, "")
 }
 
-// 4"x2" Carton / Case Label
-func cartonLabel4x2(o *Order) string {
-	cartonCode := fmt.Sprintf("CAR-%s-01", o.ID)
-	return strings.Join([]string{
+// 4"x2" Multi-Page Carton Label with Tail Remainder Box
+func cartonMultiPageLabel4x2(o *Order, fullBoxes, fullQty, tailQty int) string {
+	// Format 1: Standard Full Carton Label
+	p1 := strings.Join([]string{
 		"^XA^CI28^PW812^LL406",
 		"^FO30,20^GB752,3,3^FS",
-		fmt.Sprintf("^FO30,35^A0N,32,32^FDCARTON BOX #1 - %s^FS", o.Customer),
-		fmt.Sprintf("^FO30,78^A0N,22,22^FDOrder: %s | SKU: %s x%d | Loc: %s^FS", o.ID, o.SKU, o.Qty, o.Bin),
-		fmt.Sprintf("^FO30,115^BCN,75,Y,N,N^FD%s^FS", cartonCode),
-		fmt.Sprintf("^FO600,115^BQN,2,4^FD%s^FS", cartonCode),
+		fmt.Sprintf("^FO30,35^A0N,30,30^FDFULL CARTON BOX (STD) - %s^FS", o.Customer),
+		fmt.Sprintf("^FO30,76^A0N,22,22^FDOrder: %s | SKU: %s | Loc: %s^FS", o.ID, o.SKU, o.Bin),
+		fmt.Sprintf("^FO30,108^A0N,28,28^FDPack Count: %d EA / BOX [FULL]^FS", fullQty),
+		fmt.Sprintf("^FO30,146^BCN,65,Y,N,N^FD%s-STD^FS", o.ID),
+		fmt.Sprintf("^FO600,135^BQN,2,4^FD%s-STD^FS", o.ID),
 		"^FO30,230^GB752,2,2^FS",
-		fmt.Sprintf("^FO30,245^A0N,20,20^FDVERIFIED BY PACKING STATION - DO NOT DROP^FS"),
+		"^FO30,245^A0N,18,18^FDSTANDARD FULL CARTON - VERIFIED BY PACKING STATION^FS",
 		"^XZ",
 	}, "")
+
+	// Format 2: Tail / Remainder Box Label (with prominent TAIL BOX notice)
+	p2 := strings.Join([]string{
+		"^XA^CI28^PW812^LL406",
+		"^FO30,20^GB752,3,3^FS",
+		fmt.Sprintf("^FO30,35^A0N,30,30^FDTAIL BOX / REMAINING - %s^FS", o.Customer),
+		fmt.Sprintf("^FO30,76^A0N,22,22^FDOrder: %s | SKU: %s | Loc: %s^FS", o.ID, o.SKU, o.Bin),
+		fmt.Sprintf("^FO30,108^A0N,28,28^FDPack Count: %d EA [REMAINDER TAIL]^FS", tailQty),
+		fmt.Sprintf("^FO30,140^BCN,55,Y,N,N^FD%s-TAIL^FS", o.ID),
+		fmt.Sprintf("^FO600,130^BQN,2,4^FD%s-TAIL^FS", o.ID),
+		"^FO30,230^GB540,38,3^FS",
+		"^FO45,240^A0N,20,20^FD*** TAIL BOX / WEI XIANG - ODD LOT ***^FS",
+		"^FO30,285^A0N,18,18^FDPARTIAL CARTON - INSPECT QUANTITY UPON UNPACKING^FS",
+		"^XZ",
+	}, "")
+
+	return p1 + p2
+}
+
+// 4"x2" Carton / Case Label (single page fallback)
+func cartonLabel4x2(o *Order) string {
+	return cartonMultiPageLabel4x2(o, 4, 6, 2)
 }
 
 // 2"x1" Item SKU Pick Tag

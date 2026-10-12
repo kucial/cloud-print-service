@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/kucial/cloud-print-service/internal/driver"
 )
 
 // Handler exposes the demo console's own API plus the embedded UI.
@@ -166,7 +168,15 @@ func (a *app) handleLinePreview(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "line not found"})
 		return
 	}
-	png, err := a.preview(r.Context(), targetLine.ZPL, targetLine.WidthMM, targetLine.HeightMM)
+	zplToRender := targetLine.ZPL
+	pageStr := r.URL.Query().Get("page")
+	if pageStr != "" {
+		pages := driver.SplitZPLPages(targetLine.ZPL)
+		if pNum, err := strconv.Atoi(pageStr); err == nil && pNum >= 1 && pNum <= len(pages) {
+			zplToRender = pages[pNum-1]
+		}
+	}
+	png, err := a.preview(r.Context(), zplToRender, targetLine.WidthMM, targetLine.HeightMM)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return

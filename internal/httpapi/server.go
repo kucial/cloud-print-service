@@ -325,6 +325,7 @@ type submitBody struct {
 	ZPL           string            `json:"zpl"`
 	PayloadBase64 string            `json:"payload_base64"`
 	Copies        int               `json:"copies"`
+	PageCopies    []int             `json:"page_copies"`
 	Priority      string            `json:"priority"`
 	BizRef        string            `json:"biz_ref"`
 	Meta          map[string]string `json:"meta"`
@@ -344,6 +345,7 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
 		ZPL:            b.ZPL,
 		PayloadBase64:  b.PayloadBase64,
 		Copies:         b.Copies,
+		PageCopies:     b.PageCopies,
 		Priority:       b.Priority,
 		BizRef:         b.BizRef,
 		Meta:           b.Meta,
@@ -408,6 +410,7 @@ func (s *Server) submitBatch(w http.ResponseWriter, r *http.Request) {
 			ZPL:            it.ZPL,
 			PayloadBase64:  it.PayloadBase64,
 			Copies:         it.Copies,
+			PageCopies:     it.PageCopies,
 			Priority:       it.Priority,
 			BizRef:         it.BizRef,
 			Meta:           it.Meta,

@@ -30,6 +30,9 @@ export interface Line {
   paper_size: string;
   width_mm: number;
   height_mm: number;
+  copies?: number;
+  page_copies?: number[];
+  pack_breakdown?: string;
   selected_printer?: string;
   target_printer: string;
   status?: DispatchResult;

@@ -39,6 +39,8 @@ export const api = {
         body: JSON.stringify({ printer_id: printerId }),
       }
     ),
-  getLinePreviewUrl: (id: string, lineNo: number) =>
-    `/api/orders/${encodeURIComponent(id)}/lines/${lineNo}/preview?t=${Date.now()}`,
+  getLinePreviewUrl: (id: string, lineNo: number, page?: number) => {
+    const base = `/api/orders/${encodeURIComponent(id)}/lines/${lineNo}/preview?t=${Date.now()}`;
+    return page ? `${base}&page=${page}` : base;
+  },
 };

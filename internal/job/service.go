@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kucial/cloud-print-service/internal/domain"
+	"github.com/kucial/cloud-print-service/internal/driver"
 	"github.com/kucial/cloud-print-service/internal/fleet"
 	"github.com/kucial/cloud-print-service/internal/observ"
 	"github.com/kucial/cloud-print-service/internal/store"
@@ -36,6 +37,7 @@ type SubmitRequest struct {
 	ZPL            string // raw label, used when PayloadBase64 is empty
 	PayloadBase64  string
 	Copies         int
+	PageCopies     []int // targeted copies per format page, e.g. [4, 1] for 4 full cartons + 1 tail carton
 	Priority       string
 	BizRef         string
 	Meta           map[string]string
@@ -163,11 +165,26 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		}
 	}
 	copies := req.Copies
-	if copies == 0 {
-		copies = 1
-	}
-	if copies < 1 || copies > 50 {
-		return nil, false, fmt.Errorf("%w: copies must be 1..50", ErrInvalidRequest)
+	if len(req.PageCopies) > 0 {
+		transformed, totalLabels, err := driver.ApplyPageCopies(string(payload), req.PageCopies)
+		if err != nil {
+			return nil, false, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+		if totalLabels == 0 {
+			return nil, false, fmt.Errorf("%w: total labels across pages cannot be zero", ErrInvalidRequest)
+		}
+		if totalLabels > 5000 {
+			return nil, false, fmt.Errorf("%w: total copies across pages exceeds limit (5000)", ErrInvalidRequest)
+		}
+		payload = []byte(transformed)
+		copies = totalLabels
+	} else {
+		if copies == 0 {
+			copies = 1
+		}
+		if copies < 1 || copies > 50 {
+			return nil, false, fmt.Errorf("%w: copies must be 1..50", ErrInvalidRequest)
+		}
 	}
 	priority := req.Priority
 	if priority == "" {
@@ -177,11 +194,16 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		return nil, false, fmt.Errorf("%w: priority must be normal|high", ErrInvalidRequest)
 	}
 
-	sum := sha256.Sum256(payload)
+	h := sha256.New()
+	h.Write(payload)
+	if len(req.PageCopies) > 0 {
+		h.Write([]byte(fmt.Sprintf(":page_copies=%v", req.PageCopies)))
+	}
+	sum := h.Sum(nil)
 
 	// Idempotency: same (client, external_id) => same job, no second label.
 	if existing, err := s.st.GetByExternal(ctx, req.ClientID, externalID); err == nil {
-		if existing.PayloadSHA != hex.EncodeToString(sum[:]) {
+		if existing.PayloadSHA != hex.EncodeToString(sum) {
 			return nil, false, fmt.Errorf("%w: external_id %q was already used with a different payload", store.ErrConflict, externalID)
 		}
 		return existing, true, nil
@@ -196,8 +218,9 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		State:          domain.JobQueued,
 		Payload:        string(payload),
 		Bytes:          len(payload),
-		PayloadSHA:     hex.EncodeToString(sum[:]),
+		PayloadSHA:     hex.EncodeToString(sum),
 		Copies:         copies,
+		PageCopies:     req.PageCopies,
 		Priority:       priority,
 		BizRef:         req.BizRef,
 		Meta:           req.Meta,

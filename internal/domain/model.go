@@ -63,11 +63,11 @@ type MockCfg struct {
 
 // Printer is both the declared spec and the live view of a printer.
 type Printer struct {
-	PrinterID string `json:"printer_id"`
-	Name      string `json:"name"`
-	Site      string `json:"site"`
-	Model     string `json:"model"`
-	Driver    string `json:"driver"`
+	PrinterID   string `json:"printer_id"`
+	Name        string `json:"name"`
+	Site        string `json:"site"`
+	Model       string `json:"model"`
+	Driver      string `json:"driver"`
 	Host        string `json:"host"`
 	Port        int    `json:"port"`
 	Enabled     bool   `json:"enabled"`
@@ -119,6 +119,7 @@ type Job struct {
 	Bytes      int               `json:"payload_bytes"`
 	PayloadSHA string            `json:"payload_sha256"`
 	Copies     int               `json:"copies"`
+	PageCopies []int             `json:"page_copies,omitempty"`
 	Priority   string            `json:"priority"`
 	BizRef     string            `json:"biz_ref"`
 	Meta       map[string]string `json:"meta,omitempty"`

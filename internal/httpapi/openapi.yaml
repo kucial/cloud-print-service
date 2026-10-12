@@ -1037,6 +1037,11 @@ components:
         copies:
           type: integer
           default: 1
+        page_copies:
+          type: array
+          items:
+            type: integer
+          description: Targeted copy counts per ^XA...^XZ format page (e.g. [4, 1] for 4 full cartons + 1 tail remainder carton). If an entry is 0, that page is omitted.
         priority:
           type: string
           enum: [normal, high]
@@ -1084,6 +1089,11 @@ components:
           type: integer
         copies:
           type: integer
+        page_copies:
+          type: array
+          items:
+            type: integer
+          description: Distribution of copy counts across format pages
         attempts:
           type: integer
         last_error:

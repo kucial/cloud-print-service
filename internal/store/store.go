@@ -67,6 +67,23 @@ func NewMemoryStore() *MemoryStore {
 
 func extKey(clientID, externalID string) string { return clientID + "\x00" + externalID }
 
+func cloneJob(j *domain.Job) *domain.Job {
+	if j == nil {
+		return nil
+	}
+	cp := *j
+	if len(j.PageCopies) > 0 {
+		cp.PageCopies = append([]int(nil), j.PageCopies...)
+	}
+	if j.Meta != nil {
+		cp.Meta = make(map[string]string, len(j.Meta))
+		for k, v := range j.Meta {
+			cp.Meta[k] = v
+		}
+	}
+	return &cp
+}
+
 func (s *MemoryStore) CreateJob(ctx context.Context, j *domain.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,8 +101,7 @@ func (s *MemoryStore) CreateJob(ctx context.Context, j *domain.Job) error {
 		}
 		s.byExt[k] = j.ID
 	}
-	cp := *j
-	s.jobs[j.ID] = &cp
+	s.jobs[j.ID] = cloneJob(j)
 	return nil
 }
 
@@ -96,8 +112,7 @@ func (s *MemoryStore) GetJob(ctx context.Context, id string) (*domain.Job, error
 	if !ok {
 		return nil, ErrNotFound
 	}
-	cp := *j
-	return &cp, nil
+	return cloneJob(j), nil
 }
 
 func (s *MemoryStore) GetByExternal(ctx context.Context, clientID, externalID string) (*domain.Job, error) {
@@ -107,8 +122,7 @@ func (s *MemoryStore) GetByExternal(ctx context.Context, clientID, externalID st
 	if !ok {
 		return nil, ErrNotFound
 	}
-	cp := *s.jobs[id]
-	return &cp, nil
+	return cloneJob(s.jobs[id]), nil
 }
 
 func (s *MemoryStore) UpdateJob(ctx context.Context, j *domain.Job) error {
@@ -117,8 +131,7 @@ func (s *MemoryStore) UpdateJob(ctx context.Context, j *domain.Job) error {
 	if _, ok := s.jobs[j.ID]; !ok {
 		return ErrNotFound
 	}
-	cp := *j
-	s.jobs[j.ID] = &cp
+	s.jobs[j.ID] = cloneJob(j)
 	return nil
 }
 
@@ -144,7 +157,7 @@ func (s *MemoryStore) ListJobs(ctx context.Context, f Filter) ([]domain.Job, err
 		if f.To != nil && j.QueuedAt.After(*f.To) {
 			continue
 		}
-		out = append(out, *j)
+		out = append(out, *cloneJob(j))
 	}
 	s.mu.RUnlock()
 

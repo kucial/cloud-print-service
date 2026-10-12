@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -416,5 +417,64 @@ func TestRejectWhenNotUsable(t *testing.T) {
 	})
 	if !errors.Is(err, ErrPrinterNotUsable) {
 		t.Fatalf("expected ErrPrinterNotUsable, got %v", err)
+	}
+}
+
+func TestSubmitWithPageCopiesAndTailSuppression(t *testing.T) {
+	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
+	ctx := context.Background()
+
+	// 2-page format: Page 1 = Full carton (Qty 12), Page 2 = Tail carton (Qty 2)
+	zpl := "^XA^CI28^FDFull Carton Qty: 12^FS^XZ^XA^CI28^FDTail Carton Qty: 2^FS^XZ"
+
+	// 1. Submit with PageCopies [4, 1] (4 full cartons + 1 tail carton = 5 total labels)
+	j, replayed, err := h.svc.Submit(ctx, SubmitRequest{
+		ClientID: "wms", PrinterID: "p1", ExternalID: "tail-wave-1", ZPL: zpl,
+		PageCopies: []int{4, 1},
+	})
+	if err != nil || replayed {
+		t.Fatalf("submit failed: %v (replayed=%v)", err, replayed)
+	}
+	if j.Copies != 5 {
+		t.Fatalf("expected 5 total labels, got %d", j.Copies)
+	}
+	if len(j.PageCopies) != 2 || j.PageCopies[0] != 4 || j.PageCopies[1] != 1 {
+		t.Fatalf("page_copies not recorded: %+v", j.PageCopies)
+	}
+	if !strings.Contains(j.Payload, "^PQ4^XZ") || !strings.Contains(j.Payload, "^PQ1^XZ") {
+		t.Fatalf("ZPL payload missing native ^PQ injections: %s", j.Payload)
+	}
+
+	// 2. Replay with identical PageCopies: returns 200 replayed
+	jReplay, replayed, err := h.svc.Submit(ctx, SubmitRequest{
+		ClientID: "wms", PrinterID: "p1", ExternalID: "tail-wave-1", ZPL: zpl,
+		PageCopies: []int{4, 1},
+	})
+	if err != nil || !replayed || jReplay.ID != j.ID {
+		t.Fatalf("expected identical replay: replayed=%v, err=%v", replayed, err)
+	}
+
+	// 3. Same external_id with different PageCopies [3, 1] triggers 409 Conflict
+	_, _, err = h.svc.Submit(ctx, SubmitRequest{
+		ClientID: "wms", PrinterID: "p1", ExternalID: "tail-wave-1", ZPL: zpl,
+		PageCopies: []int{3, 1},
+	})
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected store.ErrConflict on changed page_copies, got %v", err)
+	}
+
+	// 4. Zero remainder test: PageCopies [4, 0] suppresses Page 2 entirely
+	jZero, _, err := h.svc.Submit(ctx, SubmitRequest{
+		ClientID: "wms", PrinterID: "p1", ExternalID: "tail-wave-zero", ZPL: zpl,
+		PageCopies: []int{4, 0},
+	})
+	if err != nil {
+		t.Fatalf("submit zero remainder: %v", err)
+	}
+	if jZero.Copies != 4 {
+		t.Fatalf("expected 4 copies with tail suppressed, got %d", jZero.Copies)
+	}
+	if strings.Contains(jZero.Payload, "Tail Carton") {
+		t.Fatalf("Page 2 must be omitted when copies == 0: %s", jZero.Payload)
 	}
 }
