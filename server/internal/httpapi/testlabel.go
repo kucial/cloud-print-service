@@ -21,6 +21,8 @@ import (
 //     feed direction and scale
 //   - a line of Chinese in the printer's CJK font, to check the font prints (blanks
 //     or boxes mean the font or its encoding table is missing)
+//   - a QR code (printer id + print time) and a Code 128 barcode (print time as
+//     MMDDHHMM), to check both scan — the printed digits say what the barcode should read
 
 type testLabelGeometry struct {
 	WidthMM, HeightMM float64
@@ -88,7 +90,7 @@ func testLabelSize(ctx context.Context, p *fleet.Printer) testLabelGeometry {
 	return g
 }
 
-func testLabelZPL(name string, g testLabelGeometry, cjk testLabelCJK, now time.Time) string {
+func testLabelZPL(name, printerID string, g testLabelGeometry, cjk testLabelCJK, now time.Time) string {
 	d := func(mm float64) int { return int(mm*g.DPMM + 0.5) }
 	w, h := d(g.WidthMM), d(g.HeightMM)
 	m := d(1) // border inset
@@ -140,6 +142,19 @@ func testLabelZPL(name string, g testLabelGeometry, cjk testLabelCJK, now time.T
 		g.WidthMM, g.HeightMM, printer.DPIFromDPMM(g.DPMM), g.Source)
 	f("^FO%d,%d^A0N,%d,%d^FD%s^FS", tx, ty+fs+2*small+16, small, small, now.Format("2006-01-02 15:04:05"))
 
+	// Codes in the right-hand column, clear of the text block and the crosshair: QR at
+	// the top, Code 128 under it. Eight digits encode as four Code 128 C symbols, so
+	// the bars stay 2 dots wide (reliably scannable at 203 dpi) on a 60 mm label.
+	qrData := "CPS " + zplText(printerID) + " " + now.Format("20060102150405")
+	qrMag := max(2, short/90)
+	qrSide := qrModules(len(qrData)) * qrMag
+	qx, qy := w-m-d(2)-qrSide, m+d(2)
+	f("^FO%d,%d^BQN,2,%d^FDMA,%s^FS", qx, qy, qrMag, qrData)
+	by := max(2, w/240)
+	barW := (4+3)*11*by + 2*by
+	barH := max(40, h/8)
+	f("^BY%d^FO%d,%d^BCN,%d,Y,N,N,A^FD%s^FS", by, w-m-d(2)-barW, qy+qrSide+d(3), barH, now.Format("01021504"))
+
 	// CJK check, bottom left, clear of the crosshair. Its font setup comes last so the
 	// ASCII fields above are unaffected.
 	cjkH := max(fs, 24)
@@ -152,6 +167,17 @@ func testLabelZPL(name string, g testLabelGeometry, cjk testLabelCJK, now time.T
 	}
 	f("^XZ")
 	return b.String()
+}
+
+// qrModules is the side, in modules, of the smallest QR code holding n bytes at error
+// correction M (the "MA" in ^FD): versions 1–6 hold 14, 26, 42, 62, 84, 106 bytes.
+func qrModules(n int) int {
+	for v, limit := range []int{14, 26, 42, 62, 84, 106} {
+		if n <= limit {
+			return 17 + 4*(v+1)
+		}
+	}
+	return 17 + 4*7
 }
 
 // zplText keeps field data from closing its own field.

@@ -17,8 +17,11 @@ func TestAlignmentLabelRendersAtMediaSize(t *testing.T) {
 		{WidthMM: 60, HeightMM: 40, DPMM: 8, Source: "declared"},
 		{WidthMM: 101.6, HeightMM: 152.4, DPMM: 12, Source: "default"},
 	} {
-		zpl := testLabelZPL("GK888t (USB)", g, testLabelCJK{Font: "E:SIMSUN.FNT",
+		zpl := testLabelZPL("GK888t (USB)", "mac-usb-19J152400112", g, testLabelCJK{Font: "E:SIMSUN.FNT",
 			Setup: "^CW1,E:SIMSUN.FNT^CI28^SEE:GB18030.DAT"}, time.Date(2026, 10, 12, 23, 0, 0, 0, time.UTC))
+		if !strings.Contains(zpl, "^BQN,2,") || !strings.Contains(zpl, "^BCN,") {
+			t.Fatalf("no QR code or barcode: %s", zpl)
+		}
 		if !strings.Contains(zpl, "^CW1,E:SIMSUN.FNT^CI28^SEE:GB18030.DAT") || !strings.Contains(zpl, "中文") {
 			t.Fatalf("no CJK line: %s", zpl)
 		}
@@ -53,8 +56,16 @@ func TestZPLTextCannotBreakOutOfAField(t *testing.T) {
 
 func TestAlignmentLabelWithoutCJKFontSaysWhy(t *testing.T) {
 	g := testLabelGeometry{WidthMM: 60, HeightMM: 40, DPMM: 8}
-	zpl := testLabelZPL("p", g, testLabelCJK{Note: "no CJK font on printer"}, time.Now())
+	zpl := testLabelZPL("p", "p", g, testLabelCJK{Note: "no CJK font on printer"}, time.Now())
 	if strings.Contains(zpl, "^A1") || !strings.Contains(zpl, "CJK: no CJK font on printer") {
 		t.Fatalf("want an ASCII note instead of CJK glyphs: %s", zpl)
+	}
+}
+
+func TestQRModules(t *testing.T) {
+	for n, want := range map[int]int{14: 21, 15: 25, 39: 29, 42: 29, 43: 33, 106: 41} {
+		if got := qrModules(n); got != want {
+			t.Errorf("qrModules(%d) = %d, want %d", n, got, want)
+		}
 	}
 }

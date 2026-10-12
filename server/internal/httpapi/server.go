@@ -279,7 +279,7 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 	}
 	geo := testLabelSize(r.Context(), p)
 	cjk := testLabelFont(r.Context(), p)
-	zpl := testLabelZPL(p.Spec().Name, geo, cjk, time.Now())
+	zpl := testLabelZPL(p.Spec().Name, p.ID(), geo, cjk, time.Now())
 	j, replayed, err := s.jobs.Submit(r.Context(), job.SubmitRequest{
 		ClientID: ClientFrom(r.Context()).ID, PrinterID: p.ID(),
 		ExternalID: external, ZPL: zpl, BizRef: "test", Priority: "high",
