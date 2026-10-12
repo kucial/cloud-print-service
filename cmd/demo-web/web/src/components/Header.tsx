@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useI18n } from '../i18n/context';
 import { AppConfig } from '../types';
-import { Package, RefreshCw, Languages, Sun, Moon } from 'lucide-react';
+import { Package, RefreshCw, Languages, Sun, Moon, Code2 } from 'lucide-react';
 
 const THEME_KEY = 'demo_web.theme';
+
+export type DemoTab = 'orders' | 'inspector';
 
 interface HeaderProps {
   config: AppConfig | null;
@@ -12,6 +14,8 @@ interface HeaderProps {
   autoRefresh: boolean;
   setAutoRefresh: (val: boolean) => void;
   onRefresh: () => void;
+  currentTab: DemoTab;
+  onSelectTab: (tab: DemoTab) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +25,8 @@ export const Header: React.FC<HeaderProps> = ({
   autoRefresh,
   setAutoRefresh,
   onRefresh,
+  currentTab,
+  onSelectTab,
 }) => {
   const { t, locale, toggleLocale } = useI18n();
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -40,7 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="topbar">
-      <div className="brand">
+      <div className="brand" onClick={() => onSelectTab('orders')} style={{ cursor: 'pointer' }}>
         <div className="brand-icon-wrap">
           <Package size={22} className="text-accent" />
         </div>
@@ -49,6 +55,23 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="brand-sub">{t('brand_sub')}</div>
         </div>
       </div>
+
+      <nav className="nav-tabs">
+        <button
+          className={`nav-tab ${currentTab === 'orders' ? 'active' : ''}`}
+          onClick={() => onSelectTab('orders')}
+        >
+          <Package size={14} />
+          <span>{t('nav_orders')}</span>
+        </button>
+        <button
+          className={`nav-tab ${currentTab === 'inspector' ? 'active' : ''}`}
+          onClick={() => onSelectTab('inspector')}
+        >
+          <Code2 size={14} />
+          <span>{t('nav_inspector')}</span>
+        </button>
+      </nav>
 
       <div className="spacer" />
 

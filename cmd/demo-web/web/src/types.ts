@@ -55,3 +55,21 @@ export interface AppConfig {
   simulate: number;
   token_kind: string;
 }
+
+export interface APITrace {
+  id: string;
+  timestamp: string;
+  category: 'dispatch' | 'fleet' | 'preview' | 'tokens' | 'api';
+  title: string;
+  method: string;
+  url: string;
+  path: string;
+  request_headers: Record<string, string>;
+  request_body?: string;
+  status: number;
+  status_text: string;
+  response_headers: Record<string, string>;
+  response_body?: string;
+  latency_ms: number;
+  curl_command: string;
+}

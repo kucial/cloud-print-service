@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // Handler exposes the demo console's own API plus the embedded UI.
@@ -21,6 +23,9 @@ func (a *app) Handler() http.Handler {
 	mux.HandleFunc("GET /api/printers", a.handlePrinters)
 	mux.HandleFunc("GET /api/jobs/{job_id}", a.handleJob)
 	mux.HandleFunc("POST /api/preview", a.handlePreview)
+	mux.HandleFunc("GET /api/traces", a.handleTraces)
+	mux.HandleFunc("DELETE /api/traces", a.handleClearTraces)
+	mux.HandleFunc("POST /api/traces/send-sample", a.handleSendSample)
 	mux.HandleFunc("GET /api/config", a.handleConfig)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -43,6 +48,69 @@ func (a *app) handleOrders(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "count": len(out)})
+}
+
+func (a *app) handleTraces(w http.ResponseWriter, r *http.Request) {
+	traces := a.traces.List()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": traces,
+		"count": len(traces),
+	})
+}
+
+func (a *app) handleClearTraces(w http.ResponseWriter, r *http.Request) {
+	a.traces.Clear()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (a *app) handleSendSample(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Action string `json:"action"` // "fleet_status" | "submit_4x6" | "submit_4x2" | "preview"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+
+	switch body.Action {
+	case "fleet_status":
+		var out any
+		err := a.cli.do(r.Context(), "GET", "/api/v1/printers/status", a.cfg.token, nil, &out)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": out})
+
+	case "submit_4x6":
+		pID := "sim-pack-01"
+		if len(a.PrinterIDs()) > 0 {
+			pID = a.PrinterIDs()[0]
+		}
+		res, err := a.cli.dispatch(r.Context(), map[string]any{
+			"printer_id":  pID,
+			"external_id": fmt.Sprintf("sample-4x6-%d", time.Now().Unix()),
+			"biz_ref":     "SAMPLE-4x6",
+			"zpl":         "^XA^CI28^FO50,50^A0N,40,40^FDSAMPLE 4x6 LABEL^FS^FO50,110^BCN,80,Y,N,N^FD12345678^FS^XZ",
+			"copies":      1,
+		})
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res})
+
+	case "preview":
+		png, err := a.preview(r.Context(), "^XA^CI28^FO40,40^A0N,40,40^FDAPI INSPECTOR PREVIEW^FS^FO40,100^BCN,80,Y,N,N^FD88889999^FS^XZ", 101.6, 50.8)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "bytes": len(png)})
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unknown action"})
+	}
 }
 
 func (a *app) handlePrinters(w http.ResponseWriter, r *http.Request) {

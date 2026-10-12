@@ -21,6 +21,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -107,6 +108,7 @@ type client struct {
 	http  *http.Client
 	// maxAttempts bounds *unambiguous* retries only.
 	maxAttempts int
+	recorder    *traceRecorder
 }
 
 type apiError struct {
@@ -123,13 +125,16 @@ func (e *apiError) Error() string {
 }
 
 func (c *client) do(ctx context.Context, method, path, token string, body any, out any) error {
+	start := time.Now()
+	var bodyBytes []byte
 	var rdr io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		rdr = strings.NewReader(string(b))
+		bodyBytes = b
+		rdr = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rdr)
 	if err != nil {
@@ -139,12 +144,48 @@ func (c *client) do(ctx context.Context, method, path, token string, body any, o
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	reqHeaders := map[string]string{
+		"Content-Type": "application/json",
+	}
+	if token != "" {
+		reqHeaders["Authorization"] = "Bearer " + maskToken(token)
+	}
+
 	resp, err := c.http.Do(req)
+	latency := time.Since(start).Milliseconds()
+
 	if err != nil {
+		if c.recorder != nil {
+			c.recorder.Record(&APITrace{
+				Method: method, URL: c.base + path, Path: path,
+				RequestHeaders: reqHeaders, RequestBody: formatJSON(bodyBytes),
+				Status: 0, StatusText: "Transport Error", ResponseBody: err.Error(),
+				LatencyMS: latency, Category: categorize(path),
+				Title: fmt.Sprintf("%s %s", method, path),
+			})
+		}
 		return err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+
+	resHeaders := map[string]string{}
+	for k := range resp.Header {
+		resHeaders[k] = resp.Header.Get(k)
+	}
+
+	if c.recorder != nil {
+		c.recorder.Record(&APITrace{
+			Method: method, URL: c.base + path, Path: path,
+			RequestHeaders: reqHeaders, RequestBody: formatJSON(bodyBytes),
+			Status: resp.StatusCode, StatusText: fmt.Sprintf("%d %s", resp.StatusCode, http.StatusText(resp.StatusCode)),
+			ResponseHeaders: resHeaders, ResponseBody: formatJSON(raw),
+			LatencyMS: latency, Category: categorize(path),
+			Title: fmt.Sprintf("%s %s", method, path),
+		})
+	}
+
 	if resp.StatusCode >= 400 {
 		var e struct {
 			Error struct {
@@ -249,6 +290,39 @@ func (c *client) dispatch(ctx context.Context, req map[string]any) (dispatchResu
 	return dispatchResult{State: "error", Error: lastErr.Error(),
 		Attempts: c.maxAttempts, LatencyMS: time.Since(start).Milliseconds(),
 		UpdatedAt: time.Now()}, lastErr
+}
+
+func formatJSON(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	var out bytes.Buffer
+	if err := json.Indent(&out, b, "", "  "); err == nil {
+		return out.String()
+	}
+	return string(b)
+}
+
+func maskToken(t string) string {
+	if len(t) <= 16 {
+		return t
+	}
+	return t[:10] + "..." + t[len(t)-4:]
+}
+
+func categorize(path string) string {
+	switch {
+	case strings.Contains(path, "/jobs"):
+		return "dispatch"
+	case strings.Contains(path, "/printers"):
+		return "fleet"
+	case strings.Contains(path, "/preview"):
+		return "preview"
+	case strings.Contains(path, "/tokens"):
+		return "tokens"
+	default:
+		return "api"
+	}
 }
 
 func backoff(attempt int) time.Duration {

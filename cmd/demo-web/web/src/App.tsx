@@ -2,14 +2,16 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useI18n } from './i18n/context';
 import { api } from './api';
 import { Order, AppConfig, PrinterSummary } from './types';
-import { Header } from './components/Header';
+import { Header, DemoTab } from './components/Header';
 import { RollsStrip } from './components/RollsStrip';
 import { OrderCard } from './components/OrderCard';
 import { Sidebar } from './components/Sidebar';
+import { ApiInspectorView } from './views/ApiInspectorView';
 
 export const App: React.FC = () => {
   const { t } = useI18n();
 
+  const [currentTab, setCurrentTab] = useState<DemoTab>('orders');
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [printers, setPrinters] = useState<PrinterSummary[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -161,48 +163,58 @@ export const App: React.FC = () => {
         autoRefresh={autoRefresh}
         setAutoRefresh={setAutoRefresh}
         onRefresh={refreshAll}
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
       />
 
-      <RollsStrip printers={printers} />
+      {currentTab === 'orders' ? (
+        <>
+          <RollsStrip printers={printers} />
 
-      <main className="main-layout">
-        <section className="orders-section">
-          <div className="section-topbar">
-            <div>
-              <h2>{t('orders_title')}</h2>
-              <p className="text-muted text-xs mt-0.5">{t('orders_subtitle')}</p>
-            </div>
-          </div>
+          <main className="main-layout">
+            <section className="orders-section">
+              <div className="section-topbar">
+                <div>
+                  <h2>{t('orders_title')}</h2>
+                  <p className="text-muted text-xs mt-0.5">{t('orders_subtitle')}</p>
+                </div>
+              </div>
 
-          <div id="orders-list">
-            {orders.length > 0 ? (
-              orders.map((o) => (
-                <OrderCard
-                  key={o.id}
-                  order={o}
-                  printers={printers}
-                  releasing={!!releasingIds[o.id]}
-                  resending={!!resendingIds[o.id]}
-                  onRelease={handleRelease}
-                  onResend={handleResend}
-                  onSelectPrinter={handleSelectPrinter}
-                  onPreview={handlePreview}
-                />
-              ))
-            ) : (
-              <div className="card text-center text-muted py-6">{t('no_orders')}</div>
-            )}
-          </div>
-        </section>
+              <div id="orders-list">
+                {orders.length > 0 ? (
+                  orders.map((o) => (
+                    <OrderCard
+                      key={o.id}
+                      order={o}
+                      printers={printers}
+                      releasing={!!releasingIds[o.id]}
+                      resending={!!resendingIds[o.id]}
+                      onRelease={handleRelease}
+                      onResend={handleResend}
+                      onSelectPrinter={handleSelectPrinter}
+                      onPreview={handlePreview}
+                    />
+                  ))
+                ) : (
+                  <div className="card text-center text-muted py-6">{t('no_orders')}</div>
+                )}
+              </div>
+            </section>
 
-        <Sidebar
-          previewUrl={previewUrl}
-          previewDim={previewDim}
-          previewError={previewError}
-          previewLoading={previewLoading}
-          eventsLog={eventsLog}
-        />
-      </main>
+            <Sidebar
+              previewUrl={previewUrl}
+              previewDim={previewDim}
+              previewError={previewError}
+              previewLoading={previewLoading}
+              eventsLog={eventsLog}
+            />
+          </main>
+        </>
+      ) : (
+        <main className="inspector-container">
+          <ApiInspectorView />
+        </main>
+      )}
     </div>
   );
 };

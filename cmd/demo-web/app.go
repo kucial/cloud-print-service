@@ -71,6 +71,7 @@ type app struct {
 	log      *slog.Logger
 	cfg      appConfig
 	cli      *client
+	traces   *traceRecorder
 	mu       sync.RWMutex
 	ords     []*Order
 	printers []PrinterSummary
@@ -78,12 +79,15 @@ type app struct {
 }
 
 func newApp(log *slog.Logger, cfg appConfig) (*app, error) {
+	rec := newTraceRecorder(60)
 	a := &app{
 		log: log, cfg: cfg,
+		traces: rec,
 		cli: &client{
 			base: cfg.base, token: cfg.token,
 			http:        &http.Client{Timeout: 30 * time.Second},
 			maxAttempts: 4,
+			recorder:    rec,
 		},
 		live: map[string]string{},
 		ords: generateOrders(cfg.seed),
@@ -445,9 +449,11 @@ func (a *app) preview(ctx context.Context, zpl string, widthMM, heightMM float64
 	if heightMM <= 0 {
 		heightMM = 152.4
 	}
+	start := time.Now()
 	bodyJSON := fmt.Sprintf(`{"zpl":%s,"width_mm":%f,"height_mm":%f,"dpmm":8}`,
 		mustJSONString(zpl), widthMM, heightMM)
-	req, err := http.NewRequestWithContext(ctx, "POST", a.cfg.base+"/api/v1/admin/preview",
+	path := "/api/v1/admin/preview"
+	req, err := http.NewRequestWithContext(ctx, "POST", a.cfg.base+path,
 		strings.NewReader(bodyJSON))
 	if err != nil {
 		return nil, err
@@ -455,11 +461,48 @@ func (a *app) preview(ctx context.Context, zpl string, widthMM, heightMM float64
 	req.Header.Set("Authorization", "Bearer "+a.cfg.adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.cli.http.Do(req)
+	latency := time.Since(start).Milliseconds()
+
+	reqHeaders := map[string]string{
+		"Authorization": "Bearer " + maskToken(a.cfg.adminToken),
+		"Content-Type":  "application/json",
+	}
+
 	if err != nil {
+		if a.traces != nil {
+			a.traces.Record(&APITrace{
+				Method: "POST", URL: a.cfg.base + path, Path: path,
+				RequestHeaders: reqHeaders, RequestBody: formatJSON([]byte(bodyJSON)),
+				Status: 0, StatusText: "Transport Error", ResponseBody: err.Error(),
+				LatencyMS: latency, Category: "preview",
+				Title: "POST /api/v1/admin/preview",
+			})
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+
+	resHeaders := map[string]string{}
+	for k := range resp.Header {
+		resHeaders[k] = resp.Header.Get(k)
+	}
+
+	if a.traces != nil {
+		resBody := fmt.Sprintf("[Binary Image: %s, %d bytes]", resp.Header.Get("Content-Type"), len(body))
+		if resp.StatusCode >= 400 {
+			resBody = formatJSON(body)
+		}
+		a.traces.Record(&APITrace{
+			Method: "POST", URL: a.cfg.base + path, Path: path,
+			RequestHeaders: reqHeaders, RequestBody: formatJSON([]byte(bodyJSON)),
+			Status: resp.StatusCode, StatusText: fmt.Sprintf("%d %s", resp.StatusCode, http.StatusText(resp.StatusCode)),
+			ResponseHeaders: resHeaders, ResponseBody: resBody,
+			LatencyMS: latency, Category: "preview",
+			Title: "POST /api/v1/admin/preview",
+		})
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("preview http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}

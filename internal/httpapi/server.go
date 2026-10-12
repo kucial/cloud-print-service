@@ -113,6 +113,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	root.Handle("/", opsMux)
 
+	// OpenAPI documentation: interactive web preview + raw JSON/YAML specs
+	s.mountOpenAPI(root)
+
 	// Operator panel: embedded assets, same origin as the API, no separate deploy.
 	if s.web.Enabled {
 		wh, err := newWebHandler(s.web)
