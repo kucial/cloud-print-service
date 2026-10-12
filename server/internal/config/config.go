@@ -102,7 +102,8 @@ type Config struct {
 	ConfirmTimeout      Duration `json:"confirm_timeout"`
 	JobQueueTTL         Duration `json:"job_queue_ttl"`
 	BaseBackoff         Duration `json:"base_backoff"`
-	MaxPayloadBytes     int64    `json:"max_payload_bytes"`
+	MaxPayloadBytes     int64    `json:"max_payload_bytes"` // max job payload bytes, 0 for unlimited (default 32MB to allow CJK TrueType font uploads)
+	MaxCopies           int      `json:"max_copies"`        // max copies allowed per job (default 1000, admin configurable)
 	MaxBatchSize        int      `json:"max_batch_size"`
 	RejectWhenNotUsable bool     `json:"reject_when_not_usable"`
 	RateLimitRPS        float64  `json:"rate_limit_rps"`
@@ -137,7 +138,8 @@ func defaults() Config {
 		ConfirmTimeout:      Duration(10 * time.Second),
 		JobQueueTTL:         Duration(5 * time.Minute),
 		BaseBackoff:         Duration(500 * time.Millisecond),
-		MaxPayloadBytes:     1 << 20,
+		MaxPayloadBytes:     32 * 1024 * 1024, // 32 MB default (supports large CJK TrueType font files)
+		MaxCopies:           1000,             // 1000 copies default (admin configurable)
 		MaxBatchSize:        200,
 		RateLimitRPS:        30,
 		RateLimitBurst:      100,
@@ -187,8 +189,13 @@ func (c Config) Validate() error {
 	if c.QueueSizePerPrinter < 1 {
 		return fmt.Errorf("queue_size_per_printer must be >= 1")
 	}
-	if c.MaxPayloadBytes < 64 {
-		return fmt.Errorf("max_payload_bytes must be >= 64")
+	if c.MaxPayloadBytes < 0 {
+		c.MaxPayloadBytes = 0
+	} else if c.MaxPayloadBytes > 0 && c.MaxPayloadBytes < 64 {
+		return fmt.Errorf("max_payload_bytes must be >= 64 (or 0 for unlimited)")
+	}
+	if c.MaxCopies <= 0 {
+		c.MaxCopies = 1000
 	}
 	if c.Discovery.Interval.D() > 0 && c.Discovery.Interval.D() < 10*time.Second {
 		return fmt.Errorf("discovery.interval must be >= 10s, got %s", c.Discovery.Interval.D())

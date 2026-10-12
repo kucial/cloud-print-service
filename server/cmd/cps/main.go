@@ -72,6 +72,7 @@ func main() {
 		QueueTTL:            cfg.JobQueueTTL.D(),
 		BaseBackoff:         cfg.BaseBackoff.D(),
 		MaxPayloadSize:      cfg.MaxPayloadBytes,
+		MaxCopies:           cfg.MaxCopies,
 		RejectWhenNotUsable: cfg.RejectWhenNotUsable,
 	}, store, mgr, b, log, met)
 	defer js.Stop()

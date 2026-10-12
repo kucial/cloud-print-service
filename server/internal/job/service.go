@@ -34,7 +34,7 @@ var (
 	ErrInvalidBase64     = errors.New("payload_base64 is not valid base64")
 	ErrMissingPrinterID  = errors.New("printer_id is required")
 	ErrMissingExternalID = errors.New("external_id (or Idempotency-Key) is required for safe retries")
-	ErrInvalidCopies     = errors.New("copies must be 1..50")
+	ErrInvalidCopies     = errors.New("copies out of allowed range")
 	ErrInvalidPageCopies = errors.New("invalid page_copies")
 	ErrInvalidPriority   = errors.New("priority must be normal|high")
 )
@@ -64,6 +64,7 @@ type Config struct {
 	// accepted as confirmation. Default 1s.
 	SettleFor      time.Duration
 	MaxPayloadSize int64
+	MaxCopies      int
 	// RejectWhenNotUsable refuses dispatch to a printer whose cached status shows a
 	// consumable/error condition. Off by default: the caller usually prefers to try and
 	// see, and can filter on `usable` itself. Turn it on when a failed print is worse
@@ -107,6 +108,14 @@ func NewService(cfg Config, st store.Store, mgr *fleet.Manager, b *observ.Bus, l
 	}
 	if cfg.MaxPayloadSize <= 0 {
 		cfg.MaxPayloadSize = 1 << 20
+	}
+	if cfg.MaxPayloadSize < 0 {
+		cfg.MaxPayloadSize = 0 // 0 means unlimited
+	} else if cfg.MaxPayloadSize == 0 {
+		cfg.MaxPayloadSize = 32 * 1024 * 1024 // 32MB default
+	}
+	if cfg.MaxCopies <= 0 {
+		cfg.MaxCopies = 1000
 	}
 	return &Service{
 		cfg: cfg, st: st, mgr: mgr, bus: b, log: log, met: met,
@@ -176,6 +185,10 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		}
 	}
 	copies := req.Copies
+	maxCopies := s.cfg.MaxCopies
+	if maxCopies <= 0 {
+		maxCopies = 1000
+	}
 	if len(req.PageCopies) > 0 {
 		transformed, totalLabels, err := driver.ApplyPageCopies(string(payload), req.PageCopies)
 		if err != nil {
@@ -184,8 +197,12 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		if totalLabels == 0 {
 			return nil, false, fmt.Errorf("%w: %w: total labels across pages cannot be zero", ErrInvalidRequest, ErrInvalidPageCopies)
 		}
-		if totalLabels > 5000 {
-			return nil, false, fmt.Errorf("%w: %w: total copies across pages exceeds limit (5000)", ErrInvalidRequest, ErrInvalidPageCopies)
+		maxTotal := maxCopies * 5
+		if maxTotal < 5000 {
+			maxTotal = 5000
+		}
+		if totalLabels > maxTotal {
+			return nil, false, fmt.Errorf("%w: %w: total copies across pages exceeds limit (%d)", ErrInvalidRequest, ErrInvalidPageCopies, maxTotal)
 		}
 		payload = []byte(transformed)
 		copies = totalLabels
@@ -193,8 +210,8 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		if copies == 0 {
 			copies = 1
 		}
-		if copies < 1 || copies > 50 {
-			return nil, false, fmt.Errorf("%w: %w (got %d)", ErrInvalidRequest, ErrInvalidCopies, copies)
+		if copies < 1 || copies > maxCopies {
+			return nil, false, fmt.Errorf("%w: %w (got %d, allowed 1..%d)", ErrInvalidRequest, ErrInvalidCopies, copies, maxCopies)
 		}
 	}
 	priority := req.Priority
@@ -277,7 +294,7 @@ func resolvePayload(req SubmitRequest, max int64) ([]byte, error) {
 	if len(payload) == 0 {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, ErrPayloadEmpty)
 	}
-	if int64(len(payload)) > max {
+	if max > 0 && int64(len(payload)) > max {
 		return nil, fmt.Errorf("%w: %w (%d bytes, max allowed is %d bytes)", ErrInvalidRequest, ErrPayloadTooLarge, len(payload), max)
 	}
 	return payload, nil

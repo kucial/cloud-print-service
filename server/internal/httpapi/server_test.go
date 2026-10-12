@@ -89,6 +89,30 @@ func newTestServerWith(t *testing.T, web WebConfig, specs ...domain.Printer) *ht
 	return ts
 }
 
+func newTestServerWithPayloadLimit(t *testing.T, maxPayload int64, specs ...domain.Printer) *httpServer {
+	t.Helper()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := observ.NewBus()
+	mgr, err := fleet.NewManager(specs, log, b, fleet.ManagerOpts{PollInterval: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mgr.Close)
+	store := store.NewMemoryStore()
+	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 1, ConfirmTimeout: 100 * time.Millisecond,
+		MaxPayloadSize: maxPayload}, store, mgr, b, log, observ.NewMetrics())
+	t.Cleanup(svc.Stop)
+	tok := token.NewService(token.NewMemoryStore(), time.Hour)
+	auth := NewAuth(map[string]KeySpec{
+		erpKey: {ClientID: "erp", Role: "client"},
+		opsKey: {ClientID: "ops", Role: "admin"},
+	}, tok, 0, 0, observ.NewMetrics())
+	s := New(mgr, svc, b, auth, tok, log, observ.NewMetrics(), 50, maxPayload)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	return ts
+}
+
 // newTestServerNoRenderer mimics a build where no render engine is available.
 func newTestServerNoRenderer(t *testing.T) *httpServer {
 	t.Helper()
@@ -315,7 +339,7 @@ func TestSubmitErrorCodes(t *testing.T) {
 		{"disabled printer", `{"printer_id":"disabled1","external_id":"b","zpl":"^XA^XZ"}`, "printer_disabled", "", 409},
 		{"no external id", `{"printer_id":"p1","zpl":"^XA^XZ"}`, "invalid_request", "missing_external_id", 422},
 		{"empty payload", `{"printer_id":"p1","external_id":"c","zpl":""}`, "invalid_request", "missing_payload", 422},
-		{"bad copies", `{"printer_id":"p1","external_id":"d","zpl":"^XA^XZ","copies":99}`, "invalid_request", "invalid_copies", 422},
+		{"bad copies", `{"printer_id":"p1","external_id":"d","zpl":"^XA^XZ","copies":9999}`, "invalid_request", "invalid_copies", 422},
 		{"bad base64", `{"printer_id":"p1","external_id":"e","payload_base64":"!!!"}`, "invalid_request", "invalid_base64", 422},
 		{"both payloads", `{"printer_id":"p1","external_id":"f","zpl":"^XA^XZ","payload_base64":"WA=="}`, "invalid_request", "duplicate_payload", 422},
 		{"unknown field", `{"printer_id":"p1","external_id":"g","zpl":"^XA^XZ","oops":1}`, "invalid_request", "", 422},
@@ -350,6 +374,27 @@ func TestPayloadTooLarge(t *testing.T) {
 	}
 	if body["error"].(map[string]any)["reason"] != "payload_too_large" {
 		t.Fatalf("expected reason payload_too_large, got %v", body)
+	}
+}
+
+func TestLargeFontPayloadAndCopies(t *testing.T) {
+	// Server with 32MB payload limit
+	ts := newTestServerWithPayloadLimit(t, 32<<20, mockSpec("p1", &domain.MockCfg{State: "idle"}))
+
+	// 1. 200 copies should be accepted with default limit 1000
+	resp, body := do(t, ts, "POST", "/api/v1/jobs", erpKey,
+		`{"printer_id":"p1","external_id":"copies-200","zpl":"^XA^FD200^FS^XZ","copies":200}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 200 copies accepted (202), got %d (%v)", resp.StatusCode, body)
+	}
+
+	// 2. Large font payload (1.5 MB simulated TrueType font download data)
+	// Must be accepted without being rejected by the old 1MB ceiling.
+	fontData := strings.Repeat("A", 1500000)
+	rawResp, rawBody := do(t, ts, "POST", "/api/v1/jobs", erpKey,
+		`{"printer_id":"p1","external_id":"font-ttf-1","zpl":"~DYE:SIMSUN.TTF,P,T,`+fontData+`"}`)
+	if rawResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 1.5MB font payload accepted, got %d (%v)", rawResp.StatusCode, rawBody)
 	}
 }
 

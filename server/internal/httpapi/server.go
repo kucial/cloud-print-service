@@ -282,7 +282,7 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 		ExternalID: external, ZPL: zpl, BizRef: "test", Priority: "high",
 	})
 	if err != nil {
-		writeJobErr(w, err)
+		s.writeJobErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, jobAccepted(j, replayed))
@@ -383,12 +383,16 @@ func (s *Server) submitRawJob(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnsupportedMediaType, "invalid_request", "expected application/octet-stream")
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxPayload+1))
+	var rdr io.Reader = r.Body
+	if s.maxPayload > 0 {
+		rdr = io.LimitReader(r.Body, s.maxPayload+1)
+	}
+	body, err := io.ReadAll(rdr)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_request", "cannot read body: "+err.Error())
 		return
 	}
-	if int64(len(body)) > s.maxPayload {
+	if s.maxPayload > 0 && int64(len(body)) > s.maxPayload {
 		writeErr(w, http.StatusUnprocessableEntity, "payload_too_large",
 			fmt.Sprintf("payload exceeds %d bytes", s.maxPayload))
 		return
@@ -463,7 +467,7 @@ func (s *Server) submitBatch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, req job.SubmitRequest) {
 	j, replayed, err := s.jobs.Submit(r.Context(), req)
 	if err != nil {
-		writeJobErr(w, err)
+		s.writeJobErr(w, err)
 		return
 	}
 	status := http.StatusAccepted
@@ -722,7 +726,7 @@ func jobAccepted(j *domain.Job, replayed bool) map[string]any {
 	}
 }
 
-func writeJobErr(w http.ResponseWriter, err error) {
+func (s *Server) writeJobErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, job.ErrPrinterNotFound):
 		writeErr(w, http.StatusNotFound, "printer_not_found", err.Error(), nil)
@@ -740,7 +744,9 @@ func writeJobErr(w http.ResponseWriter, err error) {
 		reason := jobInvalidReason(err)
 		details := map[string]any{"reason": reason}
 		if errors.Is(err, job.ErrPayloadTooLarge) {
-			details["max_payload_bytes"] = 1048576
+			if s.maxPayload > 0 {
+				details["max_payload_bytes"] = s.maxPayload
+			}
 		}
 		writeErrReason(w, http.StatusUnprocessableEntity, "invalid_request", reason, err.Error(), details)
 	default:
@@ -806,7 +812,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func decodeJSON(r *http.Request, dst any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 8<<20))
+	// Allow large payloads (e.g. CJK TrueType font files in base64 / inline) up to 128 MB.
+	dec := json.NewDecoder(io.LimitReader(r.Body, 128<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		return fmt.Errorf("invalid JSON body: %w", err)

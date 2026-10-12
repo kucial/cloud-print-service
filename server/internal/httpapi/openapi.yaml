@@ -336,14 +336,14 @@ paths:
           description: |
             Invalid request or unprocessable payload.
             Machine-readable `error.reason` codes:
-            - `payload_too_large`: Payload exceeds maximum allowed size (default 1MB / 1,048,576 bytes; configurable via `max_payload_bytes`)
+            - `payload_too_large`: Payload exceeds maximum allowed size (default 32MB / 33,554,432 bytes, 0 for unlimited; configurable via `max_payload_bytes` to allow full CJK TrueType font files)
             - `payload_empty`: Payload has zero length
             - `missing_payload`: Neither `zpl` nor `payload_base64` was supplied
             - `duplicate_payload`: Both `zpl` and `payload_base64` were supplied
             - `invalid_base64`: `payload_base64` is not valid base64
             - `missing_printer_id`: `printer_id` is required
             - `missing_external_id`: `external_id` (or `Idempotency-Key`) is required for safe retries
-            - `invalid_copies`: copies must be between 1 and 50
+            - `invalid_copies`: copies must be between 1 and max_copies (default 1000, admin configurable)
             - `invalid_page_copies`: page copies array count doesn't match multi-page ZPL format count
             - `invalid_priority`: priority must be `normal` or `high`
           content:
@@ -1234,6 +1234,7 @@ components:
         copies:
           type: integer
           default: 1
+          description: Total label copies to print (1..max_copies, default limit 1000, configurable by admin)
         page_copies:
           type: array
           items:

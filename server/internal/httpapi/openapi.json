@@ -522,7 +522,7 @@
             }
           },
           "422": {
-            "description": "Invalid request or unprocessable payload. Machine-readable error.reason codes: payload_too_large (exceeds max payload size limit, default 1MB / 1,048,576 bytes; configurable via max_payload_bytes), payload_empty, missing_payload, duplicate_payload, invalid_base64, missing_printer_id, missing_external_id, invalid_copies (1..50), invalid_page_copies, invalid_priority (normal|high)",
+            "description": "Invalid request or unprocessable payload. Machine-readable error.reason codes: payload_too_large (exceeds max payload size limit, default 32MB / 33,554,432 bytes, 0 for unlimited; configurable via max_payload_bytes to allow full CJK TrueType font files), payload_empty, missing_payload, duplicate_payload, invalid_base64, missing_printer_id, missing_external_id, invalid_copies (1..max_copies, default 1..1000), invalid_page_copies, invalid_priority (normal|high)",
             "content": {
               "application/json": {
                 "schema": {
