@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kucial/cloud-print-service/pkg/printer"
@@ -24,6 +25,10 @@ import (
 )
 
 type Server struct {
+	// streamsDone ends every open event stream (see StopStreams).
+	streamsDone chan struct{}
+	stopOnce    sync.Once
+
 	mgr      *fleet.Manager
 	jobs     *job.Service
 	bus      *observ.Bus
@@ -46,7 +51,16 @@ type Server struct {
 func New(mgr *fleet.Manager, js *job.Service, b *observ.Bus, auth *Auth, tok *token.Service,
 	log *slog.Logger, met *observ.Registry, maxBatch int, maxPayload int64) *Server {
 	return &Server{mgr: mgr, jobs: js, bus: b, auth: auth, tokens: tok, log: log, met: met,
-		maxBatch: maxBatch, maxPayload: maxPayload, startedAt: time.Now()}
+		maxBatch: maxBatch, maxPayload: maxPayload, startedAt: time.Now(),
+		streamsDone: make(chan struct{})}
+}
+
+// StopStreams ends every open event stream. http.Server.Shutdown waits for handlers to
+// return but never cancels them, and an event stream never returns on its own: with a
+// panel open, shutdown would sit out its whole grace period (and docker stop would kill
+// the process first). Register it with RegisterOnShutdown; clients reconnect anyway.
+func (s *Server) StopStreams() {
+	s.stopOnce.Do(func() { close(s.streamsDone) })
 }
 
 // Handler returns the fully wired http.Handler.
@@ -654,6 +668,8 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-s.streamsDone:
 			return
 		case <-keepalive.C:
 			fmt.Fprint(w, ": keepalive\n\n")

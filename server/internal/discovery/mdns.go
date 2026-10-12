@@ -169,7 +169,12 @@ func (p MDNS) browse(ctx context.Context, svcType string) ([]dnssd.BrowseEntry, 
 	}
 	rmv := func(dnssd.BrowseEntry) {}
 
-	bctx, cancel := context.WithCancel(ctx)
+	// dnssd's read loops stop only when their context reports exactly
+	// context.Canceled; on any other end (a deadline) they keep reading a closed
+	// socket in a tight loop forever — one pair per browse, a full core each. So
+	// LookupType gets a context that can only be cancelled, never time out, and we
+	// cancel it when our window (ctx) ends.
+	bctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() { errCh <- dnssd.LookupType(bctx, svcType, add, rmv) }()

@@ -165,6 +165,7 @@ func main() {
 		// No WriteTimeout: /api/v1/events is a long-lived SSE stream.
 		IdleTimeout: 120 * time.Second,
 	}
+	srv.RegisterOnShutdown(apiSrv.StopStreams)
 
 	go func() {
 		log.Info("cloud print service listening",
