@@ -175,10 +175,11 @@ body {
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 7px;
   transition: all 0.15s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  min-height: 98px;
 }
 .roll-card-item:hover {
   border-color: var(--line-strong);
@@ -193,20 +194,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-}
-
-.roll-card-identity {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
+  gap: 8px;
 }
 
 .roll-card-id {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 13.5px;
+  font-weight: 750;
   font-family: var(--mono);
   white-space: nowrap;
   letter-spacing: -0.2px;
@@ -222,10 +215,23 @@ body {
 .status-dot.ok { background: var(--ok); }
 .status-dot.bad { background: var(--bad); }
 
-.roll-card-bottom {
+.roll-card-middle {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+
+.roll-card-tag-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.roll-card-bottom {
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
 
@@ -238,6 +244,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  width: 100%;
 }
 .roll-card-specs .sep {
   opacity: 0.4;
@@ -253,6 +260,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-top: auto;
 }
 
 /* -------------------------------- Main Layout -------------------------------- */
