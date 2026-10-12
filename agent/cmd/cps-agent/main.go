@@ -30,6 +30,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -57,6 +58,13 @@ func main() {
 	}
 
 	var logOut io.Writer = os.Stdout
+	if !*service {
+		// On a console the agent must never wait for its own output: Windows pauses a
+		// program's writes while text is selected in its window (one click does it), and
+		// a paused log line would stop the heartbeat with it.
+		disableQuickEdit()
+		logOut = newNonBlockingWriter(os.Stdout, 1024)
+	}
 	if *service {
 		// Under the service manager there is no console; log next to the config instead.
 		f, err := openServiceLog(serviceLogPath(*configPath))
@@ -152,4 +160,34 @@ func openServiceLog(path string) (*os.File, error) {
 		_ = os.Rename(path, path+".1")
 	}
 	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+}
+
+// nonBlockingWriter hands lines to a background writer and drops them, rather than
+// waiting, when that writer is stuck. Losing log lines is better than losing heartbeats.
+type nonBlockingWriter struct {
+	lines   chan []byte
+	dropped atomic.Int64
+}
+
+func newNonBlockingWriter(w io.Writer, buffer int) *nonBlockingWriter {
+	nb := &nonBlockingWriter{lines: make(chan []byte, buffer)}
+	go func() {
+		for line := range nb.lines {
+			if n := nb.dropped.Swap(0); n > 0 {
+				fmt.Fprintf(w, "(%d log lines dropped while the console was paused)\n", n)
+			}
+			_, _ = w.Write(line)
+		}
+	}()
+	return nb
+}
+
+func (nb *nonBlockingWriter) Write(p []byte) (int, error) {
+	line := append([]byte(nil), p...) // slog reuses its buffer
+	select {
+	case nb.lines <- line:
+	default:
+		nb.dropped.Add(1)
+	}
+	return len(p), nil
 }
