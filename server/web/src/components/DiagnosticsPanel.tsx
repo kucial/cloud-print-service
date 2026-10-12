@@ -1,48 +1,80 @@
-import React, { useState } from 'react';
-import { Stethoscope, AlertTriangle, CheckCircle2, Crosshair, MoveVertical, MoveHorizontal } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Crosshair, Info, Play, Save } from 'lucide-react';
 import { api, Diagnostics } from '../api';
 import { useI18n } from '../i18n/context';
 import { useToast } from './Toast';
 
-// Asks the printer itself (~HI, ~HS, ^HH) how it is set up and shows where that
-// disagrees with the declared spec. Calibrate and the offsets change the printer, so each
-// needs a second click to confirm.
-export const DiagnosticsPanel: React.FC<{ printerId: string }> = ({ printerId }) => {
-  const { t } = useI18n();
+// Diagnostics state lives in a hook so the dialog's tab bar can own the Run button.
+export function useDiagnostics(printerId: string) {
   const { toast } = useToast();
-  const [diag, setDiag] = useState<Diagnostics | null>(null);
+  const [result, setResult] = useState<Diagnostics | null>(null);
   const [running, setRunning] = useState(false);
-  type Action = 'calibrate' | 'label_top' | 'left_shift';
-  const [armed, setArmed] = useState<Action | null>(null);
-  const [top, setTop] = useState(0);
-  const [left, setLeft] = useState(0);
-
-  const run = async () => {
+  const run = useCallback(async () => {
     setRunning(true);
     try {
-      const d = await api.diagnostics(printerId);
-      setDiag(d);
-      setTop(d.config?.label_top_dots ?? 0);
-      setLeft(d.config?.left_position_dots ?? 0);
+      setResult(await api.diagnostics(printerId));
     } catch (e: any) {
       toast(e.message || 'Diagnostics failed', 'error');
     } finally {
       setRunning(false);
     }
-  };
+  }, [printerId, toast]);
+  return { result, running, run };
+}
 
-  const act = async (action: Action) => {
-    if (armed !== action) {
-      setArmed(action);
+// Asks the printer itself (~HI, ~HS, ^HH) how it is set up and shows where that
+// disagrees with the declared spec. Offsets are a small form saved to the printer;
+// calibrate feeds labels, so it needs a second click.
+export const DiagnosticsPanel: React.FC<{
+  printerId: string;
+  diag: ReturnType<typeof useDiagnostics>;
+  onTestPrint: () => void;
+}> = ({ printerId, diag: state, onTestPrint }) => {
+  const { t } = useI18n();
+  const { toast } = useToast();
+  const diag = state.result;
+  const [calibrateArmed, setCalibrateArmed] = useState(false);
+  const [top, setTop] = useState(0);
+  const [left, setLeft] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const savedTop = diag?.config?.label_top_dots ?? 0;
+  const savedLeft = diag?.config?.left_position_dots ?? 0;
+  const dirty = top !== savedTop || left !== savedLeft;
+
+  // Offsets start from what the printer has saved.
+  useEffect(() => {
+    setTop(diag?.config?.label_top_dots ?? 0);
+    setLeft(diag?.config?.left_position_dots ?? 0);
+  }, [diag]);
+
+  const calibrate = async () => {
+    if (!calibrateArmed) {
+      setCalibrateArmed(true);
       return;
     }
-    setArmed(null);
+    setCalibrateArmed(false);
     try {
-      const dots = action === 'label_top' ? top : action === 'left_shift' ? left : undefined;
-      const res = await api.maintenance(printerId, action, dots);
+      const res = await api.maintenance(printerId, 'calibrate');
       toast(t('diag_sent', { cmd: res.sent, note: res.note }), 'success');
+      void state.run();
     } catch (e: any) {
-      toast(e.message || 'Maintenance failed', 'error');
+      toast(e.message || 'Calibration failed', 'error');
+    }
+  };
+
+  // Sends only the offsets that changed, then reads them back from the printer.
+  const saveOffsets = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (top !== savedTop) await api.maintenance(printerId, 'label_top', top);
+      if (left !== savedLeft) await api.maintenance(printerId, 'left_shift', left);
+      toast(t('diag_offsets_saved'), 'success');
+      await state.run();
+    } catch (err: any) {
+      toast(err.message || 'Saving offsets failed', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -56,16 +88,11 @@ export const DiagnosticsPanel: React.FC<{ printerId: string }> = ({ printerId })
     );
 
   return (
-    <div className="pt-3 mt-3" style={{ borderTop: '1px solid var(--line)' }}>
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="section-title">{t('diag_title')}</div>
-          <p className="text-muted text-xs">{t('diag_hint')}</p>
-        </div>
-        <button className="btn btn-secondary btn-sm" onClick={run} disabled={running}>
-          <Stethoscope size={13} /> {running ? t('diag_running') : t('diag_run')}
-        </button>
-      </div>
+    <div>
+      <p className="text-muted text-xs">{t('diag_hint')}</p>
+      {!diag && (
+        <p className="text-muted text-sm mt-2">{state.running ? t('diag_running') : '—'}</p>
+      )}
 
       {diag && (
         <>
@@ -89,50 +116,80 @@ export const DiagnosticsPanel: React.FC<{ printerId: string }> = ({ printerId })
           </div>
 
           <div className="detail-grid mt-2">
-            {row(t('diag_firmware'), diag.identity && `${diag.identity.model} · ${diag.identity.firmware ?? ''}`)}
+            {row(
+              t('diag_firmware'),
+              diag.identity && `${diag.identity.model} · ${diag.identity.firmware ?? ''}`,
+            )}
             {c && row(t('dpi_label'), `${c.dpi} DPI (${c.dpmm} dpmm)`)}
             {c && row(t('diag_print_width'), `${c.print_width_mm} mm (${c.print_width_dots} dots)`)}
-            {c && row(t('diag_label_pitch'), `${c.label_length_mm} mm (${c.label_length_dots} dots)`)}
+            {c &&
+              row(t('diag_label_pitch'), `${c.label_length_mm} mm (${c.label_length_dots} dots)`)}
             {c && row(t('diag_label_top'), `${c.label_top_dots} ${t('diag_dots')}`)}
             {c && row(t('diag_left_shift'), `${c.left_position_dots} ${t('diag_dots')}`)}
-            {c && row(t('diag_media'), `${c.media_type ?? '—'} · ${c.print_method ?? '—'} · ${c.print_mode ?? '—'}`)}
+            {c &&
+              row(
+                t('diag_media'),
+                `${c.media_type ?? '—'} · ${c.print_method ?? '—'} · ${c.print_mode ?? '—'}`,
+              )}
             {c && row(t('diag_darkness_speed'), `${c.darkness ?? '—'} · ${c.print_speed ?? '—'}`)}
             {c && row(t('diag_language'), c.language)}
             {c && row(t('diag_head_usage'), c.head_usage)}
           </div>
 
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <form className="adjust-card" onSubmit={saveOffsets}>
+            <div className="section-title">{t('diag_offsets_title')}</div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="form-group mb-0">
+                <label htmlFor="offset-top">{t('diag_label_top_field')}</label>
+                <input
+                  id="offset-top"
+                  type="number"
+                  min={-120}
+                  max={120}
+                  value={top}
+                  onChange={(e) => setTop(Number(e.target.value))}
+                />
+                <span className="text-xs text-muted">{t('diag_label_top_hint')}</span>
+              </div>
+              <div className="form-group mb-0">
+                <label htmlFor="offset-left">{t('diag_left_shift_field')}</label>
+                <input
+                  id="offset-left"
+                  type="number"
+                  min={-120}
+                  max={120}
+                  value={left}
+                  onChange={(e) => setLeft(Number(e.target.value))}
+                />
+                <span className="text-xs text-muted">{t('diag_left_shift_hint')}</span>
+              </div>
+            </div>
+            <p className="text-xs text-muted mt-2 flex gap-1">
+              <Info size={13} style={{ flexShrink: 0 }} /> {t('diag_offsets_note')}
+            </p>
+            <div className="mt-2 flex justify-end gap-2 flex-wrap">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onTestPrint}>
+                <Play size={13} /> {t('btn_print_alignment_label')}
+              </button>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={!dirty || saving}>
+                <Save size={13} /> {saving ? t('save') : t('diag_offsets_save')}
+              </button>
+            </div>
+          </form>
+
+          <div className="adjust-card flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <div className="section-title">{t('diag_calibrate')}</div>
+              <p className="text-xs text-muted">{t('diag_calibrate_note')}</p>
+            </div>
             <button
-              className={`btn btn-sm ${armed === 'calibrate' ? 'btn-danger' : 'btn-secondary'}`}
-              onClick={() => act('calibrate')}
+              className={`btn btn-sm ${calibrateArmed ? 'btn-danger' : 'btn-secondary'}`}
+              onClick={calibrate}
             >
-              <Crosshair size={13} /> {armed === 'calibrate' ? t('diag_calibrate_confirm') : t('diag_calibrate')}
+              <Crosshair size={13} />{' '}
+              {calibrateArmed ? t('diag_calibrate_confirm') : t('diag_calibrate')}
             </button>
           </div>
-          <OffsetRow
-            icon={<MoveVertical size={13} />}
-            label={t('diag_label_top')}
-            hint={t('diag_label_top_hint')}
-            value={top}
-            onChange={(v) => {
-              setTop(v);
-              setArmed(null);
-            }}
-            armed={armed === 'label_top'}
-            onApply={() => act('label_top')}
-          />
-          <OffsetRow
-            icon={<MoveHorizontal size={13} />}
-            label={t('diag_left_shift')}
-            hint={t('diag_left_shift_hint')}
-            value={left}
-            onChange={(v) => {
-              setLeft(v);
-              setArmed(null);
-            }}
-            armed={armed === 'left_shift'}
-            onApply={() => act('left_shift')}
-          />
 
           {diag.raw_config && (
             <details className="mt-2">
@@ -144,36 +201,6 @@ export const DiagnosticsPanel: React.FC<{ printerId: string }> = ({ printerId })
           )}
         </>
       )}
-    </div>
-  );
-};
-
-// One saved printer offset: dots input, apply button that needs a second click.
-const OffsetRow: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  hint: string;
-  value: number;
-  onChange: (v: number) => void;
-  armed: boolean;
-  onApply: () => void;
-}> = ({ icon, label, hint, value, onChange, armed, onApply }) => {
-  const { t } = useI18n();
-  return (
-    <div className="mt-2 flex items-center gap-2 flex-wrap">
-      <input
-        type="number"
-        min={-120}
-        max={120}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        style={{ width: 80 }}
-        aria-label={label}
-      />
-      <button className={`btn btn-sm ${armed ? 'btn-danger' : 'btn-secondary'}`} onClick={onApply}>
-        {icon} {armed ? t('diag_offset_confirm') : t('diag_offset_apply', { what: label })}
-      </button>
-      <span className="text-xs text-muted">{hint}</span>
     </div>
   );
 };

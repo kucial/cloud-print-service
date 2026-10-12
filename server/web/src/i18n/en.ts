@@ -358,8 +358,17 @@ export const en = {
   diag_left_shift: 'Left shift',
   diag_label_top_hint: '+ moves print down, − up (dots)',
   diag_left_shift_hint: '+ moves print left, − right (dots)',
-  diag_offset_apply: 'Set {what}',
-  diag_offset_confirm: 'Confirm: saved on printer',
+  tab_info: 'Info',
+  tab_edit: 'Edit',
+  tab_reset: 'Reset',
+  btn_print_alignment_label: 'Print alignment label',
+  diag_offsets_title: 'Print offset',
+  diag_label_top_field: 'Label top (dots)',
+  diag_left_shift_field: 'Left shift (dots)',
+  diag_offsets_note: 'Saving writes the offsets to the printer itself (^LT / ^LS with ^JUS): they apply to every label it prints, from any system, until changed. Print an alignment label afterwards to check — at 203 dpi, 8 dots ≈ 1 mm.',
+  diag_offsets_save: 'Save offsets',
+  diag_offsets_saved: 'Offsets saved on the printer',
+  diag_calibrate_note: 'Re-measures the label gap (~JC). Feeds a few blank labels.',
 };
 
 export type TranslationKey = keyof typeof en;

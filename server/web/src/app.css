@@ -929,6 +929,52 @@ input:focus, select:focus, textarea:focus {
   overflow-y: auto;
 }
 
+/* Printer dialog: wide, tabbed, each tab's main action in the tab bar (no footer). */
+.printer-modal {
+  width: min(880px, 100%);
+  height: min(760px, 90vh);
+}
+.printer-modal .modal-body {
+  flex: 1;
+}
+.printer-modal .detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.printer-modal .detail-val {
+  overflow-wrap: anywhere;
+}
+.adjust-card {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 10px);
+  background: var(--panel-2);
+}
+/* Not .nav-tabs: the app hides that on phones for its top navigation. */
+.modal-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+.modal-tabbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+@media (max-width: 768px) {
+  .printer-modal {
+    height: auto;
+  }
+  .printer-modal .detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .modal-footer {
   display: flex;
   align-items: center;
@@ -1292,6 +1338,8 @@ input:focus, select:focus, textarea:focus {
 .gap-6 { gap: 24px; }
 .grid { display: grid; }
 .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (min-width: 768px) {
   .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .md\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }

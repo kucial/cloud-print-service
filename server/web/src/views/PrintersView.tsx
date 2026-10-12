@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n/context';
 import { Printer } from '../types';
 import { api } from '../api';
 import { useToast } from '../components/Toast';
-import { DiagnosticsPanel } from '../components/DiagnosticsPanel';
+import { DiagnosticsPanel, useDiagnostics } from '../components/DiagnosticsPanel';
 import {
   Printer as PrinterIcon,
   Search,
@@ -16,6 +16,8 @@ import {
   Tag,
   FileEdit,
   Save,
+  Info,
+  Stethoscope,
 } from 'lucide-react';
 
 interface PrintersViewProps {
@@ -39,7 +41,9 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
 
   const selectedPrinter = printers.find((p) => p.printer_id === selectedPrinterId);
   const sites = Array.from(new Set(printers.map((p) => p.site).filter(Boolean)));
-  const paperSizes = Array.from(new Set(printers.map((p) => p.paper_size).filter(Boolean))) as string[];
+  const paperSizes = Array.from(
+    new Set(printers.map((p) => p.paper_size).filter(Boolean)),
+  ) as string[];
 
   const filteredPrinters = printers.filter((p) => {
     const q = search.toLowerCase();
@@ -93,11 +97,7 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
         </div>
 
         <div className="header-actions">
-          <button
-            className="btn btn-secondary"
-            onClick={handleProbeAll}
-            disabled={probing}
-          >
+          <button className="btn btn-secondary" onClick={handleProbeAll} disabled={probing}>
             <RotateCw size={14} className={probing ? 'spinning' : ''} />
             <span>{probing ? t('probing') : t('probe_all')}</span>
           </button>
@@ -143,10 +143,7 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
           </select>
         )}
 
-        <select
-          value={usableFilter}
-          onChange={(e) => setUsableFilter(e.target.value as any)}
-        >
+        <select value={usableFilter} onChange={(e) => setUsableFilter(e.target.value as any)}>
           <option value="all">{t('all_status')}</option>
           <option value="usable">{t('usable_only')}</option>
           <option value="unusable">{t('unusable_only')}</option>
@@ -200,9 +197,7 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                     <td>
                       <div className="flex flex-col gap-1 items-start">
                         {p.paper_size ? (
-                          <span className="badge-pill badge-warn font-mono">
-                            {p.paper_size}
-                          </span>
+                          <span className="badge-pill badge-warn font-mono">{p.paper_size}</span>
                         ) : (
                           <span className="text-muted text-xs">—</span>
                         )}
@@ -210,7 +205,11 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                           <span
                             className={`badge-pill text-xs font-mono ${p.dpi_resolved_from_hi ? 'badge-ok' : ''}`}
                             style={{ fontSize: '10px', padding: '1px 5px' }}
-                            title={p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
+                            title={
+                              p.dpi_resolved_from_hi
+                                ? t('verified_from_hi')
+                                : t('declared_in_config')
+                            }
                           >
                             {p.dpi || 203} DPI {p.dpi_resolved_from_hi ? '✓~HI' : ''}
                           </span>
@@ -301,9 +300,7 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                           {p.paper_size}
                         </span>
                       )}
-                      <span className="badge-pill text-xs font-mono">
-                        {p.dpi || 203} DPI
-                      </span>
+                      <span className="badge-pill text-xs font-mono">{p.dpi || 203} DPI</span>
                       {(p.cjk_supported || p.cjk_font) && (
                         <span className="badge-pill badge-primary text-xs font-mono">
                           中 {p.cjk_font || 'CJK'}
@@ -314,9 +311,7 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                       {p.printer_id} · {p.site || '—'} · {p.model || p.driver}
                     </div>
                   </div>
-                  <span className={`state-badge state-${st.state}`}>
-                    {tPrinterState(st.state)}
-                  </span>
+                  <span className={`state-badge state-${st.state}`}>{tPrinterState(st.state)}</span>
                 </div>
 
                 {p.remark && <div className="mobile-card-remark">{p.remark}</div>}
@@ -387,7 +382,13 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
   const { toast } = useToast();
   const st = p.status || { state: 'unknown' };
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [tab, setTab] = useState<'info' | 'edit' | 'diag'>('info');
+  const diag = useDiagnostics(p.printer_id);
+  // Diagnostics are read-only and quick: run them the first time the tab opens.
+  useEffect(() => {
+    if (tab === 'diag' && !diag.result && !diag.running) void diag.run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
   const [name, setName] = useState(p.name || '');
   const [site, setSite] = useState(p.site || '');
   const [customLabel, setCustomLabel] = useState(p.custom_label || '');
@@ -438,6 +439,23 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
     if (val.trim()) setCjkSupported(true);
   };
 
+  const resetForm = () => {
+    setName(p.name || '');
+    setSite(p.site || '');
+    setCustomLabel(p.custom_label || '');
+    setRemark(p.remark || '');
+    setPaperSize(p.paper_size || '');
+    setMediaWidthMm(p.media_width_mm);
+    setMediaHeightMm(p.media_height_mm);
+    setDpi(p.dpi);
+    setDpmm(p.dpmm);
+    setOrientation(p.orientation || '');
+    setPrintDirection(p.print_direction || '');
+    setCjkFont(p.cjk_font || '');
+    setCjkSupported(p.cjk_supported || false);
+    setEnabled(p.enabled);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -460,7 +478,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
         enabled,
       });
       toast(t('metadata_updated'), 'success');
-      setIsEditing(false);
+      setTab('info');
       onUpdated();
     } catch (err: any) {
       toast(err.message || 'Failed to update printer', 'error');
@@ -471,7 +489,10 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card ios-glass-sheet" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-card modal-lg printer-modal ios-glass-sheet"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="ios-grabber visible-mobile-only" />
 
         <div className="modal-header">
@@ -480,40 +501,91 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
             <h2>{p.name || p.printer_id}</h2>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              className={`btn btn-xs ${isEditing ? 'btn-secondary' : 'btn-secondary'}`}
-              onClick={() => setIsEditing(!isEditing)}
-              title={t('edit_metadata')}
-            >
-              <FileEdit size={12} /> {isEditing ? t('cancel') : t('edit_metadata')}
-            </button>
+            <span className={`badge-pill ${p.usable ? 'badge-ok' : 'badge-danger'}`}>
+              {tPrinterState(st.state)}
+            </span>
             <button className="modal-close-btn" onClick={onClose}>
               <X size={16} />
             </button>
           </div>
         </div>
 
-        <div className="modal-body">
-          {isEditing ? (
-            <form onSubmit={handleSave} className="space-y-3">
-              <div className="form-group">
-                <label>{t('th_display_name')}</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Packing Station 2"
-                />
-              </div>
+        <div className="modal-tabbar">
+          <div className="modal-tabs">
+            {(
+              [
+                ['info', <Info size={13} key="i" />, t('tab_info')],
+                ['edit', <FileEdit size={13} key="e" />, t('tab_edit')],
+                ['diag', <Stethoscope size={13} key="d" />, t('diag_title')],
+              ] as const
+            ).map(([id, icon, label]) => (
+              <button
+                key={id}
+                className={`nav-tab ${tab === id ? 'active' : ''}`}
+                onClick={() => setTab(id)}
+              >
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {tab === 'info' && (
+              <button className="btn btn-primary btn-sm" onClick={onProbe}>
+                <RotateCw size={13} /> {t('btn_probe_now')}
+              </button>
+            )}
+            {tab === 'edit' && (
+              <>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={resetForm}>
+                  {t('tab_reset')}
+                </button>
+                <button
+                  type="submit"
+                  form="printer-edit-form"
+                  className="btn btn-primary btn-sm"
+                  disabled={saving}
+                >
+                  <Save size={13} /> {saving ? t('save') : t('save_changes')}
+                </button>
+              </>
+            )}
+            {tab === 'diag' && (
+              <>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => void diag.run()}
+                  disabled={diag.running}
+                >
+                  <Stethoscope size={13} /> {diag.running ? t('diag_running') : t('diag_run')}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
-              <div className="form-group">
-                <label>{t('custom_label')}</label>
-                <input
-                  type="text"
-                  value={customLabel}
-                  onChange={(e) => setCustomLabel(e.target.value)}
-                  placeholder={t('custom_label_placeholder')}
-                />
+        <div className="modal-body">
+          {tab === 'edit' && (
+            <form id="printer-edit-form" onSubmit={handleSave} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="form-group mb-0">
+                  <label>{t('th_display_name')}</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Packing Station 2"
+                  />
+                </div>
+
+                <div className="form-group mb-0">
+                  <label>{t('custom_label')}</label>
+                  <input
+                    type="text"
+                    value={customLabel}
+                    onChange={(e) => setCustomLabel(e.target.value)}
+                    placeholder={t('custom_label_placeholder')}
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2">
@@ -585,7 +657,10 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                 </div>
                 <div className="form-group mb-0">
                   <label>{t('print_direction_label')}</label>
-                  <select value={printDirection} onChange={(e) => setPrintDirection(e.target.value)}>
+                  <select
+                    value={printDirection}
+                    onChange={(e) => setPrintDirection(e.target.value)}
+                  >
                     <option value="">{t('not_set')}</option>
                     <option value="top_first">{t('direction_top_first')}</option>
                     <option value="bottom_first">{t('direction_bottom_first')}</option>
@@ -646,21 +721,9 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                   {enabled ? t('usable') : t('not_usable')} ({t('state_disabled')})
                 </label>
               </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setIsEditing(false)}
-                >
-                  {t('cancel')}
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
-                  <Save size={13} /> {saving ? t('save') : t('save_changes')}
-                </button>
-              </div>
             </form>
-          ) : (
+          )}
+          {tab === 'info' && (
             <div className="detail-grid">
               <div className="detail-item">
                 <span className="detail-label">{t('th_printer_id')}</span>
@@ -669,9 +732,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
               <div className="detail-item">
                 <span className="detail-label">{t('status')}</span>
                 <span className="detail-val">
-                  <span className={`state-badge state-${st.state}`}>
-                    {tPrinterState(st.state)}
-                  </span>
+                  <span className={`state-badge state-${st.state}`}>{tPrinterState(st.state)}</span>
                 </span>
               </div>
               <div className="detail-item">
@@ -732,8 +793,12 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
               <div className="detail-item">
                 <span className="detail-label">{t('dpi_label')}</span>
                 <span className="detail-val font-mono flex items-center gap-1.5 flex-wrap">
-                  <span>{p.dpi || 203} DPI ({p.dpmm || 8} dpmm)</span>
-                  <span className={`badge-pill text-xs ${p.dpi_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}>
+                  <span>
+                    {p.dpi || 203} DPI ({p.dpmm || 8} dpmm)
+                  </span>
+                  <span
+                    className={`badge-pill text-xs ${p.dpi_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}
+                  >
                     {p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
                   </span>
                 </span>
@@ -760,7 +825,9 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                     '—'
                   )}
                   {(p.cjk_font || p.cjk_supported) && (
-                    <span className={`badge-pill text-xs ${p.font_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}>
+                    <span
+                      className={`badge-pill text-xs ${p.font_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}
+                    >
                       {p.font_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
                     </span>
                   )}
@@ -803,16 +870,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
               )}
             </div>
           )}
-          {!isEditing && <DiagnosticsPanel printerId={p.printer_id} />}
-        </div>
-
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onProbe}>
-            <RotateCw size={13} /> {t('btn_probe_now')}
-          </button>
-          <button className="btn btn-primary" onClick={onTestPrint}>
-            <Play size={13} /> {t('btn_print_test_label')}
-          </button>
+          {tab === 'diag' && <DiagnosticsPanel printerId={p.printer_id} diag={diag} onTestPrint={onTestPrint} />}
         </div>
       </div>
     </div>
