@@ -31,8 +31,10 @@ import (
 var defaultSharePorts = []int{9100, 9200, 9101, 9102, 2100, 6400}
 
 type tcpShare struct {
-	host string
-	port int
+	host   string
+	port   int
+	model  string // from ~HI at discovery
+	serial string // virtual printers report one; real ~HI does not
 
 	mu sync.Mutex
 	// Each printer gets one control connection for ^HI/^HS and one for data, mirroring
@@ -40,7 +42,17 @@ type tcpShare struct {
 	ctl net.Conn
 }
 
-func (s *tcpShare) Name() string { return fmt.Sprintf("tcp-share/%s:%d", s.host, s.port) }
+func (s *tcpShare) Name() string  { return fmt.Sprintf("tcp-share/%s:%d", s.host, s.port) }
+func (s *tcpShare) Model() string { return s.model }
+
+// Key identifies the share in its printer id: the serial when the printer reports one,
+// else the local port it answers on.
+func (s *tcpShare) Key() string {
+	if s.serial != "" {
+		return sanitizeID(s.serial)
+	}
+	return fmt.Sprintf("tcp%d", s.port)
+}
 
 // Open probes the share and returns a sink. The agent does not retry here either: the
 // server owns retry policy, and a failed Open simply means the printer is unavailable.
@@ -196,6 +208,7 @@ func probeBackends(ctx context.Context, log *slog.Logger) ([]Backend, error) {
 		if err != nil {
 			continue // not a printer share
 		}
+		share.model, share.serial = model, serial
 		log.Info("found local printer share", "port", p, "model", model, "serial", serial)
 		out = append(out, share)
 	}

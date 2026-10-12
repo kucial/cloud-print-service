@@ -92,7 +92,12 @@ func (a *agent) serveLocal(ctx context.Context, backends []Backend) error {
 			a.log.Warn("backend cannot open a printer", "backend", b.Name(), "err", err)
 			continue
 		}
-		id := fmt.Sprintf("%s-%s", a.cfg.AgentID, strings.ReplaceAll(b.Name(), "/", "-"))
+		// <agent>-<serial>: the host it hangs off and the device itself, nothing more.
+		key := strings.ReplaceAll(b.Name(), "/", "-")
+		if k, ok := b.(interface{ Key() string }); ok && k.Key() != "" {
+			key = k.Key()
+		}
+		id := fmt.Sprintf("%s-%s", a.cfg.AgentID, key)
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
 			a.log.Error("cannot listen for the server", "port", port, "err", err)
@@ -106,7 +111,7 @@ func (a *agent) serveLocal(ctx context.Context, backends []Backend) error {
 		}
 		p := &localPrinter{
 			Printer: agentapi.Printer{
-				PrinterID: id, Name: b.Name(), Site: a.cfg.Site,
+				PrinterID: id, Name: model, Site: a.cfg.Site,
 				Driver: "zebra9100", Host: a.cfg.Host, Port: port, Enabled: true,
 				Model: model,
 			},

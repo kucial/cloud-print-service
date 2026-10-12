@@ -138,14 +138,14 @@ func TestUSBBackendsIdentifyAndName(t *testing.T) {
 	if u.Model() != "GK888t (EPL)-200dpi" {
 		t.Fatalf("model %q", u.Model())
 	}
-	if got := u.Name(); got != "usb/GK888t__EPL_-200dpi-19J152400112" {
-		t.Fatalf("name %q", got)
+	if got := u.Key(); got != "19J152400112" {
+		t.Fatalf("key %q: the printer id should be <agent>-<serial>", got)
 	}
 }
 
-func TestUSBNameIsStableForLocationIDs(t *testing.T) {
-	a := usbName("GK888t", "6&2b4c1d&0&1")
-	if a != usbName("GK888t", "6&2b4c1d&0&1") || strings.ContainsAny(a, "&#") {
+func TestUSBKeyIsStableForLocationIDs(t *testing.T) {
+	a := usbKey("6&2b4c1d&0&1")
+	if a != usbKey("6&2b4c1d&0&1") || strings.ContainsAny(a, "&#") || !strings.HasPrefix(a, "usb") {
 		t.Fatalf("location-based id must hash to a stable, clean name: %q", a)
 	}
 	if model1284("MANUFACTURER:Zebra Technologies;COMMAND SET:EPL;MODEL:ZTC GK888t (EPL);") != "ZTC GK888t (EPL)" {

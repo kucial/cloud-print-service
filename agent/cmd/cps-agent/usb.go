@@ -48,15 +48,16 @@ var (
 type usbPrinter struct {
 	dev   usbDevice
 	model string
-	name  string
+	key   string // USB serial, or a stable hash of the port for serial-less devices
 
 	// One pipe carries both label data and status replies, so every operation holds
 	// mu: a ~HS must never land in the middle of a label, nor a label eat a reply.
 	mu sync.Mutex
 }
 
-func (u *usbPrinter) Name() string  { return "usb/" + u.name }
+func (u *usbPrinter) Name() string  { return "usb/" + u.key }
 func (u *usbPrinter) Model() string { return u.model }
+func (u *usbPrinter) Key() string   { return u.key }
 
 func (u *usbPrinter) Open(ctx context.Context) (Sink, error) { return &usbSink{u: u}, nil }
 func (u *usbPrinter) Close() error                           { return nil }
@@ -156,23 +157,24 @@ func usbBackends(ctx context.Context, log *slog.Logger) []Backend {
 			continue
 		}
 		u.model = id.Model
-		u.name = usbName(id.Model, d.Key)
+		u.key = usbKey(d.Key)
 		log.Info("found USB printer", "model", id.Model, "firmware", id.Firmware, "key", d.Key, "device", d.ID1284)
 		out = append(out, u)
 	}
 	return out
 }
 
-// usbName is stable across restarts and replugs into the same port, because the
-// printer id the server knows is derived from it.
-func usbName(model, key string) string {
+// usbKey identifies a USB printer in its printer id: the USB serial number, which
+// survives restarts and moving the cable to another port. The model is not part of it
+// (it has its own field).
+func usbKey(key string) string {
 	if key == "" || strings.ContainsAny(key, "&\\/#{}") {
 		// Windows makes up location-based instance ids ("6&2b4c…&0&1") for devices
-		// without a serial; keep them stable but short.
+		// without a serial; those are stable per port, so hash them short.
 		sum := sha256.Sum256([]byte(key))
-		key = hex.EncodeToString(sum[:4])
+		return "usb" + hex.EncodeToString(sum[:4])
 	}
-	return sanitizeID(model) + "-" + sanitizeID(key)
+	return sanitizeID(key)
 }
 
 func sanitizeID(s string) string {
