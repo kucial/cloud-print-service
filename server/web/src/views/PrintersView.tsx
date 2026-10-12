@@ -383,7 +383,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
   const st = p.status || { state: 'unknown' };
 
   const [tab, setTab] = useState<'info' | 'edit' | 'diag'>('info');
-  const diag = useDiagnostics(p.printer_id);
+  const diag = useDiagnostics(p.printer_id, onUpdated);
   // Diagnostics are read-only and quick: run them the first time the tab opens.
   useEffect(() => {
     if (tab === 'diag' && !diag.result && !diag.running) void diag.run();
@@ -455,6 +455,13 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
     setCjkSupported(p.cjk_supported || false);
     setEnabled(p.enabled);
   };
+
+  // Load the latest record each time Edit opens: diagnostics may have filled in fields
+  // since the dialog opened, and saving a stale form would undo them.
+  useEffect(() => {
+    if (tab === 'edit') resetForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();

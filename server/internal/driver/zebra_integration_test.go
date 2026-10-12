@@ -249,6 +249,13 @@ func TestZebraSurvivesPrinterReboot(t *testing.T) {
 			t.Fatalf("status %d: %v", i, err)
 		}
 	}
+	// Labels arrive on the print connection and are recorded asynchronously; status
+	// replies on the other connection can come back first now that queries stop as soon
+	// as the reply is complete.
+	deadline := time.Now().Add(2 * time.Second)
+	for vp.LabelCount() < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if got := vp.LabelCount(); got != 3 {
 		t.Fatalf("labels on printer = %d, want 3", got)
 	}

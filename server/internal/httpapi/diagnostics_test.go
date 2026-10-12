@@ -79,3 +79,24 @@ func TestMaintenanceActions(t *testing.T) {
 		t.Fatalf("busy printer: got %d %v, want 409", res.StatusCode, body)
 	}
 }
+
+// Diagnostics write what the printer proved into its record — once.
+func TestDiagnosticsRecordVerifiedFacts(t *testing.T) {
+	spec := mockSpec("p1", &domain.MockCfg{})
+	spec.CJKFont = "SIMSUN.FNT" // the mock stores the declared font
+	ts := newTestServer(t, spec)
+
+	_, body := do(t, ts, "GET", "/api/v1/printers/p1/diagnostics", opsKey, "")
+	rec := body["recorded"].([]any)
+	if len(rec) != 2 || rec[0] != "resolution 203 dpi" || rec[1] != "CJK font SIMSUN.FNT" {
+		t.Fatalf("first run should record dpi and confirm the font: %v", rec)
+	}
+	_, p := do(t, ts, "GET", "/api/v1/printers/p1", opsKey, "")
+	if p["dpi_resolved_from_hi"] != true || p["font_resolved_from_hi"] != true || p["dpi"] != 203.0 {
+		t.Fatalf("printer record not updated: %v", p)
+	}
+	_, body = do(t, ts, "GET", "/api/v1/printers/p1/diagnostics", opsKey, "")
+	if rec := body["recorded"].([]any); len(rec) != 0 {
+		t.Fatalf("already verified facts must not be re-recorded: %v", rec)
+	}
+}

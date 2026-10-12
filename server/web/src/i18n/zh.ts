@@ -55,7 +55,7 @@ export const zh: Record<TranslationKey, string> = {
   media_dimensions: '介质物理尺寸 (宽 × 高 mm)',
   dpi_label: '打印分辨率 (DPI)',
   dpmm_label: '点数/毫米 (dpmm)',
-  verified_from_hi: '~HI 硬件实测验证',
+  verified_from_hi: '打印机实测验证',
   declared_in_config: '配置声明/常规填写',
   resolution_source_label: '分辨率来源',
   font_source_label: '字体来源',
@@ -373,4 +373,5 @@ export const zh: Record<TranslationKey, string> = {
   diag_calibrate_note: '重新测量标签间隙（~JC），会走纸数张空白标签。',
   diag_cjk_fonts: '打印机中文字体',
   diag_none: '无',
+  diag_recorded: '已从打印机记录：{what}',
 };

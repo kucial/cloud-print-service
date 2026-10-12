@@ -605,6 +605,13 @@
                     "raw_config": {
                       "type": "string"
                     },
+                    "recorded": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Facts this run wrote to the printer record — an undeclared dpi or CJK font filled in, or a declared one marked printer-verified\n"
+                    },
                     "cjk_fonts": {
                       "type": "array",
                       "description": "Fonts stored on the printer (^HW) that can print CJK text",

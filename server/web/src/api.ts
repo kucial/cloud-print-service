@@ -245,4 +245,5 @@ export interface Diagnostics {
   errors?: Record<string, string>;
   raw_config?: string;
   cjk_fonts: { name: string; size: number }[];
+  recorded: string[];
 }

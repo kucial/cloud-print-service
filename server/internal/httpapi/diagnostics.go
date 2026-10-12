@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
+	"github.com/kucial/cloud-print-service/server/internal/fleet"
 )
 
 // Printer diagnostics: ask the device what it actually is and how it is set up, and say
@@ -24,6 +26,9 @@ type diagnosticsReport struct {
 	Status    *domain.Status       `json:"status,omitempty"`
 	Config    *printer.HostConfig  `json:"config,omitempty"`
 	CJKFonts  []printer.StoredFile `json:"cjk_fonts"` // from ^HW: fonts that can print CJK
+	// Recorded lists facts this run wrote to the printer's record (an undeclared CJK
+	// font or dpi filled in, a declared one confirmed).
+	Recorded  []string             `json:"recorded"`
 	Declared  declaredMedia        `json:"declared"`
 	Warnings  []diagnosticsWarning `json:"warnings"`
 	Errors    map[string]string    `json:"errors,omitempty"` // per query: hi, hs, hh, hw
@@ -55,13 +60,9 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := contextWithTimeout(r, 15*time.Second)
 	defer cancel()
 
-	spec := p.Spec()
 	rep := diagnosticsReport{
 		PrinterID: p.ID(), CheckedAt: time.Now().UTC(), Errors: map[string]string{},
-		Declared: declaredMedia{PaperSize: spec.PaperSize, MediaWidthMM: spec.MediaWidthMM,
-			MediaHeightMM: spec.MediaHeightMM, DPI: spec.DPI, PrintDirection: spec.PrintDirection,
-			CJKFont: spec.CJKFont},
-		Warnings: []diagnosticsWarning{}, CJKFonts: []printer.StoredFile{},
+		Warnings: []diagnosticsWarning{}, CJKFonts: []printer.StoredFile{}, Recorded: []string{},
 	}
 
 	if info, err := p.Identify(ctx); err != nil {
@@ -94,8 +95,18 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		files = printer.ParseHostDirectory(raw)
 		rep.CJKFonts = printer.CJKFonts(files)
 	}
+	_, hwFailed := rep.Errors["hw"]
+	rep.Recorded = s.recordVerified(r.Context(), p.ID(), p.Spec(), rep.Config, files, hwFailed)
+
+	spec := p.Spec()
+	if fresh, ok := s.mgr.Get(p.ID()); ok {
+		spec = fresh.Spec()
+	}
+	rep.Declared = declaredMedia{PaperSize: spec.PaperSize, MediaWidthMM: spec.MediaWidthMM,
+		MediaHeightMM: spec.MediaHeightMM, DPI: spec.DPI, PrintDirection: spec.PrintDirection,
+		CJKFont: spec.CJKFont}
 	rep.Warnings = append(rep.Warnings, compareMedia(rep.Declared, rep.Config, rep.Status)...)
-	if _, failed := rep.Errors["hw"]; !failed {
+	if !hwFailed {
 		rep.Warnings = append(rep.Warnings, compareFonts(rep.Declared, files, rep.CJKFonts)...)
 	}
 	if len(rep.Errors) == 0 {
@@ -149,6 +160,45 @@ func compareMedia(d declaredMedia, c *printer.HostConfig, st *domain.Status) []d
 		add("not_zpl", "printer language is %q; ZPL labels may not print", c.Language)
 	}
 	return out
+}
+
+// recordVerified writes what the printer proved about itself into its record, the way
+// identify does for ~HI: an undeclared dpi or CJK font is filled in, a declared one that
+// matches is marked verified. A declared value the printer contradicts is left alone —
+// that is a mismatch for a person to resolve, and diagnostics warns about it.
+func (s *Server) recordVerified(ctx context.Context, id string, spec domain.Printer,
+	c *printer.HostConfig, files []printer.StoredFile, hwFailed bool) []string {
+	var patch fleet.MetadataPatch
+	var recorded []string
+	yes, hi := true, "hi"
+	if c != nil && c.DPI > 0 && !spec.DPIResolvedFromHI && (spec.DPI == 0 || spec.DPI == c.DPI) {
+		dpi, dpmm := c.DPI, c.DPMM
+		patch.DPI, patch.DPMM, patch.DPIResolvedFromHI, patch.ResolutionSource = &dpi, &dpmm, &yes, &hi
+		recorded = append(recorded, fmt.Sprintf("resolution %d dpi", dpi))
+	}
+	if !hwFailed && !spec.FontResolvedFromHI {
+		font := ""
+		if spec.CJKFont != "" {
+			if _, ok := printer.FindFile(files, spec.CJKFont); ok {
+				font = spec.CJKFont
+			}
+		} else if cjk := printer.CJKFonts(files); len(cjk) > 0 {
+			font = cjk[0].Name[strings.Index(cjk[0].Name, ":")+1:] // E:SIMSUN.FNT -> SIMSUN.FNT
+		}
+		if font != "" {
+			patch.CJKFont, patch.CJKSupported, patch.FontResolvedFromHI, patch.FontSource = &font, &yes, &yes, &hi
+			recorded = append(recorded, "CJK font "+font)
+		}
+	}
+	if len(recorded) == 0 {
+		return []string{}
+	}
+	if _, err := s.mgr.Registry().UpdateMetadata(id, patch); err != nil {
+		s.log.Warn("diagnostics: cannot record verified printer facts", "printer_id", id, "err", err)
+		return []string{}
+	}
+	_ = s.mgr.Sync(ctx)
+	return recorded
 }
 
 // compareFonts checks the declared CJK font against what the printer actually stores.

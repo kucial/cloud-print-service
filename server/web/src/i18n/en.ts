@@ -53,7 +53,7 @@ export const en = {
   media_dimensions: 'Media Dimensions (W × H mm)',
   dpi_label: 'Resolution (DPI)',
   dpmm_label: 'Resolution (dpmm)',
-  verified_from_hi: '~HI Verified',
+  verified_from_hi: 'Printer-verified',
   declared_in_config: 'Config/Manual',
   resolution_source_label: 'Resolution Source',
   font_source_label: 'Font Source',
@@ -371,6 +371,7 @@ export const en = {
   diag_calibrate_note: 'Re-measures the label gap (~JC). Feeds a few blank labels.',
   diag_cjk_fonts: 'CJK fonts on printer',
   diag_none: 'None',
+  diag_recorded: 'Recorded from printer: {what}',
 };
 
 export type TranslationKey = keyof typeof en;

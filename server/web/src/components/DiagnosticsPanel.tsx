@@ -5,7 +5,8 @@ import { useI18n } from '../i18n/context';
 import { useToast } from './Toast';
 
 // Diagnostics state lives in a hook so the dialog's tab bar can own the Run button.
-export function useDiagnostics(printerId: string) {
+// onDone runs after each run: diagnostics may record verified facts on the printer.
+export function useDiagnostics(printerId: string, onDone?: () => void) {
   const { toast } = useToast();
   const [result, setResult] = useState<Diagnostics | null>(null);
   const [running, setRunning] = useState(false);
@@ -13,12 +14,13 @@ export function useDiagnostics(printerId: string) {
     setRunning(true);
     try {
       setResult(await api.diagnostics(printerId));
+      onDone?.();
     } catch (e: any) {
       toast(e.message || 'Diagnostics failed', 'error');
     } finally {
       setRunning(false);
     }
-  }, [printerId, toast]);
+  }, [printerId, toast, onDone]);
   return { result, running, run };
 }
 
@@ -108,6 +110,11 @@ export const DiagnosticsPanel: React.FC<{
                 </span>
               ))
             )}
+            {(diag.recorded || []).map((r) => (
+              <span key={r} className="badge-pill badge-ok text-xs">
+                <CheckCircle2 size={12} /> {t('diag_recorded', { what: r })}
+              </span>
+            ))}
             {Object.entries(diag.errors || {}).map(([q, err]) => (
               <span key={q} className="badge-pill badge-danger text-xs">
                 {t('diag_query_failed', { q, err })}
