@@ -387,8 +387,8 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
             {(
               [
                 ['info', <Info size={13} key="i" />, t('tab_info')],
-                ['edit', <FileEdit size={13} key="e" />, t('tab_edit')],
                 ['diag', <Stethoscope size={13} key="d" />, t('diag_title')],
+                ['edit', <FileEdit size={13} key="e" />, t('tab_edit')],
               ] as const
             ).map(([id, icon, label]) => (
               <button
