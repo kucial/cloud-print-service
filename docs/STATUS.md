@@ -185,6 +185,6 @@ f032494  fix(discovery): default the mDNS probe's service types
 1. **M0 on real hardware** (30 min): one packing PC + one printer → capture what it
    advertises, confirm tier 1 or decide tier 2 is needed.
 2. **Windows USB tier 2** (WinUSB, `-tags winusb`): the only path to true USB-only support
-   (D1). Cross-compile check: `GOOS=windows GOARCH=amd64 go build ./server/cmd/cps-agent`.
+   (D1). Cross-compile check: `GOOS=windows GOARCH=amd64 go build ./agent/cmd/cps-agent`.
 3. **Postgres store** (unblocks durable tokens + job history): `store.Postgres` against the
    existing schema, then re-issue-free restarts.

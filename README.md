@@ -190,7 +190,6 @@ cannot tell them apart.
 server/
   cmd/cps/        service entrypoint: config → drivers → poller → job workers → HTTP
   cmd/cpsctl/     admin CLI (issue/list/rotate/revoke tokens, printers, test label)
-  cmd/cps-agent/  edge agent: USB + discovery + status push
   internal/       domain, fleet, job, driver, store, token, observ, discovery, httpapi
   web/            operator panel (embedded via go:embed, no build step needed)
   db/schema.sql   production schema (Postgres)
@@ -201,11 +200,15 @@ vprint/
   cmd/zplpng/     standalone ZPL → PNG/SVG/PDF renderer CLI
   virtual/        virtual printer socket engine & gallery HTTP handler
   Dockerfile      vprint standalone container
+agent/
+  cmd/cps-agent/  edge agent for packing PCs: USB + discovery + status push (talks only over HTTP)
 business-demo/    reference WMS packing console (separate module; talks only over HTTP)
   web/            embedded React operator UI
   Dockerfile      business-demo standalone container
 pkg/
   render/         shared ZPL rasterizer abstraction (zebrash / labelize)
+  printer/        vendor-neutral printer states, shared by server and agent
+  agentapi/       agent ↔ server wire contract (register, heartbeat, status)
 dev/
   docker-compose.yml  network topology simulation (office net vs printer LAN)
   cps.config.json     dev configuration wiring the simulated fleet

@@ -4,6 +4,7 @@ bin/
 docs/
 dev/
 business-demo/
+agent/
 **/node_modules
 **/.vite
 *.log

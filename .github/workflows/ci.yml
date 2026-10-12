@@ -35,9 +35,10 @@ jobs:
       - name: build (CGO_ENABLED=0)
         run: |
           CGO_ENABLED=0 go build ./...
-          for b in cps cpsctl cps-agent; do
+          for b in cps cpsctl; do
             CGO_ENABLED=0 go build -o /tmp/$b ./server/cmd/$b
           done
+          CGO_ENABLED=0 go build -o /tmp/cps-agent ./agent/cmd/cps-agent
           for b in vprint zplpng; do
             CGO_ENABLED=0 go build -o /tmp/$b ./vprint/cmd/$b
           done

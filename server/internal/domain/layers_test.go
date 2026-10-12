@@ -11,7 +11,7 @@ import (
 
 // The architecture is only as good as the rule nobody checks. These tests enforce the
 // dependency direction from docs/PLAN-agent-discovery.md §9.3, plus the component
-// boundaries of the repo: server/, vprint/ and pkg/ are separately deployable.
+// boundaries of the repo: server/, agent/, vprint/ and pkg/ are separately deployable.
 
 const module = "github.com/kucial/cloud-print-service/"
 
@@ -146,6 +146,22 @@ func TestComponentsAreIndependent(t *testing.T) {
 		for _, dep := range imports(t, pkg) {
 			if strings.HasPrefix(dep, "server/") {
 				t.Errorf("%s must not import %s (vprint is standalone)", pkg, dep)
+			}
+		}
+	}
+	// The agent ships to packing PCs, the server to a container; they meet only on the
+	// wire, through pkg/agentapi.
+	for _, pkg := range packagesUnder(t, "agent") {
+		for _, dep := range imports(t, pkg) {
+			if !strings.HasPrefix(dep, "pkg/") {
+				t.Errorf("%s must not import %s (the agent talks to the server only over HTTP)", pkg, dep)
+			}
+		}
+	}
+	for _, pkg := range append(packagesUnder(t, "server/internal"), packagesUnder(t, "server/cmd")...) {
+		for _, dep := range imports(t, pkg) {
+			if strings.HasPrefix(dep, "agent/") {
+				t.Errorf("%s must not import %s (the agent is not part of the service)", pkg, dep)
 			}
 		}
 	}
