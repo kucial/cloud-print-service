@@ -141,8 +141,10 @@ func compareMedia(d declaredMedia, c *printer.HostConfig, st *domain.Status) []d
 // Maintenance actions change the printer, so they are admin-only, refused while work is
 // queued or printing (calibration feeds labels), and logged.
 type maintenanceRequest struct {
-	Action string `json:"action"` // calibrate | label_top
-	Dots   int    `json:"dots"`   // label_top: -120..120, positive moves print down
+	Action string `json:"action"` // calibrate | label_top | left_shift
+	// Dots for label_top (^LT: positive moves print down) and left_shift (^LS: positive
+	// moves print left — Zebra's own sign, so it matches LEFT POSITION in diagnostics).
+	Dots int `json:"dots"`
 }
 
 func (s *Server) maintenance(w http.ResponseWriter, r *http.Request) {
@@ -160,14 +162,18 @@ func (s *Server) maintenance(w http.ResponseWriter, r *http.Request) {
 	switch req.Action {
 	case "calibrate":
 		cmd, note = "~JC", "the printer feeds a few blank labels while it measures the gap"
-	case "label_top":
+	case "label_top", "left_shift":
 		if req.Dots < -120 || req.Dots > 120 {
 			writeErr(w, http.StatusUnprocessableEntity, "invalid_request", "dots must be between -120 and 120")
 			return
 		}
-		cmd, note = fmt.Sprintf("^XA^LT%d^JUS^XZ", req.Dots), "saved on the printer; applies to every label"
+		code := "LT"
+		if req.Action == "left_shift" {
+			code = "LS"
+		}
+		cmd, note = fmt.Sprintf("^XA^%s%d^JUS^XZ", code, req.Dots), "saved on the printer; applies to every label"
 	default:
-		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", "action must be calibrate or label_top")
+		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", "action must be calibrate, label_top or left_shift")
 		return
 	}
 	v := p.View()

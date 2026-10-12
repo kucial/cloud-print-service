@@ -108,7 +108,7 @@ export const api = {
   ) => request<Printer>(`/printers/${id}`, { method: 'PATCH', body }),
   testPrint: (id: string) => request(`/printers/${id}/test`, { method: 'POST' }),
   diagnostics: (id: string) => request<Diagnostics>(`/printers/${id}/diagnostics`),
-  maintenance: (id: string, action: 'calibrate' | 'label_top', dots?: number) =>
+  maintenance: (id: string, action: 'calibrate' | 'label_top' | 'left_shift', dots?: number) =>
     request<{ sent: string; note: string }>(`/printers/${id}/maintenance`, {
       method: 'POST',
       body: { action, dots },

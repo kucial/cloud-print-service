@@ -52,12 +52,17 @@ func TestMaintenanceActions(t *testing.T) {
 	if res.StatusCode != http.StatusOK || body["sent"] != "^XA^LT20^JUS^XZ" {
 		t.Fatalf("label_top: %d %v", res.StatusCode, body)
 	}
+	res, body = do(t, ts, "POST", "/api/v1/printers/p1/maintenance", opsKey, `{"action":"left_shift","dots":-8}`)
+	if res.StatusCode != http.StatusOK || body["sent"] != "^XA^LS-8^JUS^XZ" {
+		t.Fatalf("left_shift: %d %v", res.StatusCode, body)
+	}
 
 	cases := []struct {
 		printer, body, key string
 		want               int
 	}{
 		{"p1", `{"action":"label_top","dots":500}`, opsKey, http.StatusUnprocessableEntity},
+		{"p1", `{"action":"left_shift","dots":-121}`, opsKey, http.StatusUnprocessableEntity},
 		{"p1", `{"action":"factory_reset"}`, opsKey, http.StatusUnprocessableEntity},
 		{"p1", `{"action":"calibrate"}`, wmsKey, http.StatusForbidden},
 		{"nope", `{"action":"calibrate"}`, opsKey, http.StatusNotFound},

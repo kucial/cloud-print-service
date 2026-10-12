@@ -195,12 +195,18 @@ and USB printers behind an agent.
 cpsctl diag <printer-id>             # width, label pitch, dpi, darkness, offsets + warnings
 cpsctl calibrate <printer-id>        # ~JC: re-measure the label gap (feeds a few labels)
 cpsctl label-top <printer-id> 20     # ^LT + ^JUS: shift printing down 20 dots, saved on the printer
+cpsctl left-shift <printer-id> 8     # ^LS + ^JUS: shift printing left 8 dots, saved on the printer
 ```
 
 | Route (admin) | Effect |
 |---|---|
 | `GET /api/v1/printers/{id}/diagnostics` | read-only report; warnings such as `width_mismatch`, `length_mismatch`, `dpi_mismatch`, `offset_set` |
-| `POST /api/v1/printers/{id}/maintenance` | `{"action":"calibrate"}` or `{"action":"label_top","dots":20}`; 409 while jobs are queued or printing |
+| `POST /api/v1/printers/{id}/maintenance` | `{"action":"calibrate"}`, `{"action":"label_top","dots":20}` or `{"action":"left_shift","dots":8}`; 409 while jobs are queued or printing |
+
+**Test label:** `POST /printers/{id}/test` prints an alignment target sized to the media —
+a border 1 mm inside every edge and mm rulers from the top and left label edges. A
+clipped border side shows the offset direction; the first visible ruler tick is how
+many mm were lost (× dots/mm = the `label_top` / `left_shift` value).
 
 The panel's printer dialog has the same report and actions under **Printer diagnostics**.
 

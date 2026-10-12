@@ -56,6 +56,8 @@ func main() {
 		err = maintenanceCmd("calibrate", args)
 	case "label-top":
 		err = maintenanceCmd("label_top", args)
+	case "left-shift":
+		err = maintenanceCmd("left_shift", args)
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -87,6 +89,7 @@ Commands:
   diag      <printer-id>         ask the printer how it is set up; flag mismatches
   calibrate <printer-id>         re-measure the label gap (~JC; feeds a few labels)
   label-top <printer-id> <dots>  shift printing down (+) or up (-), saved on the printer
+  left-shift <printer-id> <dots> shift printing left (+) or right (-), saved on the printer
   status                         service health
   test <printer-id>              print a test label
 
@@ -549,7 +552,8 @@ func diagCmd(args []string) error {
 		row("resolution", fmt.Sprintf("%v dpi (%v dots/mm)", cfg["dpi"], cfg["dpmm"]))
 		row("print width", fmt.Sprintf("%v mm (%v dots)", cfg["print_width_mm"], cfg["print_width_dots"]))
 		row("label pitch", fmt.Sprintf("%v mm (%v dots, label + gap)", cfg["label_length_mm"], cfg["label_length_dots"]))
-		row("label top", fmt.Sprintf("%v dots", cfg["label_top_dots"]))
+		row("label top", fmt.Sprintf("%v dots (+ moves print down)", cfg["label_top_dots"]))
+		row("left shift", fmt.Sprintf("%v dots (+ moves print left)", cfg["left_position_dots"]))
 		row("media", cfg["media_type"])
 		row("method", cfg["print_method"])
 		row("mode", cfg["print_mode"])
@@ -599,7 +603,7 @@ func maintenanceCmd(action string, args []string) error {
 	c.resolve()
 	body := map[string]any{"action": action}
 	switch {
-	case action == "label_top" && fs.NArg() == 2:
+	case (action == "label_top" || action == "left_shift") && fs.NArg() == 2:
 		dots, err := strconv.Atoi(fs.Arg(1))
 		if err != nil {
 			return fmt.Errorf("dots must be a number: %w", err)
@@ -607,6 +611,8 @@ func maintenanceCmd(action string, args []string) error {
 		body["dots"] = dots
 	case action == "label_top":
 		return fmt.Errorf("usage: cpsctl label-top <printer-id> <dots>")
+	case action == "left_shift":
+		return fmt.Errorf("usage: cpsctl left-shift <printer-id> <dots>")
 	case fs.NArg() != 1:
 		return fmt.Errorf("usage: cpsctl calibrate <printer-id>")
 	}

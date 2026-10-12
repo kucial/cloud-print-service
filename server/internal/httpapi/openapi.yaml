@@ -364,11 +364,13 @@ paths:
     post:
       tags:
         - Fleet Visibility
-      summary: Printer Maintenance (calibrate, label top)
+      summary: Printer Maintenance (calibrate, label top, left shift)
       description: >
         Changes the printer. `calibrate` sends ~JC: the printer feeds a few blank labels
         while it re-measures the label gap. `label_top` sends ^LT with ^JUS, saving a
-        vertical print offset on the printer (positive moves printing down). Refused with
+        vertical print offset on the printer (positive moves printing down). `left_shift`
+        sends ^LS with ^JUS, saving a horizontal offset (positive moves printing left;
+        reported as LEFT POSITION in diagnostics). Refused with
         409 while the printer has queued jobs or is printing. Admin only; logged.
       security:
         - BearerAuth: []
@@ -388,12 +390,12 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [calibrate, label_top]
+                  enum: [calibrate, label_top, left_shift]
                 dots:
                   type: integer
                   minimum: -120
                   maximum: 120
-                  description: label_top only
+                  description: label_top and left_shift only
       responses:
         '200':
           description: Command sent

@@ -352,11 +352,14 @@ export const en = {
   diag_raw: 'Raw configuration (^HH)',
   diag_calibrate: 'Calibrate',
   diag_calibrate_confirm: 'Confirm: feeds a few labels',
-  diag_label_top_apply: 'Set label top',
-  diag_label_top_confirm: 'Confirm: saved on printer',
   diag_dots: 'dots',
   diag_sent: 'Sent {cmd}: {note}',
   not_set: 'Not set',
+  diag_left_shift: 'Left shift',
+  diag_label_top_hint: '+ moves print down, − up (dots)',
+  diag_left_shift_hint: '+ moves print left, − right (dots)',
+  diag_offset_apply: 'Set {what}',
+  diag_offset_confirm: 'Confirm: saved on printer',
 };
 
 export type TranslationKey = keyof typeof en;
