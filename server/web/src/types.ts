@@ -52,6 +52,7 @@ export interface Printer {
   print_direction?: string;
   cjk_supported?: boolean;
   cjk_font?: string;
+  available_fonts?: { name: string; size: number; cjk?: boolean }[] | null;
   fonts?: string[];
   font_source?: 'hi' | 'config' | 'default';
   font_resolved_from_hi?: boolean;

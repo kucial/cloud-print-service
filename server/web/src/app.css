@@ -943,6 +943,14 @@ input:focus, select:focus, textarea:focus {
 .printer-modal .detail-val {
   overflow-wrap: anywhere;
 }
+.fonts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 12px;
+}
+.adjust-card:first-child {
+  margin-top: 0;
+}
 .adjust-card {
   margin-top: 16px;
   padding: 12px 14px;

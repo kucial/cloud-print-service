@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Crosshair, Info, Play, Save } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { api, Diagnostics } from '../api';
 import { useI18n } from '../i18n/context';
 import { useToast } from './Toast';
@@ -24,62 +24,13 @@ export function useDiagnostics(printerId: string, onDone?: () => void) {
   return { result, running, run };
 }
 
-// Asks the printer itself (~HI, ~HS, ^HH) how it is set up and shows where that
-// disagrees with the declared spec. Offsets are a small form saved to the printer;
-// calibrate feeds labels, so it needs a second click.
+// Asks the printer itself (~HI, ~HS, ^HH, ^HW) how it is set up and shows where that
+// disagrees with the declared spec. Read-only: changes are made in the Edit tab.
 export const DiagnosticsPanel: React.FC<{
-  printerId: string;
   diag: ReturnType<typeof useDiagnostics>;
-  onTestPrint: () => void;
-}> = ({ printerId, diag: state, onTestPrint }) => {
+}> = ({ diag: state }) => {
   const { t } = useI18n();
-  const { toast } = useToast();
   const diag = state.result;
-  const [calibrateArmed, setCalibrateArmed] = useState(false);
-  const [top, setTop] = useState(0);
-  const [left, setLeft] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const savedTop = diag?.config?.label_top_dots ?? 0;
-  const savedLeft = diag?.config?.left_position_dots ?? 0;
-  const dirty = top !== savedTop || left !== savedLeft;
-
-  // Offsets start from what the printer has saved.
-  useEffect(() => {
-    setTop(diag?.config?.label_top_dots ?? 0);
-    setLeft(diag?.config?.left_position_dots ?? 0);
-  }, [diag]);
-
-  const calibrate = async () => {
-    if (!calibrateArmed) {
-      setCalibrateArmed(true);
-      return;
-    }
-    setCalibrateArmed(false);
-    try {
-      const res = await api.maintenance(printerId, 'calibrate');
-      toast(t('diag_sent', { cmd: res.sent, note: res.note }), 'success');
-      void state.run();
-    } catch (e: any) {
-      toast(e.message || 'Calibration failed', 'error');
-    }
-  };
-
-  // Sends only the offsets that changed, then reads them back from the printer.
-  const saveOffsets = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      if (top !== savedTop) await api.maintenance(printerId, 'label_top', top);
-      if (left !== savedLeft) await api.maintenance(printerId, 'left_shift', left);
-      toast(t('diag_offsets_saved'), 'success');
-      await state.run();
-    } catch (err: any) {
-      toast(err.message || 'Saving offsets failed', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const c = diag?.config;
   const row = (label: string, value?: React.ReactNode) =>
     value === undefined || value === '' ? null : (
@@ -143,63 +94,10 @@ export const DiagnosticsPanel: React.FC<{
             {c && row(t('diag_head_usage'), c.head_usage)}
             {row(
               t('diag_cjk_fonts'),
-              diag.cjk_fonts?.length ? diag.cjk_fonts.map((f) => f.name).join(', ') : t('diag_none'),
+              diag.cjk_fonts?.length
+                ? diag.cjk_fonts.map((f) => f.name).join(', ')
+                : t('diag_none'),
             )}
-          </div>
-
-          <form className="adjust-card" onSubmit={saveOffsets}>
-            <div className="section-title">{t('diag_offsets_title')}</div>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <div className="form-group mb-0">
-                <label htmlFor="offset-top">{t('diag_label_top_field')}</label>
-                <input
-                  id="offset-top"
-                  type="number"
-                  min={-120}
-                  max={120}
-                  value={top}
-                  onChange={(e) => setTop(Number(e.target.value))}
-                />
-                <span className="text-xs text-muted">{t('diag_label_top_hint')}</span>
-              </div>
-              <div className="form-group mb-0">
-                <label htmlFor="offset-left">{t('diag_left_shift_field')}</label>
-                <input
-                  id="offset-left"
-                  type="number"
-                  min={-120}
-                  max={120}
-                  value={left}
-                  onChange={(e) => setLeft(Number(e.target.value))}
-                />
-                <span className="text-xs text-muted">{t('diag_left_shift_hint')}</span>
-              </div>
-            </div>
-            <p className="text-xs text-muted mt-2 flex gap-1">
-              <Info size={13} style={{ flexShrink: 0 }} /> {t('diag_offsets_note')}
-            </p>
-            <div className="mt-2 flex justify-end gap-2 flex-wrap">
-              <button type="button" className="btn btn-secondary btn-sm" onClick={onTestPrint}>
-                <Play size={13} /> {t('btn_print_alignment_label')}
-              </button>
-              <button type="submit" className="btn btn-primary btn-sm" disabled={!dirty || saving}>
-                <Save size={13} /> {saving ? t('save') : t('diag_offsets_save')}
-              </button>
-            </div>
-          </form>
-
-          <div className="adjust-card flex items-center justify-between gap-2 flex-wrap">
-            <div>
-              <div className="section-title">{t('diag_calibrate')}</div>
-              <p className="text-xs text-muted">{t('diag_calibrate_note')}</p>
-            </div>
-            <button
-              className={`btn btn-sm ${calibrateArmed ? 'btn-danger' : 'btn-secondary'}`}
-              onClick={calibrate}
-            >
-              <Crosshair size={13} />{' '}
-              {calibrateArmed ? t('diag_calibrate_confirm') : t('diag_calibrate')}
-            </button>
           </div>
 
           {diag.raw_config && (

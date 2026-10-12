@@ -372,6 +372,20 @@ export const en = {
   diag_cjk_fonts: 'CJK fonts on printer',
   diag_none: 'None',
   diag_recorded: 'Recorded from printer: {what}',
+  settings_basics: 'Basics',
+  settings_media: 'Paper & direction',
+  settings_printer_side: 'On the printer',
+  settings_saved_in_cps: 'Saved in CPS',
+  settings_saved_on_printer: 'Written to the printer',
+  settings_save_to_printer: 'Save to printer',
+  settings_printer_unreadable: 'Could not read the printer’s current offsets; run diagnostics when it is reachable.',
+  printer_enabled: 'Enabled (accepts jobs)',
+  available_fonts_label: 'Fonts (reported by printer)',
+  fonts_unknown: 'Not read yet',
+  fonts_more: '+{n} other fonts',
+  fonts_source_hint: 'Reported by the printer (^HW) · also in the API as available_fonts',
+  fonts_cjk_heading: 'CJK fonts ({n})',
+  fonts_other_heading: 'Other fonts ({n})',
 };
 
 export type TranslationKey = keyof typeof en;

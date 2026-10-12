@@ -5,6 +5,8 @@ import { Printer } from '../types';
 import { api } from '../api';
 import { useToast } from '../components/Toast';
 import { DiagnosticsPanel, useDiagnostics } from '../components/DiagnosticsPanel';
+import { PrinterSettings } from '../components/PrinterSettings';
+import { FontsSection } from '../components/FontsSection';
 import {
   Printer as PrinterIcon,
   Search,
@@ -15,7 +17,6 @@ import {
   X,
   Tag,
   FileEdit,
-  Save,
   Info,
   Stethoscope,
 } from 'lucide-react';
@@ -379,7 +380,6 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
   onUpdated,
 }) => {
   const { t, tPrinterState } = useI18n();
-  const { toast } = useToast();
   const st = p.status || { state: 'unknown' };
 
   const [tab, setTab] = useState<'info' | 'edit' | 'diag'>('info');
@@ -389,111 +389,6 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
     if (tab === 'diag' && !diag.result && !diag.running) void diag.run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
-  const [name, setName] = useState(p.name || '');
-  const [site, setSite] = useState(p.site || '');
-  const [customLabel, setCustomLabel] = useState(p.custom_label || '');
-  const [remark, setRemark] = useState(p.remark || '');
-  const [paperSize, setPaperSize] = useState(p.paper_size || '');
-  const [mediaWidthMm, setMediaWidthMm] = useState<number | undefined>(p.media_width_mm);
-  const [mediaHeightMm, setMediaHeightMm] = useState<number | undefined>(p.media_height_mm);
-  const [dpi, setDpi] = useState<number | undefined>(p.dpi);
-  const [dpmm, setDpmm] = useState<number | undefined>(p.dpmm);
-  const [orientation, setOrientation] = useState(p.orientation || '');
-  const [printDirection, setPrintDirection] = useState(p.print_direction || '');
-  const [cjkFont, setCjkFont] = useState(p.cjk_font || '');
-  const [cjkSupported, setCjkSupported] = useState(p.cjk_supported || false);
-  const [enabled, setEnabled] = useState(p.enabled);
-  const [saving, setSaving] = useState(false);
-
-  const handlePaperSizeChange = (val: string) => {
-    setPaperSize(val);
-    const cleaned = val.toLowerCase().trim();
-    if (cleaned === '4x6' || cleaned === '4x6in') {
-      setMediaWidthMm(101.6);
-      setMediaHeightMm(152.4);
-    } else if (cleaned === '4x2' || cleaned === '4x2in') {
-      setMediaWidthMm(101.6);
-      setMediaHeightMm(50.8);
-    } else if (cleaned === '2x1' || cleaned === '2x1in') {
-      setMediaWidthMm(50.8);
-      setMediaHeightMm(25.4);
-    } else {
-      const match = cleaned.match(/^(\d+(?:\.\d+)?)\s*[x*]\s*(\d+(?:\.\d+)?)\s*(mm)?$/);
-      if (match) {
-        setMediaWidthMm(parseFloat(match[1]));
-        setMediaHeightMm(parseFloat(match[2]));
-      }
-    }
-  };
-
-  const handleDPIChange = (val: number | undefined) => {
-    setDpi(val);
-    if (val === 203) setDpmm(8);
-    else if (val === 300) setDpmm(12);
-    else if (val === 600) setDpmm(24);
-    else if (val) setDpmm(Math.round((val / 25.4) * 10) / 10);
-  };
-
-  const handleCjkFontChange = (val: string) => {
-    setCjkFont(val);
-    if (val.trim()) setCjkSupported(true);
-  };
-
-  const resetForm = () => {
-    setName(p.name || '');
-    setSite(p.site || '');
-    setCustomLabel(p.custom_label || '');
-    setRemark(p.remark || '');
-    setPaperSize(p.paper_size || '');
-    setMediaWidthMm(p.media_width_mm);
-    setMediaHeightMm(p.media_height_mm);
-    setDpi(p.dpi);
-    setDpmm(p.dpmm);
-    setOrientation(p.orientation || '');
-    setPrintDirection(p.print_direction || '');
-    setCjkFont(p.cjk_font || '');
-    setCjkSupported(p.cjk_supported || false);
-    setEnabled(p.enabled);
-  };
-
-  // Load the latest record each time Edit opens: diagnostics may have filled in fields
-  // since the dialog opened, and saving a stale form would undo them.
-  useEffect(() => {
-    if (tab === 'edit') resetForm();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await api.updatePrinter(p.printer_id, {
-        name: name.trim(),
-        site: site.trim(),
-        custom_label: customLabel.trim(),
-        remark: remark.trim(),
-        paper_size: paperSize.trim(),
-        media_width_mm: mediaWidthMm,
-        media_height_mm: mediaHeightMm,
-        dpi,
-        dpmm,
-        orientation,
-        media_orientation: orientation,
-        print_direction: printDirection,
-        cjk_supported: cjkSupported,
-        cjk_font: cjkFont.trim(),
-        enabled,
-      });
-      toast(t('metadata_updated'), 'success');
-      setTab('info');
-      onUpdated();
-    } catch (err: any) {
-      toast(err.message || 'Failed to update printer', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
@@ -541,21 +436,6 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                 <RotateCw size={13} /> {t('btn_probe_now')}
               </button>
             )}
-            {tab === 'edit' && (
-              <>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={resetForm}>
-                  {t('tab_reset')}
-                </button>
-                <button
-                  type="submit"
-                  form="printer-edit-form"
-                  className="btn btn-primary btn-sm"
-                  disabled={saving}
-                >
-                  <Save size={13} /> {saving ? t('save') : t('save_changes')}
-                </button>
-              </>
-            )}
             {tab === 'diag' && (
               <>
                 <button
@@ -572,312 +452,147 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
 
         <div className="modal-body">
           {tab === 'edit' && (
-            <form id="printer-edit-form" onSubmit={handleSave} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="form-group mb-0">
-                  <label>{t('th_display_name')}</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Packing Station 2"
-                  />
-                </div>
-
-                <div className="form-group mb-0">
-                  <label>{t('custom_label')}</label>
-                  <input
-                    type="text"
-                    value={customLabel}
-                    onChange={(e) => setCustomLabel(e.target.value)}
-                    placeholder={t('custom_label_placeholder')}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div className="form-group mb-0">
-                  <label>{t('paper_size')}</label>
-                  <input
-                    type="text"
-                    value={paperSize}
-                    onChange={(e) => handlePaperSizeChange(e.target.value)}
-                    placeholder="e.g. 100x150mm, 4x6"
-                  />
-                </div>
-                <div className="form-group mb-0">
-                  <label>W (mm)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={mediaWidthMm ?? ''}
-                    onChange={(e) => setMediaWidthMm(parseFloat(e.target.value) || undefined)}
-                    placeholder="100.0"
-                  />
-                </div>
-                <div className="form-group mb-0">
-                  <label>H (mm)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={mediaHeightMm ?? ''}
-                    onChange={(e) => setMediaHeightMm(parseFloat(e.target.value) || undefined)}
-                    placeholder="150.0"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="form-group mb-0">
-                  <label>{t('dpi_label')}</label>
-                  <select
-                    value={dpi ?? 203}
-                    onChange={(e) => handleDPIChange(parseInt(e.target.value) || undefined)}
-                  >
-                    <option value={203}>203 DPI (8 dpmm)</option>
-                    <option value={300}>300 DPI (12 dpmm)</option>
-                    <option value={600}>600 DPI (24 dpmm)</option>
-                  </select>
-                </div>
-                <div className="form-group mb-0">
-                  <label>{t('dpmm_label')}</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={dpmm ?? 8}
-                    onChange={(e) => setDpmm(parseFloat(e.target.value) || undefined)}
-                    placeholder="8"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="form-group mb-0">
-                  <label>{t('orientation_label')}</label>
-                  <select value={orientation} onChange={(e) => setOrientation(e.target.value)}>
-                    <option value="">{t('not_set')}</option>
-                    <option value="normal">{t('orientation_normal')}</option>
-                    <option value="inverted">{t('orientation_inverted')}</option>
-                    <option value="portrait">{t('orientation_portrait')}</option>
-                    <option value="landscape">{t('orientation_landscape')}</option>
-                  </select>
-                </div>
-                <div className="form-group mb-0">
-                  <label>{t('print_direction_label')}</label>
-                  <select
-                    value={printDirection}
-                    onChange={(e) => setPrintDirection(e.target.value)}
-                  >
-                    <option value="">{t('not_set')}</option>
-                    <option value="top_first">{t('direction_top_first')}</option>
-                    <option value="bottom_first">{t('direction_bottom_first')}</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>{t('cjk_font_label')}</label>
-                <input
-                  type="text"
-                  value={cjkFont}
-                  onChange={(e) => handleCjkFontChange(e.target.value)}
-                  placeholder="e.g. SIMSUN.FNT, ANSD.TTF, NotoSansSC"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  id="cjk-chk"
-                  type="checkbox"
-                  checked={cjkSupported}
-                  onChange={(e) => setCjkSupported(e.target.checked)}
-                />
-                <label htmlFor="cjk-chk" className="cursor-pointer text-sm font-medium">
-                  {t('cjk_supported_label')}
-                </label>
-              </div>
-
-              <div className="form-group">
-                <label>{t('detail_site')}</label>
-                <input
-                  type="text"
-                  value={site}
-                  onChange={(e) => setSite(e.target.value)}
-                  placeholder="e.g. wh1"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>{t('remark')}</label>
-                <textarea
-                  rows={2}
-                  value={remark}
-                  onChange={(e) => setRemark(e.target.value)}
-                  placeholder={t('remark_placeholder')}
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  id="enabled-chk"
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                />
-                <label htmlFor="enabled-chk" className="cursor-pointer text-sm font-medium">
-                  {enabled ? t('usable') : t('not_usable')} ({t('state_disabled')})
-                </label>
-              </div>
-            </form>
+            <PrinterSettings
+              printer={p}
+              diag={diag}
+              onUpdated={onUpdated}
+              onTestPrint={onTestPrint}
+            />
           )}
           {tab === 'info' && (
-            <div className="detail-grid">
-              <div className="detail-item">
-                <span className="detail-label">{t('th_printer_id')}</span>
-                <span className="detail-val font-mono">{p.printer_id}</span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('status')}</span>
-                <span className="detail-val">
-                  <span className={`state-badge state-${st.state}`}>{tPrinterState(st.state)}</span>
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('usable')}</span>
-                <span className="detail-val">
-                  {p.usable ? (
-                    <span className="badge-pill badge-ok">{t('usable')}</span>
-                  ) : (
-                    <span className="badge-pill badge-danger">{t('not_usable')}</span>
-                  )}
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('th_queue')}</span>
-                <span className="detail-val font-mono">{p.queue_depth || 0}</span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('detail_endpoint')}</span>
-                <span className="detail-val font-mono">
-                  {p.host}:{p.port}
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('detail_model_driver')}</span>
-                <span className="detail-val font-mono">
-                  {p.model || 'Generic'} ({p.driver})
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('detail_site')}</span>
-                <span className="detail-val">{p.site || '—'}</span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('custom_label')}</span>
-                <span className="detail-val">
-                  {p.custom_label ? (
-                    <span className="badge-pill badge-custom-label">{p.custom_label}</span>
-                  ) : (
-                    '—'
-                  )}
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('paper_size')}</span>
-                <span className="detail-val">
-                  {p.paper_size ? (
-                    <span className="badge-pill badge-warn font-mono">
-                      {p.paper_size}{' '}
-                      {p.media_width_mm && p.media_height_mm
-                        ? `(${p.media_width_mm}×${p.media_height_mm}mm)`
-                        : ''}
+            <>
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <span className="detail-label">{t('th_printer_id')}</span>
+                  <span className="detail-val font-mono">{p.printer_id}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('status')}</span>
+                  <span className="detail-val">
+                    <span className={`state-badge state-${st.state}`}>
+                      {tPrinterState(st.state)}
                     </span>
-                  ) : (
-                    '—'
-                  )}
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('dpi_label')}</span>
-                <span className="detail-val font-mono flex items-center gap-1.5 flex-wrap">
-                  <span>
-                    {p.dpi || 203} DPI ({p.dpmm || 8} dpmm)
                   </span>
-                  <span
-                    className={`badge-pill text-xs ${p.dpi_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}
-                  >
-                    {p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('usable')}</span>
+                  <span className="detail-val">
+                    {p.usable ? (
+                      <span className="badge-pill badge-ok">{t('usable')}</span>
+                    ) : (
+                      <span className="badge-pill badge-danger">{t('not_usable')}</span>
+                    )}
                   </span>
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('orientation_label')}</span>
-                <span className="detail-val text-sm font-mono">
-                  {p.orientation || t('not_set')} ·{' '}
-                  {p.print_direction === 'bottom_first'
-                    ? t('direction_bottom_first')
-                    : p.print_direction === 'top_first'
-                      ? t('direction_top_first')
-                      : t('not_set')}
-                </span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">{t('cjk_font_label')}</span>
-                <span className="detail-val text-sm font-mono flex items-center gap-1.5 flex-wrap">
-                  {p.cjk_font ? (
-                    <span className="badge-pill badge-primary">中 {p.cjk_font}</span>
-                  ) : p.cjk_supported ? (
-                    <span className="badge-pill badge-ok">CJK Ready</span>
-                  ) : (
-                    '—'
-                  )}
-                  {(p.cjk_font || p.cjk_supported) && (
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('th_queue')}</span>
+                  <span className="detail-val font-mono">{p.queue_depth || 0}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('detail_endpoint')}</span>
+                  <span className="detail-val font-mono">
+                    {p.host}:{p.port}
+                  </span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('detail_model_driver')}</span>
+                  <span className="detail-val font-mono">
+                    {p.model || 'Generic'} ({p.driver})
+                  </span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('detail_site')}</span>
+                  <span className="detail-val">{p.site || '—'}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('custom_label')}</span>
+                  <span className="detail-val">
+                    {p.custom_label ? (
+                      <span className="badge-pill badge-custom-label">{p.custom_label}</span>
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('paper_size')}</span>
+                  <span className="detail-val">
+                    {p.paper_size ? (
+                      <span className="badge-pill badge-warn font-mono">
+                        {p.paper_size}{' '}
+                        {p.media_width_mm && p.media_height_mm
+                          ? `(${p.media_width_mm}×${p.media_height_mm}mm)`
+                          : ''}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">{t('dpi_label')}</span>
+                  <span className="detail-val font-mono flex items-center gap-1.5 flex-wrap">
+                    <span>
+                      {p.dpi || 203} DPI ({p.dpmm || 8} dpmm)
+                    </span>
                     <span
-                      className={`badge-pill text-xs ${p.font_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}
+                      className={`badge-pill text-xs ${p.dpi_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}
                     >
-                      {p.font_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
+                      {p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
                     </span>
-                  )}
-                </span>
-              </div>
-              {p.remark && (
-                <div className="detail-item col-span-2">
-                  <span className="detail-label">{t('remark')}</span>
-                  <span className="detail-val text-sm text-muted bg-panel-2 p-2 rounded-md border border-line">
-                    {p.remark}
                   </span>
                 </div>
-              )}
-              <div className="detail-item col-span-2">
-                <span className="detail-label">{t('detail_observed_at')}</span>
-                <span className="detail-val font-mono text-sm">
-                  {st.observed_at ? new Date(st.observed_at).toLocaleString() : t('never')}
-                </span>
-              </div>
-              {st.detail && (
-                <div className="detail-item col-span-2">
-                  <span className="detail-label">{t('detail_status_detail')}</span>
-                  <span className="detail-val font-mono">{st.detail}</span>
-                </div>
-              )}
-              {st.raw && (
-                <div className="detail-item col-span-2">
-                  <span className="detail-label">{t('detail_raw_hs')}</span>
-                  <span className="detail-val font-mono text-xs code-box">{st.raw}</span>
-                </div>
-              )}
-              {st.last_job && (
-                <div className="detail-item col-span-2">
-                  <span className="detail-label">{t('detail_last_job')}</span>
-                  <span className="detail-val font-mono text-xs">
-                    {st.last_job.job_id} ({st.last_job.state}) at{' '}
-                    {new Date(st.last_job.at).toLocaleTimeString()}
+                <div className="detail-item">
+                  <span className="detail-label">{t('orientation_label')}</span>
+                  <span className="detail-val text-sm font-mono">
+                    {p.orientation || t('not_set')} ·{' '}
+                    {p.print_direction === 'bottom_first'
+                      ? t('direction_bottom_first')
+                      : p.print_direction === 'top_first'
+                        ? t('direction_top_first')
+                        : t('not_set')}
                   </span>
                 </div>
-              )}
-            </div>
+                {p.remark && (
+                  <div className="detail-item col-span-2">
+                    <span className="detail-label">{t('remark')}</span>
+                    <span className="detail-val text-sm text-muted bg-panel-2 p-2 rounded-md border border-line">
+                      {p.remark}
+                    </span>
+                  </div>
+                )}
+                <div className="detail-item col-span-2">
+                  <span className="detail-label">{t('detail_observed_at')}</span>
+                  <span className="detail-val font-mono text-sm">
+                    {st.observed_at ? new Date(st.observed_at).toLocaleString() : t('never')}
+                  </span>
+                </div>
+                {st.detail && (
+                  <div className="detail-item col-span-2">
+                    <span className="detail-label">{t('detail_status_detail')}</span>
+                    <span className="detail-val font-mono">{st.detail}</span>
+                  </div>
+                )}
+                {st.raw && (
+                  <div className="detail-item col-span-2">
+                    <span className="detail-label">{t('detail_raw_hs')}</span>
+                    <span className="detail-val font-mono text-xs code-box">{st.raw}</span>
+                  </div>
+                )}
+                {st.last_job && (
+                  <div className="detail-item col-span-2">
+                    <span className="detail-label">{t('detail_last_job')}</span>
+                    <span className="detail-val font-mono text-xs">
+                      {st.last_job.job_id} ({st.last_job.state}) at{' '}
+                      {new Date(st.last_job.at).toLocaleTimeString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <FontsSection fonts={p.available_fonts} />
+            </>
           )}
-          {tab === 'diag' && <DiagnosticsPanel printerId={p.printer_id} diag={diag} onTestPrint={onTestPrint} />}
+          {tab === 'diag' && <DiagnosticsPanel diag={diag} />}
         </div>
       </div>
     </div>
