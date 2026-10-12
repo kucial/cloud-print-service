@@ -1316,17 +1316,32 @@ components:
         print_direction:
           type: string
           description: Print feed direction (top_first, bottom_first)
+        available_fonts:
+          type: array
+          nullable: true
+          description: >
+            Fonts the printer reports it stores (^HW), read automatically once it is
+            reachable. null = not known yet, [] = none. CJK fonts come first, flagged
+            `cjk`. Use `name` in ZPL, e.g. ^CW1,E:SIMSUN.FNT then ^A1N.
+          items:
+            type: object
+            properties:
+              name: { type: string, example: 'E:SIMSUN.FNT' }
+              size: { type: integer }
+              cjk: { type: boolean }
         cjk_supported:
           type: boolean
-          description: Whether printer has CJK font installed
+          description: Whether the printer has a CJK font; derived from available_fonts once known
         cjk_font:
           type: string
-          description: Primary CJK font identifier (e.g. SIMSUN.FNT, ANSD.TTF)
+          deprecated: true
+          description: Declared CJK font (older configs). Prefer available_fonts.
         fonts:
           type: array
+          deprecated: true
           items:
             type: string
-          description: Installed font identifiers
+          description: Declared font identifiers (older configs). Prefer available_fonts.
         font_source:
           type: string
           enum: [hi, config, default]

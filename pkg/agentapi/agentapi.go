@@ -63,6 +63,8 @@ type Printer struct {
 	LegacyUsable     json.RawMessage `json:"usable,omitempty"`
 	LegacyQueueDepth json.RawMessage `json:"queue_depth,omitempty"`
 	LegacyStatus     json.RawMessage `json:"status,omitempty"`
+	// Server-side facts (the printer's font list) that a full printer model carries.
+	LegacyAvailableFonts json.RawMessage `json:"available_fonts,omitempty"`
 }
 
 // Status is one printer status observation as the agent saw it.

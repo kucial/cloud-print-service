@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 	"github.com/kucial/cloud-print-service/server/internal/driver"
 	"github.com/kucial/cloud-print-service/server/internal/observ"
@@ -120,6 +121,8 @@ type Printer struct {
 	mu      sync.RWMutex
 	status  domain.Status
 	polling atomic.Bool // exactly one poller per printer, ever
+
+	fontsTriedAt atomic.Int64 // unix nanos of the last font-list attempt
 }
 
 type ManagerOpts struct {
@@ -442,6 +445,7 @@ func (m *Manager) StartPolling(ctx context.Context) {
 				case <-t.C:
 				}
 				p.probe(ctx)
+				m.learnFonts(ctx, p)
 				t.Reset(m.pollInterval)
 			}
 		}(p)
@@ -455,6 +459,43 @@ func (m *Manager) StartPolling(ctx context.Context) {
 // socket interleave queries and read each other's replies, which shows up as a fleet
 // that is "offline" for no reason. Sync starts pollers for new printers, so callers must
 // not also call StartPolling.
+// fontRetry is how long to wait before asking a printer for its fonts again after a
+// failed attempt.
+const fontRetry = 10 * time.Minute
+
+// learnFonts asks a reachable printer once for its stored fonts (^HW) and records them,
+// so the API can tell business systems which fonts — CJK included — each printer has
+// without anyone declaring it. Agent printers are asked through the agent.
+func (m *Manager) learnFonts(ctx context.Context, p *Printer) {
+	if p.Spec().AvailableFonts != nil {
+		return
+	}
+	if st := p.View().Status.State; st == domain.StateOffline || st == domain.StateUnknown || st == "" {
+		return
+	}
+	last := p.fontsTriedAt.Load()
+	if last != 0 && time.Since(time.Unix(0, last)) < fontRetry {
+		return
+	}
+	p.fontsTriedAt.Store(time.Now().UnixNano())
+
+	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	raw, err := p.HostDirectory(qctx)
+	cancel()
+	if err != nil {
+		m.log.Debug("cannot read printer fonts yet", "printer_id", p.ID(), "err", err)
+		return
+	}
+	fonts := printer.Fonts(printer.ParseHostDirectory(raw))
+	if _, err := m.reg.UpdateMetadata(p.ID(), MetadataPatch{AvailableFonts: &fonts}); err != nil {
+		return
+	}
+	if err := m.Sync(ctx); err != nil {
+		m.log.Warn("fonts recorded but sync failed", "printer_id", p.ID(), "err", err)
+	}
+	m.log.Info("printer fonts recorded", "printer_id", p.ID(), "fonts", len(fonts))
+}
+
 func (m *Manager) pollOne(ctx context.Context, p *Printer) {
 	if !p.polling.CompareAndSwap(false, true) {
 		return
@@ -471,6 +512,7 @@ func (m *Manager) pollOne(ctx context.Context, p *Printer) {
 		case <-t.C:
 		}
 		p.probe(ctx)
+		m.learnFonts(ctx, p)
 		t.Reset(m.pollInterval)
 	}
 }

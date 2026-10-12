@@ -207,10 +207,15 @@ cpsctl left-shift <printer-id> 8     # ^LS + ^JUS: shift printing left 8 dots, s
 a border 1 mm inside every edge and mm rulers from the top and left label edges. A
 clipped border side shows the offset direction; the first visible ruler tick is how
 many mm were lost (× dots/mm = the `label_top` / `left_shift` value). It also prints a line of
-Chinese in the printer's CJK font (the declared `cjk_font`, else the one the printer
-stores, found with `^HW`); boxes or blanks there mean the font or its encoding table is
-missing. Diagnostics lists the printer's CJK fonts and warns when the declared one is
-not installed.
+Chinese in the printer's CJK font; boxes or blanks there mean the font or its encoding
+table is missing.
+
+**Fonts are reported, not configured.** Once a printer is reachable, CPS reads its stored
+fonts (`^HW`) and every printer in the API carries `available_fonts`
+(`[{"name":"E:SIMSUN.FNT","size":1668928,"cjk":true}, …]`, CJK first; `null` until known).
+A business system picks a font from that list and uses its name in ZPL — for a bitmap
+CJK font with UTF-8 text: `^CW1,E:SIMSUN.FNT^CI28^SEE:GB18030.DAT … ^A1N,24,24^FD中文^FS`.
+`cjk_font` / `fonts` in config still work but are no longer needed.
 
 The panel's printer dialog has the same report and actions under **Printer diagnostics**.
 

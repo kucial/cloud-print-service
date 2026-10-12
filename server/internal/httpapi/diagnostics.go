@@ -107,7 +107,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		CJKFont: spec.CJKFont}
 	rep.Warnings = append(rep.Warnings, compareMedia(rep.Declared, rep.Config, rep.Status)...)
 	if !hwFailed {
-		rep.Warnings = append(rep.Warnings, compareFonts(rep.Declared, files, rep.CJKFonts)...)
+		rep.Warnings = append(rep.Warnings, compareFonts(rep.Declared, files)...)
 	}
 	if len(rep.Errors) == 0 {
 		rep.Errors = nil
@@ -163,31 +163,41 @@ func compareMedia(d declaredMedia, c *printer.HostConfig, st *domain.Status) []d
 }
 
 // recordVerified writes what the printer proved about itself into its record, the way
-// identify does for ~HI: an undeclared dpi or CJK font is filled in, a declared one that
-// matches is marked verified. A declared value the printer contradicts is left alone —
-// that is a mismatch for a person to resolve, and diagnostics warns about it.
+// identify does for ~HI: an undeclared dpi is filled in (a matching one marked
+// verified), and the available fonts are refreshed. A declared value the printer
+// contradicts is left alone — that is for a person to resolve, and is warned about.
 func (s *Server) recordVerified(ctx context.Context, id string, spec domain.Printer,
 	c *printer.HostConfig, files []printer.StoredFile, hwFailed bool) []string {
 	var patch fleet.MetadataPatch
 	var recorded []string
 	yes, hi := true, "hi"
+	sameFonts := func(a, b []printer.StoredFile) bool {
+		if a == nil || len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
 	if c != nil && c.DPI > 0 && !spec.DPIResolvedFromHI && (spec.DPI == 0 || spec.DPI == c.DPI) {
 		dpi, dpmm := c.DPI, c.DPMM
 		patch.DPI, patch.DPMM, patch.DPIResolvedFromHI, patch.ResolutionSource = &dpi, &dpmm, &yes, &hi
 		recorded = append(recorded, fmt.Sprintf("resolution %d dpi", dpi))
 	}
-	if !hwFailed && !spec.FontResolvedFromHI {
-		font := ""
-		if spec.CJKFont != "" {
-			if _, ok := printer.FindFile(files, spec.CJKFont); ok {
-				font = spec.CJKFont
+	if !hwFailed {
+		fonts := printer.Fonts(files)
+		if !sameFonts(spec.AvailableFonts, fonts) {
+			patch.AvailableFonts = &fonts
+			cjk := 0
+			for _, f := range fonts {
+				if f.CJK {
+					cjk++
+				}
 			}
-		} else if cjk := printer.CJKFonts(files); len(cjk) > 0 {
-			font = cjk[0].Name[strings.Index(cjk[0].Name, ":")+1:] // E:SIMSUN.FNT -> SIMSUN.FNT
-		}
-		if font != "" {
-			patch.CJKFont, patch.CJKSupported, patch.FontResolvedFromHI, patch.FontSource = &font, &yes, &yes, &hi
-			recorded = append(recorded, "CJK font "+font)
+			recorded = append(recorded, fmt.Sprintf("available fonts (%d, %d CJK)", len(fonts), cjk))
 		}
 	}
 	if len(recorded) == 0 {
@@ -201,18 +211,16 @@ func (s *Server) recordVerified(ctx context.Context, id string, spec domain.Prin
 	return recorded
 }
 
-// compareFonts checks the declared CJK font against what the printer actually stores.
-func compareFonts(d declaredMedia, files, cjk []printer.StoredFile) []diagnosticsWarning {
-	switch {
-	case d.CJKFont != "":
-		if _, ok := printer.FindFile(files, d.CJKFont); !ok {
-			return []diagnosticsWarning{{Code: "cjk_font_missing", Message: fmt.Sprintf(
-				"declared CJK font %s is not installed on the printer; Chinese text will print as blanks or boxes",
-				d.CJKFont)}}
-		}
-	case len(cjk) > 0:
-		return []diagnosticsWarning{{Code: "cjk_font_undeclared", Message: fmt.Sprintf(
-			"printer has CJK font %s but none is declared; set cjk_font so labels can use it", cjk[0].Name)}}
+// compareFonts checks a CJK font declared in config (older setups) against what the
+// printer stores. New setups declare nothing: the API reports available_fonts.
+func compareFonts(d declaredMedia, files []printer.StoredFile) []diagnosticsWarning {
+	if d.CJKFont == "" {
+		return nil
+	}
+	if _, ok := printer.FindFile(files, d.CJKFont); !ok {
+		return []diagnosticsWarning{{Code: "cjk_font_missing", Message: fmt.Sprintf(
+			"configured CJK font %s is not installed on the printer; text in it will print as blanks or boxes",
+			d.CJKFont)}}
 	}
 	return nil
 }

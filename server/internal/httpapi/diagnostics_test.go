@@ -88,11 +88,14 @@ func TestDiagnosticsRecordVerifiedFacts(t *testing.T) {
 
 	_, body := do(t, ts, "GET", "/api/v1/printers/p1/diagnostics", opsKey, "")
 	rec := body["recorded"].([]any)
-	if len(rec) != 2 || rec[0] != "resolution 203 dpi" || rec[1] != "CJK font SIMSUN.FNT" {
-		t.Fatalf("first run should record dpi and confirm the font: %v", rec)
+	if len(rec) != 2 || rec[0] != "resolution 203 dpi" || rec[1] != "available fonts (2, 1 CJK)" {
+		t.Fatalf("first run should record dpi and the font list: %v", rec)
 	}
 	_, p := do(t, ts, "GET", "/api/v1/printers/p1", opsKey, "")
-	if p["dpi_resolved_from_hi"] != true || p["font_resolved_from_hi"] != true || p["dpi"] != 203.0 {
+	fonts, _ := p["available_fonts"].([]any)
+	if p["dpi_resolved_from_hi"] != true || p["dpi"] != 203.0 || len(fonts) != 2 ||
+		fonts[0].(map[string]any)["name"] != "E:SIMSUN.FNT" || fonts[0].(map[string]any)["cjk"] != true ||
+		p["cjk_supported"] != true {
 		t.Fatalf("printer record not updated: %v", p)
 	}
 	_, body = do(t, ts, "GET", "/api/v1/printers/p1/diagnostics", opsKey, "")

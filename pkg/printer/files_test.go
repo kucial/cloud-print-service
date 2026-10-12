@@ -22,6 +22,15 @@ func TestHostDirectoryRealGK888t(t *testing.T) {
 	if len(cjk) != 2 || cjk[0].Name != "E:SIMSUN.FNT" || cjk[1].Name != "E:CHS.FNT" {
 		t.Fatalf("CJK fonts: %+v", cjk)
 	}
+	fonts := Fonts(files)
+	if len(fonts) < 10 || !fonts[0].CJK || fonts[0].Name != "E:SIMSUN.FNT" || !fonts[1].CJK || fonts[2].CJK {
+		t.Fatalf("fonts: want CJK first and flagged, got %+v", fonts[:3])
+	}
+	for _, f := range fonts {
+		if !isFont(f.Name) {
+			t.Fatalf("non-font %s in font list", f.Name)
+		}
+	}
 	// SIMSUN is a GB-indexed bitmap font: UTF-8 needs the GB18030 table.
 	if got := CJKFieldPrefix(cjk[0], files); got != "^CW1,E:SIMSUN.FNT^CI28^SEE:GB18030.DAT" {
 		t.Fatalf("setup %q", got)

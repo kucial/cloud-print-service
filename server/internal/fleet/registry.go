@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 )
 
@@ -132,6 +133,9 @@ type MetadataPatch struct {
 	FontSource         *string   `json:"font_source,omitempty"`
 	FontResolvedFromHI *bool     `json:"font_resolved_from_hi,omitempty"`
 	Enabled            *bool     `json:"enabled,omitempty"`
+
+	// AvailableFonts is reported by the printer, never sent by clients.
+	AvailableFonts *[]printer.StoredFile `json:"-"`
 }
 
 // UpdateMetadata updates user-editable metadata (name, site, remark, custom_label, paper_size, dimensions, resolution, CJK font, enabled)
@@ -474,6 +478,9 @@ func (patch MetadataPatch) applyTo(p *domain.Printer) {
 	}
 	if patch.Enabled != nil {
 		p.Enabled = *patch.Enabled
+	}
+	if patch.AvailableFonts != nil {
+		p.AvailableFonts = *patch.AvailableFonts
 	}
 }
 

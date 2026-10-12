@@ -14,6 +14,7 @@ const CmdHostDirectory = "^XA^HW*:*.*^XZ"
 type StoredFile struct {
 	Name string `json:"name"` // device-qualified: "E:SIMSUN.FNT"
 	Size int    `json:"size"`
+	CJK  bool   `json:"cjk,omitempty"` // set by Fonts: the font has CJK glyphs
 }
 
 // ParseHostDirectory decodes a ^HW reply: lines "* E:SIMSUN.FNT  1668928  P …".
@@ -77,6 +78,33 @@ func CJKFonts(files []StoredFile) []StoredFile {
 		return out[i].Size > out[j].Size
 	})
 	return out
+}
+
+func isFont(name string) bool {
+	up := strings.ToUpper(name)
+	return strings.HasSuffix(up, ".FNT") || strings.HasSuffix(up, ".TTF") || strings.HasSuffix(up, ".TTE")
+}
+
+// Fonts returns the stored fonts with their CJK flag set: CJK fonts first, in
+// CJKFonts order, then the rest by name. This is what the API reports as a printer's
+// available fonts, so business systems pick a font the printer really has.
+func Fonts(files []StoredFile) []StoredFile {
+	out := []StoredFile{}
+	cjk := CJKFonts(files)
+	isCJK := map[string]bool{}
+	for _, f := range cjk {
+		f.CJK = true
+		isCJK[f.Name] = true
+		out = append(out, f)
+	}
+	var rest []StoredFile
+	for _, f := range files {
+		if isFont(f.Name) && !isCJK[f.Name] {
+			rest = append(rest, f)
+		}
+	}
+	sort.SliceStable(rest, func(i, j int) bool { return rest[i].Name < rest[j].Name })
+	return append(out, rest...)
 }
 
 // FindFile returns the stored file whose name (with or without device prefix) matches.

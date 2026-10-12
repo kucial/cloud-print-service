@@ -89,6 +89,10 @@ type Printer struct {
 	FontSource         string   `json:"font_source,omitempty"`   // "hi" (hardware verified) | "config" (declared) | "default"
 	FontResolvedFromHI bool     `json:"font_resolved_from_hi"`   // true if font was verified from ~HI hardware query
 
+	// AvailableFonts is what the printer reports it stores (^HW): nil until the server
+	// has asked, empty when it has none. Business systems choose fonts from this.
+	AvailableFonts []printer.StoredFile `json:"available_fonts"`
+
 	// Live fields, filled by the printer manager.
 	Usable     bool   `json:"usable"`
 	QueueDepth int    `json:"queue_depth"`
@@ -272,6 +276,16 @@ func (p *Printer) Normalize() {
 	}
 	// PrintDirection is left empty when undeclared: it is a physical fact of how the
 	// printer feeds (no Zebra query reports it), and a guessed default reads as truth.
+
+	// The printer's own font list, once known, is the truth about CJK support.
+	if p.AvailableFonts != nil {
+		p.CJKSupported = false
+		for _, f := range p.AvailableFonts {
+			if f.CJK {
+				p.CJKSupported = true
+			}
+		}
+	}
 
 	// 4. CJK font support
 	if p.CJKFont != "" {

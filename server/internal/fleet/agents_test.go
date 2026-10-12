@@ -53,7 +53,7 @@ func TestPrinterFromAgentKeepsEveryField(t *testing.T) {
 	}
 	// The server's live fields come back out under the legacy names; they are not part
 	// of what the agent reported.
-	out.LegacyUsable, out.LegacyQueueDepth, out.LegacyStatus = nil, nil, nil
+	out.LegacyUsable, out.LegacyQueueDepth, out.LegacyStatus, out.LegacyAvailableFonts = nil, nil, nil, nil
 	if !reflect.DeepEqual(in, out) {
 		t.Fatalf("fields lost in conversion:\n in: %+v\nout: %+v", in, out)
 	}
