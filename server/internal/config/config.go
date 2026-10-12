@@ -87,7 +87,7 @@ type ClientKey struct {
 
 type Config struct {
 	Addr        string `json:"addr"`
-	StoreDriver string `json:"store_driver"` // memory | postgres
+	StoreDriver string `json:"store_driver"` // memory (postgres: planned, rejected for now)
 	PostgresDSN string `json:"postgres_dsn"`
 	LogLevel    string `json:"log_level"`
 
@@ -176,12 +176,13 @@ func Load(path string) (Config, error) {
 
 func (c Config) Validate() error {
 	switch c.StoreDriver {
-	case "memory", "postgres":
+	case "memory":
+	case "postgres":
+		// The schema exists (server/db/schema.sql) but the store does not yet; accepting
+		// the setting would silently run in memory and lose state on restart.
+		return fmt.Errorf("store_driver=postgres is not implemented yet; use memory (state is lost on restart)")
 	default:
-		return fmt.Errorf("store_driver must be memory or postgres, got %q", c.StoreDriver)
-	}
-	if c.StoreDriver == "postgres" && c.PostgresDSN == "" {
-		return fmt.Errorf("postgres_dsn is required when store_driver=postgres")
+		return fmt.Errorf("store_driver must be memory, got %q", c.StoreDriver)
 	}
 	if c.MaxAttempts < 1 {
 		return fmt.Errorf("max_attempts must be >= 1")

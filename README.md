@@ -79,6 +79,10 @@ release OK-8801           → 1 label
 resend OK-8801 (×2)       → still 1 label
 ```
 
+**Installing for real:** see [docs/INSTALL.md](docs/INSTALL.md) — the server is one binary
+and a config file (Docker optional, Compose only for the dev mock-up), plus an agent on
+each PC with USB printers.
+
 ## Quick start (no hardware)
 
 ```bash
