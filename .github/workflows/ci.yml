@@ -94,9 +94,12 @@ jobs:
           VPRINT_ADMIN=http://localhost:19200 ./examples/flow.sh http://localhost:18080 \
             dev-key-ops-0123456789abcdef
 
+  # Needs a Windows act_runner. Register one, then set the repo/org variable
+  # WINDOWS_RUNNER to its label (e.g. `windows`); without it the job is skipped.
   agent-windows:
     name: agent as a Windows service
-    runs-on: windows-latest
+    if: vars.WINDOWS_RUNNER != ''
+    runs-on: ${{ vars.WINDOWS_RUNNER }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

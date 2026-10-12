@@ -1,7 +1,11 @@
 name: release-agent
 
-# Builds cps-agent for packing PCs. Push a tag like `agent-v0.2.0` to publish a GitHub
-# release; run it manually to get the same files as workflow artifacts only.
+# Builds cps-agent for packing PCs. Push a tag like `agent-v0.2.0` to publish a Gitea
+# release; run it manually to get the same files as a workflow artifact only.
+#
+# The release is created through the Gitea API with the job token. If that token lacks
+# release permission on this instance, add a repo secret RELEASE_TOKEN (a personal access
+# token with write:repository) and it is used instead.
 on:
   push:
     tags: ["agent-v*"]
@@ -14,16 +18,9 @@ env:
   GO_VERSION: "1.26"
 
 jobs:
-  build:
-    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+  release:
+    name: build and publish
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - { goos: windows, goarch: amd64 }
-          - { goos: windows, goarch: arm64 }
-          - { goos: linux, goarch: amd64 }
-          - { goos: linux, goarch: arm64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -32,61 +29,69 @@ jobs:
           cache: true
 
       - name: build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
         run: |
+          set -euo pipefail
           if [[ "$GITHUB_REF" == refs/tags/agent-v* ]]; then
             version="${GITHUB_REF_NAME#agent-}"
           else
             version="dev-${GITHUB_SHA::7}"
           fi
-          ext=""; [[ "$GOOS" == windows ]] && ext=".exe"
-          name="cps-agent-${version}-${GOOS}-${GOARCH}"
-          mkdir -p "dist/$name"
-          go build -trimpath -ldflags="-s -w -X main.version=${version}" \
-            -o "dist/$name/cps-agent${ext}" ./agent/cmd/cps-agent
-          printf '%s\n' \
-            "cps-agent ${version} (${GOOS}/${GOARCH})" \
-            "" \
-            "1. On the server:  cpsctl agent enroll --site <site> --id <pc-name>   -> one-time token" \
-            "2. On this PC, from an elevated prompt:" \
-            "     set CPS_AGENT_SERVER=http://<server>:8080" \
-            "     cps-agent.exe -enroll <token> -site <site> -install" \
-            "   Config and credential: %ProgramData%\\cps-agent\\agent.json" \
-            "   Log:                   %ProgramData%\\cps-agent\\agent.log" \
-            "3. Remove:         cps-agent.exe -uninstall" \
-            > "dist/$name/README.txt"
-          cd dist
-          if [[ "$GOOS" == windows ]]; then
-            zip -qr "$name.zip" "$name"
-          else
-            tar -czf "$name.tar.gz" "$name"
-          fi
-          rm -rf "$name"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          command -v zip >/dev/null || { apt-get update -qq && apt-get install -y -qq zip >/dev/null; }
+
+          mkdir -p dist
+          for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
+            goos="${target%/*}"; goarch="${target#*/}"
+            ext=""; [[ "$goos" == windows ]] && ext=".exe"
+            name="cps-agent-${version}-${goos}-${goarch}"
+            mkdir -p "dist/$name"
+            GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build -trimpath \
+              -ldflags="-s -w -X main.version=${version}" \
+              -o "dist/$name/cps-agent${ext}" ./agent/cmd/cps-agent
+            printf '%s\n' \
+              "cps-agent ${version} (${goos}/${goarch})" \
+              "" \
+              "1. On the server:  cpsctl agent enroll --site <site> --id <pc-name>   -> one-time token" \
+              "2. On this PC, from an elevated prompt:" \
+              "     set CPS_AGENT_SERVER=http://<server>:8080" \
+              "     cps-agent.exe -enroll <token> -site <site> -install" \
+              "   Config and credential: %ProgramData%\\cps-agent\\agent.json" \
+              "   Log:                   %ProgramData%\\cps-agent\\agent.log" \
+              "3. Remove:         cps-agent.exe -uninstall" \
+              > "dist/$name/README.txt"
+            if [[ "$goos" == windows ]]; then
+              (cd dist && zip -qr "$name.zip" "$name")
+            else
+              tar -C dist -czf "dist/$name.tar.gz" "$name"
+            fi
+            rm -rf "dist/$name"
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cps-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: cps-agent-${{ env.VERSION }}
           path: dist/*
           if-no-files-found: error
 
-  release:
-    name: publish release
-    if: startsWith(github.ref, 'refs/tags/agent-v')
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: checksums
-        run: cd dist && sha256sum * > SHA256SUMS
-      - name: create release
+      - name: publish release
+        if: startsWith(github.ref, 'refs/tags/agent-v')
         env:
-          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --repo "$GITHUB_REPOSITORY" --title "cps-agent ${GITHUB_REF_NAME#agent-}" --generate-notes
+          set -euo pipefail
+          auth=(-H "Authorization: token $TOKEN")
+          body=$(jq -n --arg tag "$GITHUB_REF_NAME" --arg name "cps-agent $VERSION" \
+            --arg body "cps-agent $VERSION for Windows and Linux. Install steps are in each archive's README.txt; verify with SHA256SUMS." \
+            '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
+          id=$(curl -fsS "${auth[@]}" -H 'Content-Type: application/json' \
+            -X POST "$API/releases" -d "$body" | jq -r .id)
+          echo "release id $id"
+          for f in dist/*; do
+            curl -fsS "${auth[@]}" -X POST \
+              "$API/releases/$id/assets?name=$(basename "$f")" \
+              -F "attachment=@$f" >/dev/null
+            echo "uploaded $(basename "$f")"
+          done
