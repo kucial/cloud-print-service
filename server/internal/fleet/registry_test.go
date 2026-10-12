@@ -220,3 +220,31 @@ func TestRegistryListIsSortedAndFiltered(t *testing.T) {
 		t.Fatalf("site filter returned %d", n)
 	}
 }
+
+// An agent re-registers every poll; an operator's edits to its printer must survive.
+func TestOperatorEditsSurviveAgentReRegistration(t *testing.T) {
+	r := NewRegistry()
+	reported := spec("pc7-usb-1", "wh1", "10.0.0.7", 19390)
+	if err := r.Upsert(SourceAgent, "pc7", reported); err != nil {
+		t.Fatal(err)
+	}
+	size, off := "60x40mm", false
+	if _, err := r.UpdateMetadata("pc7-usb-1", MetadataPatch{PaperSize: &size, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+
+	reported.Model = "GK888t" // a fresh report with new facts
+	if err := r.Upsert(SourceAgent, "pc7", reported); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Get("pc7-usb-1")
+	if got.PaperSize != "60x40mm" || got.MediaWidthMM != 60 || got.MediaHeightMM != 40 {
+		t.Fatalf("paper size lost on re-registration: %+v", got)
+	}
+	if got.Enabled {
+		t.Fatal("an operator-disabled printer must stay disabled when its agent re-registers")
+	}
+	if got.Model != "GK888t" {
+		t.Fatalf("fresh facts from the agent must still apply, model=%q", got.Model)
+	}
+}

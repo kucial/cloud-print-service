@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -34,6 +35,11 @@ type claim struct {
 	priority  int
 	printer   domain.Printer
 	claimedAt time.Time
+
+	// overrides are operator edits (PATCH) to this claim. A source that reports again —
+	// an agent re-registers every poll — must not silently undo them, so they are
+	// re-applied on top of every re-report.
+	overrides MetadataPatch
 }
 
 // Source names, in precedence order (lower number wins).
@@ -78,7 +84,11 @@ func (r *Registry) Upsert(source, sourceRef string, p domain.Printer) error {
 	claims := r.claims[p.PrinterID]
 	for i := range claims {
 		if claims[i].source == source && claims[i].sourceRef == sourceRef {
-			claims[i] = c // same source reporting again
+			// Same source reporting again: fresh facts, operator edits kept.
+			c.overrides = claims[i].overrides
+			c.overrides.applyTo(&c.printer)
+			c.printer.Normalize()
+			claims[i] = c
 			r.claims[p.PrinterID] = claims
 			return nil
 		}
@@ -134,68 +144,9 @@ func (r *Registry) UpdateMetadata(printerID string, patch MetadataPatch) (domain
 		return domain.Printer{}, fmt.Errorf("fleet: printer %q not found", printerID)
 	}
 	for i := range claims {
-		p := &claims[i].printer
-		if patch.Name != nil {
-			p.Name = *patch.Name
-		}
-		if patch.Site != nil {
-			p.Site = *patch.Site
-		}
-		if patch.Remark != nil {
-			p.Remark = *patch.Remark
-		}
-		if patch.CustomLabel != nil {
-			p.CustomLabel = *patch.CustomLabel
-		}
-		if patch.PaperSize != nil {
-			p.PaperSize = *patch.PaperSize
-		}
-		if patch.MediaWidthMM != nil {
-			p.MediaWidthMM = *patch.MediaWidthMM
-		}
-		if patch.MediaHeightMM != nil {
-			p.MediaHeightMM = *patch.MediaHeightMM
-		}
-		if patch.DPI != nil {
-			p.DPI = *patch.DPI
-		}
-		if patch.DPMM != nil {
-			p.DPMM = *patch.DPMM
-		}
-		if patch.ResolutionSource != nil {
-			p.ResolutionSource = *patch.ResolutionSource
-		}
-		if patch.DPIResolvedFromHI != nil {
-			p.DPIResolvedFromHI = *patch.DPIResolvedFromHI
-		}
-		if patch.Orientation != nil {
-			p.Orientation = *patch.Orientation
-		}
-		if patch.MediaOrientation != nil {
-			p.MediaOrientation = *patch.MediaOrientation
-		}
-		if patch.PrintDirection != nil {
-			p.PrintDirection = *patch.PrintDirection
-		}
-		if patch.CJKSupported != nil {
-			p.CJKSupported = *patch.CJKSupported
-		}
-		if patch.CJKFont != nil {
-			p.CJKFont = *patch.CJKFont
-		}
-		if patch.Fonts != nil {
-			p.Fonts = *patch.Fonts
-		}
-		if patch.FontSource != nil {
-			p.FontSource = *patch.FontSource
-		}
-		if patch.FontResolvedFromHI != nil {
-			p.FontResolvedFromHI = *patch.FontResolvedFromHI
-		}
-		if patch.Enabled != nil {
-			p.Enabled = *patch.Enabled
-		}
-		p.Normalize()
+		claims[i].overrides = claims[i].overrides.merge(patch)
+		patch.applyTo(&claims[i].printer)
+		claims[i].printer.Normalize()
 	}
 	return claims[0].printer, nil
 }
@@ -460,4 +411,79 @@ func (r *Registry) AdoptCandidate(deviceKey, source, sourceRef string, p domain.
 	delete(r.candidates, deviceKey)
 	r.mu.Unlock()
 	return nil
+}
+
+// applyTo writes every set field of the patch onto p.
+func (patch MetadataPatch) applyTo(p *domain.Printer) {
+	if patch.Name != nil {
+		p.Name = *patch.Name
+	}
+	if patch.Site != nil {
+		p.Site = *patch.Site
+	}
+	if patch.Remark != nil {
+		p.Remark = *patch.Remark
+	}
+	if patch.CustomLabel != nil {
+		p.CustomLabel = *patch.CustomLabel
+	}
+	if patch.PaperSize != nil {
+		p.PaperSize = *patch.PaperSize
+	}
+	if patch.MediaWidthMM != nil {
+		p.MediaWidthMM = *patch.MediaWidthMM
+	}
+	if patch.MediaHeightMM != nil {
+		p.MediaHeightMM = *patch.MediaHeightMM
+	}
+	if patch.DPI != nil {
+		p.DPI = *patch.DPI
+	}
+	if patch.DPMM != nil {
+		p.DPMM = *patch.DPMM
+	}
+	if patch.ResolutionSource != nil {
+		p.ResolutionSource = *patch.ResolutionSource
+	}
+	if patch.DPIResolvedFromHI != nil {
+		p.DPIResolvedFromHI = *patch.DPIResolvedFromHI
+	}
+	if patch.Orientation != nil {
+		p.Orientation = *patch.Orientation
+	}
+	if patch.MediaOrientation != nil {
+		p.MediaOrientation = *patch.MediaOrientation
+	}
+	if patch.PrintDirection != nil {
+		p.PrintDirection = *patch.PrintDirection
+	}
+	if patch.CJKSupported != nil {
+		p.CJKSupported = *patch.CJKSupported
+	}
+	if patch.CJKFont != nil {
+		p.CJKFont = *patch.CJKFont
+	}
+	if patch.Fonts != nil {
+		p.Fonts = *patch.Fonts
+	}
+	if patch.FontSource != nil {
+		p.FontSource = *patch.FontSource
+	}
+	if patch.FontResolvedFromHI != nil {
+		p.FontResolvedFromHI = *patch.FontResolvedFromHI
+	}
+	if patch.Enabled != nil {
+		p.Enabled = *patch.Enabled
+	}
+}
+
+// merge returns m with every field set in next taking next's value.
+func (m MetadataPatch) merge(next MetadataPatch) MetadataPatch {
+	dst, src := reflect.ValueOf(&m).Elem(), reflect.ValueOf(next)
+	for i := 0; i < src.NumField(); i++ {
+		if !src.Field(i).IsNil() {
+			dst.Field(i).Set(src.Field(i))
+		}
+	}
+	return m
 }
