@@ -412,9 +412,9 @@ Decisions:
 - `cpsctl token issue|list|rotate|revoke` wraps these over HTTP, so the CLI exercises the
   same authorisation path as everything else.
 
-**Known MVP limitation:** the token store is in-memory, so restarting the service drops
-issued tokens and every integration must be re-issued. The Postgres store (schema below)
-is the fix; `authenticate()` already calls `token.Verify`, so nothing above that layer moves.
+**Persistence:** tokens live in the same SQLite file as jobs (the default store), stored as
+hashes, so restarts keep every integration and agent credential. `authenticate()` calls
+`token.Verify`, so a future Postgres store changes nothing above that layer.
 
 ### 7.6 Operator panel
 
@@ -541,7 +541,7 @@ create index on printer_events (printer_id, at desc);
 | Transient network error pre-flush | `Send` returns error with `bytes==0` | auto-retry: 3 attempts, 500ms → 2s → 8s, jittered |
 | Write timeout mid-payload | `Send` returns partial bytes | **no retry**; `failed` + `partial_write=true` (operator may have a partial label to remove) |
 | Confirmation missing | status poll after send | `sent_unknown`, surfaced in `/jobs` + metrics |
-| CPS restart mid-queue | in-flight jobs reaped on boot | `sending` → `sent_unknown` if we can't prove bytes weren't written; `queued` jobs are re-queued from DB (prod store), or left `queued` in memory (MVP store) |
+| CPS restart mid-queue | in-flight jobs reaped on boot | `sending` → `sent_unknown` if we can't prove bytes weren't written; `queued` jobs are re-queued from the store, oldest first, and expire at dispatch if past `job_queue_ttl` |
 | Stuck job detector | sweeper every 60s | `queued > 5min` or `sending > 2min` → flag + event + metric |
 
 **Per-printer FIFO** with one worker goroutine per printer = no interleaving inside one printer,

@@ -71,6 +71,7 @@ VPRINT_PID=$!
 cat > "$WORK/cps.json" <<EOF
 {
   "addr": ":$CPS_PORT",
+  "store_driver": "memory",
   "status_poll_interval": "2s",
   "confirm_timeout": "3s",
   "api_keys": { "verify-ops-key-0123456789ab": { "client_id": "ops", "role": "admin" } },

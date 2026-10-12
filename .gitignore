@@ -2,6 +2,11 @@
 config.json
 config.local.json
 
+# server data (sqlite store)
+*.db
+*.db-wal
+*.db-shm
+
 # build output
 /bin/
 /dist/

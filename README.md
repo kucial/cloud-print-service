@@ -231,7 +231,7 @@ server/
   cmd/cpsctl/     admin CLI (issue/list/rotate/revoke tokens, printers, test label)
   internal/       domain, fleet, job, driver, store, token, observ, discovery, httpapi
   web/            operator panel (embedded via go:embed, no build step needed)
-  db/schema.sql   production schema (Postgres)
+  db/schema.sql   schema for a future Postgres store (the default store is SQLite)
   test/e2e/       flow test: virtual printers + real HTTP API + issued tokens
   Dockerfile      server container (cps + cpsctl)
 vprint/
@@ -309,9 +309,9 @@ dispatch a job or read business data.
 
 ## Not done yet
 
-- Postgres store (schema in `db/schema.sql`; the binary ships the memory store, so issued
-  tokens live in memory and are lost on restart)
-- Token persistence + per-key rate limits (auth already goes through `token.Verify`)
+- Postgres store for multi-server setups (schema in `db/schema.sql`); a single server uses
+  the SQLite store (default), which already keeps jobs, tokens and panel edits across restarts
+- Per-key rate limits (auth already goes through `token.Verify`)
 - TSC / Honeywell / SNMP drivers — add via `printer.Register("tsc9100", …)`
 - Callback to ERP on job state change (events are already on the bus; expose a webhook)
 

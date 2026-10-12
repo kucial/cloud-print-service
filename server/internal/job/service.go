@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -140,10 +141,14 @@ func (s *Service) Start(ctx context.Context) error {
 // replayQueued re-dispatches jobs that were accepted but never started. Safe because a
 // `queued` job provably sent zero bytes.
 func (s *Service) replayQueued(ctx context.Context) {
-	jobs, err := s.st.ListJobs(ctx, store.Filter{State: string(domain.JobQueued), Limit: 1000})
+	jobs, err := s.st.ListJobs(ctx, store.Filter{State: string(domain.JobQueued)})
 	if err != nil {
+		s.log.Error("cannot list queued jobs to replay", "err", err)
 		return
 	}
+	// ListJobs is newest first; replay oldest first so each printer keeps its FIFO
+	// order. Jobs past the queue TTL are expired at dispatch, not here.
+	sort.SliceStable(jobs, func(a, b int) bool { return jobs[a].QueuedAt.Before(jobs[b].QueuedAt) })
 	for i := range jobs {
 		if err := s.enqueue(ctx, &jobs[i]); err != nil {
 			s.log.Error("requeue failed", "job_id", jobs[i].ID, "err", err)

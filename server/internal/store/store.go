@@ -1,8 +1,9 @@
-// Package job implements dispatch: validation, idempotency, per-printer FIFO, retry.
+// Package store persists jobs, attempts and operator edits to printers.
 package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -33,8 +34,8 @@ type Filter struct {
 	Limit      int
 }
 
-// Store is the persistence boundary. Memory is the MVP implementation; the Postgres
-// implementation (schema in db/schema.sql) is a drop-in for production.
+// Store is the persistence boundary. SQLite (one file) is the default; Memory is for
+// tests and demos and loses everything on restart.
 type Store interface {
 	CreateJob(ctx context.Context, j *domain.Job) error
 	GetJob(ctx context.Context, id string) (*domain.Job, error)
@@ -48,22 +49,29 @@ type Store interface {
 	RequeueUnfinished(ctx context.Context) (int, error)
 	Ping(ctx context.Context) error
 	Close() error
+
+	// Operator edits to printers (panel/PATCH), so they survive restarts and agents
+	// re-registering. Stored as an opaque JSON patch; the fleet owns its shape.
+	PrinterOverrides(ctx context.Context) (map[string]json.RawMessage, error)
+	SavePrinterOverride(ctx context.Context, printerID string, patch json.RawMessage) error
 }
 
 // MemoryStore is a process-local store: correct for MVP/demo, restart loses history.
 type MemoryStore struct {
-	mu       sync.RWMutex
-	jobs     map[string]*domain.Job
-	byExt    map[string]string // "clientID\x00externalID" -> job id
-	attempts map[string][]domain.Attempt
-	seq      int64
+	mu        sync.RWMutex
+	jobs      map[string]*domain.Job
+	byExt     map[string]string // "clientID\x00externalID" -> job id
+	attempts  map[string][]domain.Attempt
+	overrides map[string]json.RawMessage
+	seq       int64
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		jobs:     map[string]*domain.Job{},
-		byExt:    map[string]string{},
-		attempts: map[string][]domain.Attempt{},
+		jobs:      map[string]*domain.Job{},
+		byExt:     map[string]string{},
+		attempts:  map[string][]domain.Attempt{},
+		overrides: map[string]json.RawMessage{},
 	}
 }
 
@@ -239,6 +247,23 @@ func (s *MemoryStore) RequeueUnfinished(ctx context.Context) (int, error) {
 		n++
 	}
 	return n, nil
+}
+
+func (s *MemoryStore) PrinterOverrides(ctx context.Context) (map[string]json.RawMessage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]json.RawMessage, len(s.overrides))
+	for k, v := range s.overrides {
+		out[k] = append(json.RawMessage(nil), v...)
+	}
+	return out, nil
+}
+
+func (s *MemoryStore) SavePrinterOverride(ctx context.Context, printerID string, patch json.RawMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.overrides[printerID] = append(json.RawMessage(nil), patch...)
+	return nil
 }
 
 func (s *MemoryStore) Ping(ctx context.Context) error { return nil }

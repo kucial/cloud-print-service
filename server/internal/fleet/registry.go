@@ -27,6 +27,12 @@ type Registry struct {
 	claims     map[string][]claim // printer_id -> claims, sorted by priority
 	candidates map[string]Candidate
 
+	// saved holds operator edits by printer id, as persisted. They are applied to a
+	// printer when it is first claimed after a restart, and kept up to date by
+	// UpdateMetadata; onSave writes them to the store.
+	saved  map[string]MetadataPatch
+	onSave func(printerID string, merged MetadataPatch)
+
 	now func() time.Time
 }
 
@@ -60,8 +66,27 @@ func NewRegistry() *Registry {
 	return &Registry{
 		claims:     map[string][]claim{},
 		candidates: map[string]Candidate{},
+		saved:      map[string]MetadataPatch{},
 		now:        func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// LoadOverrides restores persisted operator edits. Call it before printers are
+// claimed, so a printer that comes back after a restart gets its edits straight away.
+func (r *Registry) LoadOverrides(saved map[string]MetadataPatch) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, p := range saved {
+		r.saved[id] = p
+	}
+}
+
+// OnOverrideSaved registers where edits are persisted. fn gets every edit made so far
+// to the printer, merged; it runs under the registry lock, so it must not call back in.
+func (r *Registry) OnOverrideSaved(fn func(printerID string, merged MetadataPatch)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onSave = fn
 }
 
 // Upsert records a printer from a source. It is idempotent: registering the same agent
@@ -93,6 +118,12 @@ func (r *Registry) Upsert(source, sourceRef string, p domain.Printer) error {
 			r.claims[p.PrinterID] = claims
 			return nil
 		}
+	}
+	// A new claim (first sight since start) picks up the printer's saved edits.
+	if saved, ok := r.saved[p.PrinterID]; ok {
+		c.overrides = saved
+		saved.applyTo(&c.printer)
+		c.printer.Normalize()
 	}
 	r.claims[p.PrinterID] = append(claims, c)
 	sort.SliceStable(r.claims[p.PrinterID], func(i, j int) bool {
@@ -151,6 +182,10 @@ func (r *Registry) UpdateMetadata(printerID string, patch MetadataPatch) (domain
 		claims[i].overrides = claims[i].overrides.merge(patch)
 		patch.applyTo(&claims[i].printer)
 		claims[i].printer.Normalize()
+	}
+	r.saved[printerID] = r.saved[printerID].merge(patch)
+	if r.onSave != nil {
+		r.onSave(printerID, r.saved[printerID])
 	}
 	return claims[0].printer, nil
 }

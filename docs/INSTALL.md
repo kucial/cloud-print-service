@@ -30,26 +30,31 @@ business system, two networks). It is not a deployment manifest.
 The server connects **to** the agent PCs, so their firewall must allow the agent's ports
 (the Windows service installer adds that rule).
 
-### What survives a restart — read this
+### Where the server keeps its data
 
-The server currently keeps its working state **in memory**. A Postgres store is planned
-(`server/db/schema.sql`), but not built; `store_driver: "postgres"` is rejected for now.
+Jobs, issued tokens, agent credentials and edits made in the panel are kept in **one
+SQLite file** (`cps.db`), so a restart loses nothing: integrations stay logged in,
+agents keep their credentials, queued jobs are sent after the restart, and a job that was
+mid-send is marked `sent_unknown` instead of being printed twice.
 
-| Survives a restart (in `config.json`) | Lost on restart |
-|---|---|
-| network printers declared in `printers` | tokens issued with `cpsctl token issue` |
-| bootstrap keys in `api_keys` | agent credentials — **every agent must enroll again** |
-| all other settings | job history and queued jobs |
-| | edits made in the panel (names, paper size, direction, …) |
+| Setting | Default | Notes |
+|---|---|---|
+| `store_driver` | `sqlite` | `memory` keeps nothing across restarts (tests and demos only) |
+| `data_path` | `$CPS_DATA_PATH`, else `cps.db` in the working directory | the directory is created if needed; the file is readable by the server's user only |
 
-Until the persistent store lands:
+Live printer status, the list of agents and each printer's font list are not stored:
+they come back by themselves within a minute of a restart. Settings saved **on the
+printer itself** (label top / left shift, calibration) live in the printer.
 
-- Put every **network printer** and its settings (paper size, direction) in `config.json`.
-- Give **long-lived integrations** a strong key in `api_keys` rather than an issued token.
-- Plan restarts: after one, re-enroll each agent (section 5).
+Back it up while the server runs with SQLite's online backup (a plain copy of a busy
+database may be inconsistent):
 
-Settings saved **on the printer itself** (label top / left shift, calibration) are not
-affected — they live in the printer.
+```bash
+sqlite3 /var/lib/cps/cps.db ".backup '/backups/cps-$(date +%F).db'"
+```
+
+To restore, stop the server, put the backup in place as `cps.db` (removing any
+`cps.db-wal` / `cps.db-shm` next to it), and start the server.
 
 ---
 
@@ -113,7 +118,7 @@ The server looks for its config in this order: `-config <path>`, then `$CPS_CONF
 ```bash
 sudo useradd --system --no-create-home cps
 sudo install -m 755 cps cpsctl /usr/local/bin/
-sudo install -d -m 750 -o cps /etc/cps
+sudo install -d -m 750 -o cps /etc/cps /var/lib/cps
 sudo install -m 640 -o cps config.json /etc/cps/config.json
 ```
 
@@ -127,6 +132,7 @@ Wants=network-online.target
 
 [Service]
 User=cps
+Environment=CPS_DATA_PATH=/var/lib/cps/cps.db
 ExecStart=/usr/local/bin/cps -config /etc/cps/config.json
 Restart=on-failure
 RestartSec=3
@@ -153,8 +159,13 @@ docker build -f server/Dockerfile -t cps .
 docker run -d --name cps --restart unless-stopped \
   -p 8080:8080 \
   -v "$PWD/config.json:/etc/cps/config.json:ro" \
+  -v cps-data:/var/lib/cps \
   cps
 ```
+
+The image keeps its database in `/var/lib/cps`; the `cps-data` volume is what keeps it
+when the container is replaced. Without a volume, upgrading the container loses jobs,
+tokens and agent credentials.
 
 The container runs as a non-root user (uid 10001), so the mounted config must be
 readable by it (e.g. `chmod 644 config.json`, or `chown 10001` it).
@@ -197,7 +208,8 @@ Open `http://<server>:8080/ui/` and log in with the admin key.
 Either declare them in `config.json` (section 2), or let discovery find them: printers
 that advertise over mDNS appear under **Discovery** in the panel, and `cpsctl discover
 adopt <device-key> --printer-id wh1-pack-02 --site wh1` adds one. Adopted printers are
-lost on restart (section 1); copy them into the config to keep them.
+not stored yet: after a restart they are listed as discovery candidates again (adopting
+one again restores its panel edits). To keep a printer permanently, put it in the config.
 
 Zebra printers must be in **ZPL mode** to report status. Check one with:
 
@@ -210,15 +222,19 @@ cpsctl test wh1-pack-01      # prints an alignment label sized to its media
 
 ## 4. Credentials for business systems
 
-For testing, issue a token:
+Issue each business system its own token, and give it to that system once:
 
 ```bash
-cpsctl token issue --client-id wms --ttl 90d     # shown once
+cpsctl token issue --client-id wms --ttl 365d     # the secret is shown once
+cpsctl token list                                 # who has access, last used
+cpsctl token rotate <token-id>                    # replace a leaked or expiring one
+cpsctl token revoke <token-id>
 ```
 
-For production integrations, use a `client` key in `api_keys` until tokens survive
-restarts (section 1). The API is described at `http://<server>:8080/docs/`
-(OpenAPI at `/openapi.yaml`).
+Tokens are stored (as hashes) in the server's database, so they survive restarts. Keep
+the `api_keys` in `config.json` for administrators and break-glass access.
+
+The API is described at `http://<server>:8080/docs/` (OpenAPI at `/openapi.yaml`).
 
 ---
 
@@ -263,7 +279,7 @@ driver (e.g. ZDesigner) installed; nothing has to be replaced.
 | config and credential | `%ProgramData%\cps-agent\agent.json` (readable by SYSTEM, Administrators and the enrolling user only) |
 | log | `%ProgramData%\cps-agent\agent.log` |
 | remove | `cps-agent.exe -uninstall` (Administrator) |
-| re-enroll after a server restart | `cps-agent.exe -uninstall`, delete `agent.json`, then step 2 with a new token |
+| re-enroll (new server, or its database was lost) | `cps-agent.exe -uninstall`, delete `agent.json`, then step 2 with a new token |
 
 To try the agent before installing the service, leave out `-install`: it runs in the
 window and logs there. Windows may show a SmartScreen warning because the executable is
@@ -313,11 +329,10 @@ libusb (`brew install libusb`, then `go build -tags usb_libusb ./agent/cmd/cps-a
 
 ## 6. Upgrading
 
-- **Server:** replace the binary (or image) and restart. Remember what a restart loses
-  (section 1): agents must re-enroll.
+- **Server:** replace the binary (or image) and restart; the database carries over (in
+  Docker, keep the same volume). Back it up first (section 1).
 - **Agent (Windows):** `cps-agent.exe -uninstall`, replace the `.exe`, `cps-agent.exe -install`.
-  The saved config and credential are reused, so no new token is needed (unless the
-  server restarted meanwhile).
+  The saved config and credential are reused, so no new token is needed.
 
 ---
 
@@ -328,7 +343,8 @@ libusb (`brew install libusb`, then `go build -tags usb_libusb ./agent/cmd/cps-a
 | Printer stays *not usable*, state `unknown` | the printer does not answer status queries | set it to ZPL mode; run `cpsctl diag <printer-id>` |
 | Agent logs `no local printers found` | no USB printer seen, or it is not in ZPL mode | check the USB cable and driver; the log line names any printer that did not identify itself |
 | Agent registered, printer *not usable* | heartbeats stopped, or the server cannot reach the agent's port | `cpsctl agent list` for the last heartbeat; allow ports 19100+ in the PC firewall |
-| Agent gets 401 after the server restarted | agent credentials are in memory (section 1) | re-enroll the agent with a new token |
+| Agent gets 401 | its credential was revoked, or the server's database was replaced or lost | re-enroll the agent with a new token |
+| Server will not start: `cannot open the data store` | `data_path` is not writable by the server's user | fix the directory's owner, or point `data_path` / `CPS_DATA_PATH` elsewhere |
 | Labels print shifted or clipped | the printer's offset or calibration | print `cpsctl test <printer-id>`; adjust *label top* / *left shift* in the panel's Edit tab, or calibrate |
 | Chinese prints as blanks or boxes | the font is not on the printer | the printer's fonts are listed in the panel's Info tab and in the API as `available_fonts` |
 

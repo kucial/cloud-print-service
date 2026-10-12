@@ -16,9 +16,14 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/cps    ./server/cm
 
 FROM ${RUNTIME_IMAGE}
 # busybox wget is used by the container healthcheck; ca-certificates for labelize over TLS.
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 cps
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 cps && \
+    install -d -o cps -g cps -m 750 /var/lib/cps
 COPY --from=build /out/ /usr/local/bin/
 COPY server/config.example.json /etc/cps/config.json
+# Jobs, issued tokens, agent credentials and panel edits (the default sqlite store).
+# Mount a volume here or they go with the container.
+ENV CPS_DATA_PATH=/var/lib/cps/cps.db
+VOLUME /var/lib/cps
 USER cps
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 \

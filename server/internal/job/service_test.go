@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -488,5 +489,66 @@ func TestSubmitWithPageCopiesAndTailSuppression(t *testing.T) {
 	}
 	if strings.Contains(jZero.Payload, "Tail Carton") {
 		t.Fatalf("Page 2 must be omitted when copies == 0: %s", jZero.Payload)
+	}
+}
+
+// A restart on a persistent store: jobs still queued are sent, oldest first (the
+// store lists newest first); a job that was mid-send is never printed again.
+func TestRestartOnSQLiteReplaysQueuedInOrder(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenSQLite(ctx, filepath.Join(t.TempDir(), "cps.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	t0 := time.Now().UTC().Add(-10 * time.Second)
+	mk := func(ext string, state domain.JobState, at time.Time) *domain.Job {
+		j := &domain.Job{ClientID: "erp", ExternalID: ext, PrinterID: "p1", State: state,
+			Payload: "^XA^FD" + ext + "^FS^XZ", Bytes: 14, Copies: 1, Priority: "normal", QueuedAt: at}
+		if err := st.CreateJob(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
+	// left behind by the previous process; inserted newest first on purpose
+	c := mk("c", domain.JobQueued, t0.Add(2*time.Second))
+	b := mk("b", domain.JobQueued, t0.Add(time.Second))
+	a := mk("a", domain.JobQueued, t0)
+	inflight := mk("in-flight", domain.JobSending, t0)
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bus := observ.NewBus()
+	mgr, err := fleet.NewManager([]domain.Printer{mockPrinter("p1", &domain.MockCfg{State: "idle"})}, log, bus,
+		fleet.ManagerOpts{PollInterval: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mgr.Close)
+	svc := NewService(Config{QueueSize: 5, MaxAttempts: 3, ConfirmTimeout: 300 * time.Millisecond,
+		BaseBackoff: time.Millisecond, QueueTTL: time.Minute}, st, mgr, bus, log, observ.NewMetrics())
+	t.Cleanup(svc.Stop)
+	if err := svc.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var started []time.Time
+	for _, j := range []*domain.Job{a, b, c} {
+		waitState(t, svc, j.ID, domain.JobPrinted)
+		as, _ := st.Attempts(ctx, j.ID)
+		if len(as) != 1 {
+			t.Fatalf("%s: %d attempts", j.ExternalID, len(as))
+		}
+		started = append(started, as[0].StartedAt)
+	}
+	if !started[0].Before(started[1]) || !started[1].Before(started[2]) {
+		t.Fatalf("queued jobs replayed out of order: a=%v b=%v c=%v", started[0], started[1], started[2])
+	}
+	got, _ := st.GetJob(ctx, inflight.ID)
+	if got.State != domain.JobSentUnknown {
+		t.Fatalf("in-flight job at restart must be sent_unknown, got %s", got.State)
+	}
+	if as, _ := st.Attempts(ctx, inflight.ID); len(as) != 0 {
+		t.Fatalf("in-flight job was sent again: %d attempts", len(as))
 	}
 }

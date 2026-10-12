@@ -1,5 +1,6 @@
 {
   "addr": ":8080",
+  "_store_note": "This demo config uses memory (nothing kept across restarts). Leave store_driver out for the default: sqlite at data_path ($CPS_DATA_PATH or ./cps.db).",
   "store_driver": "memory",
   "status_poll_interval": "15s",
   "status_stale_after": "45s",

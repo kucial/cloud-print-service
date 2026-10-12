@@ -86,8 +86,12 @@ type ClientKey struct {
 }
 
 type Config struct {
-	Addr        string `json:"addr"`
-	StoreDriver string `json:"store_driver"` // memory (postgres: planned, rejected for now)
+	Addr string `json:"addr"`
+	// StoreDriver is where jobs, tokens and panel edits live: sqlite (default, one file
+	// at DataPath, survives restarts) or memory (tests and demos; lost on restart).
+	// postgres is planned and rejected for now.
+	StoreDriver string `json:"store_driver"`
+	DataPath    string `json:"data_path"` // sqlite file; default $CPS_DATA_PATH or ./cps.db
 	PostgresDSN string `json:"postgres_dsn"`
 	LogLevel    string `json:"log_level"`
 
@@ -126,7 +130,7 @@ type Config struct {
 func defaults() Config {
 	return Config{
 		Addr:                ":8080",
-		StoreDriver:         "memory",
+		StoreDriver:         "sqlite",
 		LogLevel:            "info",
 		StatusPollInterval:  Duration(15 * time.Second),
 		StatusStaleAfter:    Duration(45 * time.Second),
@@ -168,6 +172,12 @@ func Load(path string) (Config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	if v := os.Getenv("CPS_DATA_PATH"); v != "" && cfg.DataPath == "" {
+		cfg.DataPath = v
+	}
+	if cfg.DataPath == "" {
+		cfg.DataPath = "cps.db"
+	}
 	if err := cfg.Validate(); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -176,13 +186,13 @@ func Load(path string) (Config, error) {
 
 func (c Config) Validate() error {
 	switch c.StoreDriver {
-	case "memory":
+	case "memory", "sqlite":
 	case "postgres":
 		// The schema exists (server/db/schema.sql) but the store does not yet; accepting
 		// the setting would silently run in memory and lose state on restart.
-		return fmt.Errorf("store_driver=postgres is not implemented yet; use memory (state is lost on restart)")
+		return fmt.Errorf("store_driver=postgres is not implemented yet; use sqlite (the default)")
 	default:
-		return fmt.Errorf("store_driver must be memory, got %q", c.StoreDriver)
+		return fmt.Errorf("store_driver must be sqlite or memory, got %q", c.StoreDriver)
 	}
 	if c.MaxAttempts < 1 {
 		return fmt.Errorf("max_attempts must be >= 1")

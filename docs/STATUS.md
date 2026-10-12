@@ -85,7 +85,7 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 |---|---|---|
 | **USB on Windows not yet run on hardware** | the agent opens `usbprint.sys` interfaces directly (no driver swap, coexists with ZDesigner); compiled and unit-tested, never run on a Windows PC | run the release zip on one packing PC with a USB Zebra |
 | **Real printers speak `~HS`, not `^HS`** | server, agent and vprint used a made-up `^HS` reply until the GK888t capture; now real three-line `~HS` is sent and decoded (`pkg/printer`), legacy `^HS` still parsed. `~HS` has no media/ribbon-low flags | `~HQES` on Link-OS printers for low warnings |
-| Postgres store | schema exists (`db/schema.sql`), binary uses the memory store | implement `store.Postgres`; issued tokens currently die on restart |
+| Postgres store | single servers use SQLite (default: jobs, tokens, agent credentials and panel edits survive restarts); Postgres only matters for several servers | implement `store.Postgres` if a site ever needs more than one server |
 | mDNS live sweep | see §6 | one machine on the warehouse LAN |
 | Agent auto-update / fleet rollout | Windows service (`-enroll <token> -install`: SCM, recovery restarts, firewall rule, ACL'd config, `agent.log`) is built and exercised by the `agent-windows` CI job; binaries come from `release-agent.yml` (`agent-v*` tags), unsigned | code-sign the `.exe`; self-update or MSI/Intune rollout |
 | Agent finds printers only at start | no hot-plug rescan; with none found the process exits and the service manager restarts it (30s) | periodic rescan inside `Run` |
@@ -187,5 +187,5 @@ f032494  fix(discovery): default the mDNS probe's service types
    advertises, confirm tier 1 or decide tier 2 is needed.
 2. **Windows USB tier 2** (WinUSB, `-tags winusb`): the only path to true USB-only support
    (D1). Cross-compile check: `GOOS=windows GOARCH=amd64 go build ./agent/cmd/cps-agent`.
-3. **Postgres store** (unblocks durable tokens + job history): `store.Postgres` against the
-   existing schema, then re-issue-free restarts.
+3. **Adopted discovery printers are not persisted**: after a restart they are candidates
+   again. Persist adoptions like operator edits (the store already has the table pattern).

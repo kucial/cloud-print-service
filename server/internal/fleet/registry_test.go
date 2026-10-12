@@ -248,3 +248,31 @@ func TestOperatorEditsSurviveAgentReRegistration(t *testing.T) {
 		t.Fatalf("fresh facts from the agent must still apply, model=%q", got.Model)
 	}
 }
+
+// Edits are handed to the store merged, and restored onto a printer claimed after a
+// restart — whichever source claims it.
+func TestOperatorEditsArePersistedAndRestored(t *testing.T) {
+	r := NewRegistry()
+	var saved = map[string]MetadataPatch{}
+	r.OnOverrideSaved(func(id string, p MetadataPatch) { saved[id] = p })
+	if err := r.Upsert(SourceAgent, "pc7", spec("pc7-usb-1", "wh1", "10.0.0.7", 19390)); err != nil {
+		t.Fatal(err)
+	}
+	size, name := "60x40mm", "Dock printer"
+	_, _ = r.UpdateMetadata("pc7-usb-1", MetadataPatch{PaperSize: &size})
+	_, _ = r.UpdateMetadata("pc7-usb-1", MetadataPatch{Name: &name})
+	if p := saved["pc7-usb-1"]; p.PaperSize == nil || *p.PaperSize != size || p.Name == nil || *p.Name != name {
+		t.Fatalf("store must get every edit, merged: %+v", p)
+	}
+
+	// restart: a fresh registry, edits loaded from the store, the agent re-registers
+	r2 := NewRegistry()
+	r2.LoadOverrides(saved)
+	if err := r2.Upsert(SourceAgent, "pc7", spec("pc7-usb-1", "wh1", "10.0.0.7", 19390)); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r2.Get("pc7-usb-1")
+	if got.PaperSize != size || got.Name != name || got.MediaWidthMM != 60 {
+		t.Fatalf("edits not restored after restart: %+v", got)
+	}
+}
