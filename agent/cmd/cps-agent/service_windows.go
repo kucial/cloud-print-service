@@ -175,10 +175,17 @@ func (h *handler) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<
 	}
 }
 
-// restrictToOwner limits the config — it holds the agent credential — to SYSTEM and
-// Administrators. SIDs, not names, so it works on localized Windows too.
+// restrictToOwner limits the config — it holds the agent credential — to SYSTEM (the
+// service), Administrators, and the account running the agent now. Without that last
+// entry an agent enrolled from a non-elevated prompt locks itself out of the file it
+// just wrote, and cannot save the credential the server exchanges on first contact.
+// SIDs, not names, so it works on localized Windows too.
 func restrictToOwner(path string) error {
-	sd, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;SY)(A;;FA;;;BA)")
+	sddl := "D:P(A;;FA;;;SY)(A;;FA;;;BA)"
+	if user, err := windows.GetCurrentProcessToken().GetTokenUser(); err == nil {
+		sddl += "(A;;FA;;;" + user.User.Sid.String() + ")"
+	}
+	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
 		return err
 	}
