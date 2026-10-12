@@ -76,12 +76,19 @@ jobs:
           go build -o /tmp/cps ./server/cmd/cps
           go build -o /tmp/vprint ./vprint/cmd/vprint
 
-          /tmp/vprint -count 2 -id sim -base-port 19100 -base-admin-port 19200 -render >/tmp/vprint.log 2>&1 &
-          sleep 2
+          # Wait for a URL instead of sleeping a fixed time; on timeout show the log.
+          wait_for() {
+            for _ in $(seq 1 30); do curl -fsS -o /dev/null "$1" 2>/dev/null && return 0; sleep 1; done
+            echo "timed out waiting for $1"; cat "$2"; return 1
+          }
 
-          # Point the example fleet at the virtual printers (they share the -id prefix,
-          # so both sim-* and wh1-* entries land on the two vprint ports).
+          /tmp/vprint -count 2 -id sim -base-port 19100 -base-admin-port 19200 -render >/tmp/vprint.log 2>&1 &
+          wait_for http://localhost:19200/ /tmp/vprint.log
+
+          # Run the example config on :18080 with its sim-* printers on the two vprint
+          # ports. The other example printers stay unreachable, which flow.sh tolerates.
           jq --argjson p1 19100 --argjson p2 19101 '
+            .addr = ":18080" |
             .printers |= map(
               if .printer_id == "sim-pack-01" then .port = $p1
               elif .printer_id == "sim-pack-02" then .port = $p2
@@ -89,8 +96,7 @@ jobs:
           ' server/config.example.json > /tmp/ci.json
 
           /tmp/cps -config /tmp/ci.json >/tmp/cps.log 2>&1 &
-          sleep 2
-          curl -sS -o /dev/null http://localhost:18080/healthz
+          wait_for http://localhost:18080/healthz /tmp/cps.log
           VPRINT_ADMIN=http://localhost:19200 ./examples/flow.sh http://localhost:18080 \
             dev-key-ops-0123456789abcdef
 
