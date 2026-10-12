@@ -1,5 +1,6 @@
 import {
   FleetStatusResponse,
+  BulkJobStatusResponse,
   Printer,
   Job,
   Agent,
@@ -111,13 +112,16 @@ export const api = {
       method: id ? 'GET' : 'POST',
     }),
 
-  getJobs: (limit = 50, printerId?: string, state?: string) => {
+  getJobs: (limit = 50, printerId?: string, state?: string, ids?: string[]) => {
     const q = new URLSearchParams();
     if (limit) q.set('limit', String(limit));
     if (printerId) q.set('printer_id', printerId);
     if (state) q.set('state', state);
-    return request<{ items: Job[]; count: number }>(`/jobs?${q.toString()}`);
+    if (ids && ids.length > 0) q.set('ids', ids.join(','));
+    return request<{ items: Job[]; count: number; summary?: Record<string, number> }>(`/jobs?${q.toString()}`);
   },
+  getBulkJobStatus: (ids: string[]) =>
+    request<BulkJobStatusResponse>(`/jobs/status?ids=${encodeURIComponent(ids.join(','))}`),
   getJobAttempts: (jobId: string) =>
     request<{ items: JobAttempt[]; count: number }>(`/jobs/${jobId}/attempts`),
   cancelJob: (jobId: string) => request<Job>(`/jobs/${jobId}/cancel`, { method: 'POST' }),

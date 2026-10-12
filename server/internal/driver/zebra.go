@@ -253,6 +253,65 @@ func (z *Zebra) Cancel(ctx context.Context) error {
 	return err
 }
 
+// ParseHIResponse parses Zebra ~HI host identification string into structured hardware identity.
+// Standard fields in Zebra ~HI:
+//
+//	 8: Vendor
+//	 9: Model (e.g. "ZT411")
+//	10: Resolution in dpmm or dpi (e.g. "8.0", "12.0", "203", "300")
+//	11: Options / Memory / Installed fonts
+//	12: Serial number
+//	13: Firmware version
+func ParseHIResponse(raw string) (model, serial, firmware string, dpi int, dpmm float64, cjkFont string) {
+	for _, kv := range splitFields(raw) {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(parts[0])
+		v := strings.TrimSpace(parts[1])
+		switch k {
+		case "9":
+			model = v
+		case "12":
+			serial = v
+		case "13":
+			firmware = v
+		case "10":
+			if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+				if f >= 100 {
+					dpi = int(f)
+					dpmm = float64(int((f/25.4)*10+0.5)) / 10
+				} else {
+					dpmm = f
+					switch int(f) {
+					case 8:
+						dpi = 203
+					case 12:
+						dpi = 300
+					case 24:
+						dpi = 600
+					default:
+						dpi = int(f*25.4 + 0.5)
+					}
+				}
+			}
+		case "11":
+			upper := strings.ToUpper(v)
+			if strings.Contains(upper, "SIMSUN") {
+				cjkFont = "SIMSUN.FNT"
+			} else if strings.Contains(upper, "ANSD") || strings.Contains(upper, "ANDALE") {
+				cjkFont = "ANSD.TTF"
+			} else if strings.Contains(upper, "NOTO") {
+				cjkFont = "NotoSansCJK"
+			} else if strings.HasSuffix(upper, ".FNT") || strings.HasSuffix(upper, ".TTF") {
+				cjkFont = v
+			}
+		}
+	}
+	return
+}
+
 // Identify reads model / serial / firmware via ~HI. Used when onboarding a printer.
 func (z *Zebra) Identify(ctx context.Context) (map[string]string, error) {
 	raw, err := z.query(ctx, "~HI", 256)
@@ -260,7 +319,6 @@ func (z *Zebra) Identify(ctx context.Context) (map[string]string, error) {
 		return map[string]string{"raw": raw}, err
 	}
 	out := map[string]string{"raw": strings.TrimSpace(raw)}
-	// Zebra answers ~HI with e.g. ";8=;9=ZT411;10=...;11=...;12=SN;13=FW;"
 	for _, kv := range splitFields(raw) {
 		parts := strings.SplitN(kv, "=", 2)
 		if len(parts) == 2 {
@@ -268,6 +326,27 @@ func (z *Zebra) Identify(ctx context.Context) (map[string]string, error) {
 				out[parts[0]] = v
 			}
 		}
+	}
+	model, serial, fw, dpi, dpmm, cjk := ParseHIResponse(raw)
+	if model != "" {
+		out["model"] = model
+	}
+	if serial != "" {
+		out["serial"] = serial
+	}
+	if fw != "" {
+		out["firmware"] = fw
+	}
+	if dpi > 0 {
+		out["dpi"] = strconv.Itoa(dpi)
+		out["dpmm"] = fmt.Sprintf("%g", dpmm)
+		out["dpi_resolved_from_hi"] = "true"
+		out["resolution_source"] = "hi"
+	}
+	if cjk != "" {
+		out["cjk_font"] = cjk
+		out["font_resolved_from_hi"] = "true"
+		out["font_source"] = "hi"
 	}
 	return out, nil
 }

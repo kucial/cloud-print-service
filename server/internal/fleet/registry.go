@@ -102,22 +102,26 @@ func (r *Registry) UpsertMany(source, sourceRef string, ps []domain.Printer) err
 
 // MetadataPatch specifies user-editable printer attributes.
 type MetadataPatch struct {
-	Name             *string   `json:"name,omitempty"`
-	Site             *string   `json:"site,omitempty"`
-	Remark           *string   `json:"remark,omitempty"`
-	CustomLabel      *string   `json:"custom_label,omitempty"`
-	PaperSize        *string   `json:"paper_size,omitempty"`
-	MediaWidthMM     *float64  `json:"media_width_mm,omitempty"`
-	MediaHeightMM    *float64  `json:"media_height_mm,omitempty"`
-	DPI              *int      `json:"dpi,omitempty"`
-	DPMM             *float64  `json:"dpmm,omitempty"`
-	Orientation      *string   `json:"orientation,omitempty"`
-	MediaOrientation *string   `json:"media_orientation,omitempty"`
-	PrintDirection   *string   `json:"print_direction,omitempty"`
-	CJKSupported     *bool     `json:"cjk_supported,omitempty"`
-	CJKFont          *string   `json:"cjk_font,omitempty"`
-	Fonts            *[]string `json:"fonts,omitempty"`
-	Enabled          *bool     `json:"enabled,omitempty"`
+	Name               *string   `json:"name,omitempty"`
+	Site               *string   `json:"site,omitempty"`
+	Remark             *string   `json:"remark,omitempty"`
+	CustomLabel        *string   `json:"custom_label,omitempty"`
+	PaperSize          *string   `json:"paper_size,omitempty"`
+	MediaWidthMM       *float64  `json:"media_width_mm,omitempty"`
+	MediaHeightMM      *float64  `json:"media_height_mm,omitempty"`
+	DPI                *int      `json:"dpi,omitempty"`
+	DPMM               *float64  `json:"dpmm,omitempty"`
+	ResolutionSource   *string   `json:"resolution_source,omitempty"`
+	DPIResolvedFromHI  *bool     `json:"dpi_resolved_from_hi,omitempty"`
+	Orientation        *string   `json:"orientation,omitempty"`
+	MediaOrientation   *string   `json:"media_orientation,omitempty"`
+	PrintDirection     *string   `json:"print_direction,omitempty"`
+	CJKSupported       *bool     `json:"cjk_supported,omitempty"`
+	CJKFont            *string   `json:"cjk_font,omitempty"`
+	Fonts              *[]string `json:"fonts,omitempty"`
+	FontSource         *string   `json:"font_source,omitempty"`
+	FontResolvedFromHI *bool     `json:"font_resolved_from_hi,omitempty"`
+	Enabled            *bool     `json:"enabled,omitempty"`
 }
 
 // UpdateMetadata updates user-editable metadata (name, site, remark, custom_label, paper_size, dimensions, resolution, CJK font, enabled)
@@ -158,6 +162,12 @@ func (r *Registry) UpdateMetadata(printerID string, patch MetadataPatch) (domain
 		if patch.DPMM != nil {
 			p.DPMM = *patch.DPMM
 		}
+		if patch.ResolutionSource != nil {
+			p.ResolutionSource = *patch.ResolutionSource
+		}
+		if patch.DPIResolvedFromHI != nil {
+			p.DPIResolvedFromHI = *patch.DPIResolvedFromHI
+		}
 		if patch.Orientation != nil {
 			p.Orientation = *patch.Orientation
 		}
@@ -175,6 +185,12 @@ func (r *Registry) UpdateMetadata(printerID string, patch MetadataPatch) (domain
 		}
 		if patch.Fonts != nil {
 			p.Fonts = *patch.Fonts
+		}
+		if patch.FontSource != nil {
+			p.FontSource = *patch.FontSource
+		}
+		if patch.FontResolvedFromHI != nil {
+			p.FontResolvedFromHI = *patch.FontResolvedFromHI
 		}
 		if patch.Enabled != nil {
 			p.Enabled = *patch.Enabled

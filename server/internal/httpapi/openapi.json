@@ -578,6 +578,14 @@
             }
           },
           {
+            "name": "ids",
+            "in": "query",
+            "description": "Comma-separated list of job IDs for bulk status query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "schema": {
@@ -589,6 +597,88 @@
         "responses": {
           "200": {
             "description": "List of jobs"
+          }
+        }
+      }
+    },
+    "/jobs/status": {
+      "get": {
+        "tags": [
+          "Print Jobs"
+        ],
+        "summary": "Bulk Job Status by ID",
+        "description": "Query the status of multiple jobs in a single round trip via comma-separated IDs in the query string.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "required": true,
+            "description": "Comma-separated list of job IDs (e.g. ?ids=job_1,job_2)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bulk job statuses and summary count breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkJobStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Print Jobs"
+        ],
+        "summary": "Bulk Job Status by ID (JSON Payload)",
+        "description": "Query the status of multiple jobs in a single round trip via JSON array payload.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk job statuses and summary count breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkJobStatusResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1720,6 +1810,19 @@
             "type": "number",
             "description": "Print resolution in dots per mm (e.g. 8, 12, 24)"
           },
+          "resolution_source": {
+            "type": "string",
+            "enum": [
+              "hi",
+              "config",
+              "default"
+            ],
+            "description": "Provenance of resolution (hi = verified via hardware ~HI probe, config = declared in config, default = system fallback)"
+          },
+          "dpi_resolved_from_hi": {
+            "type": "boolean",
+            "description": "Whether DPI was verified directly from hardware ~HI query"
+          },
           "orientation": {
             "type": "string",
             "description": "Label orientation (normal, inverted, portrait, landscape)"
@@ -1746,6 +1849,19 @@
               "type": "string"
             },
             "description": "Installed font identifiers"
+          },
+          "font_source": {
+            "type": "string",
+            "enum": [
+              "hi",
+              "config",
+              "default"
+            ],
+            "description": "Provenance of font info (hi = verified via hardware ~HI probe, config = declared in config, default = system fallback)"
+          },
+          "font_resolved_from_hi": {
+            "type": "boolean",
+            "description": "Whether CJK font was verified directly from hardware ~HI query"
           },
           "status": {
             "$ref": "#/components/schemas/PrinterStatus"
@@ -1883,6 +1999,43 @@
             "properties": {
               "self": {
                 "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "BulkJobStatusResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "queued": {
+                "type": "integer"
+              },
+              "sending": {
+                "type": "integer"
+              },
+              "printed": {
+                "type": "integer"
+              },
+              "sent_unknown": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "cancelled": {
+                "type": "integer"
               }
             }
           }

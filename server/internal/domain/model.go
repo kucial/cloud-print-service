@@ -86,16 +86,20 @@ type Printer struct {
 	MediaHeightMM float64 `json:"media_height_mm,omitempty"` // label length/pitch in mm (e.g. 150, 152.4)
 
 	// Print resolution and geometry
-	DPI              int     `json:"dpi,omitempty"`               // dots per inch, e.g. 203, 300, 600
-	DPMM             float64 `json:"dpmm,omitempty"`              // dots per mm, e.g. 8, 12, 24
-	Orientation      string  `json:"orientation,omitempty"`       // "normal" (0°), "inverted" (180°), "portrait", "landscape"
-	MediaOrientation string  `json:"media_orientation,omitempty"` // alias for media feed alignment
-	PrintDirection   string  `json:"print_direction,omitempty"`   // "top_first", "bottom_first", "normal", "reverse"
+	DPI               int     `json:"dpi,omitempty"`               // dots per inch, e.g. 203, 300, 600
+	DPMM              float64 `json:"dpmm,omitempty"`              // dots per mm, e.g. 8, 12, 24
+	ResolutionSource  string  `json:"resolution_source,omitempty"` // "hi" (hardware verified) | "config" (declared) | "default"
+	DPIResolvedFromHI bool    `json:"dpi_resolved_from_hi"`        // true if DPI was verified from ~HI hardware query
+	Orientation       string  `json:"orientation,omitempty"`       // "normal" (0°), "inverted" (180°), "portrait", "landscape"
+	MediaOrientation  string  `json:"media_orientation,omitempty"` // alias for media feed alignment
+	PrintDirection    string  `json:"print_direction,omitempty"`   // "top_first", "bottom_first", "normal", "reverse"
 
 	// CJK (Chinese / Japanese / Korean) font specifications
-	CJKSupported bool     `json:"cjk_supported,omitempty"` // whether printer has CJK font installed
-	CJKFont      string   `json:"cjk_font,omitempty"`      // primary CJK font identifier, e.g. "SIMSUN.FNT", "ANSD.TTF"
-	Fonts        []string `json:"fonts,omitempty"`         // installed/available fonts list, e.g. ["0", "SIMSUN.FNT"]
+	CJKSupported       bool     `json:"cjk_supported,omitempty"` // whether printer has CJK font installed
+	CJKFont            string   `json:"cjk_font,omitempty"`      // primary CJK font identifier, e.g. "SIMSUN.FNT", "ANSD.TTF"
+	Fonts              []string `json:"fonts,omitempty"`         // installed/available fonts list, e.g. ["0", "SIMSUN.FNT"]
+	FontSource         string   `json:"font_source,omitempty"`   // "hi" (hardware verified) | "config" (declared) | "default"
+	FontResolvedFromHI bool     `json:"font_resolved_from_hi"`   // true if font was verified from ~HI hardware query
 
 	// Live fields, filled by the printer manager.
 	Usable     bool   `json:"usable"`
@@ -235,6 +239,18 @@ func (p *Printer) Normalize() {
 			p.DPI = int(p.DPMM*25.4 + 0.5)
 		}
 	}
+	if p.ResolutionSource == "" {
+		if p.DPIResolvedFromHI {
+			p.ResolutionSource = "hi"
+		} else if p.DPI > 0 || p.DPMM > 0 {
+			p.ResolutionSource = "config"
+		} else {
+			p.ResolutionSource = "default"
+		}
+	}
+	if p.DPIResolvedFromHI {
+		p.ResolutionSource = "hi"
+	}
 
 	// 2. Paper Size & Physical Dimensions (mm unit support)
 	if p.PaperSize != "" {
@@ -283,6 +299,18 @@ func (p *Printer) Normalize() {
 		if !found {
 			p.Fonts = append(p.Fonts, p.CJKFont)
 		}
+	}
+	if p.FontSource == "" {
+		if p.FontResolvedFromHI {
+			p.FontSource = "hi"
+		} else if p.CJKFont != "" || len(p.Fonts) > 0 {
+			p.FontSource = "config"
+		} else {
+			p.FontSource = "default"
+		}
+	}
+	if p.FontResolvedFromHI {
+		p.FontSource = "hi"
 	}
 }
 

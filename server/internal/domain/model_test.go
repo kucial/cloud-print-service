@@ -68,6 +68,28 @@ func TestPrinterNormalize(t *testing.T) {
 	if p1.PrintDirection != "top_first" {
 		t.Errorf("expected top_first print direction, got %q", p1.PrintDirection)
 	}
+	if p1.ResolutionSource != "config" || p1.DPIResolvedFromHI != false {
+		t.Errorf("expected config resolution source without HI verification")
+	}
+	if p1.FontSource != "config" || p1.FontResolvedFromHI != false {
+		t.Errorf("expected config font source without HI verification")
+	}
+
+	// 1b. ~HI verified printer
+	p1HI := Printer{
+		PrinterID:          "test-1-hi",
+		DPI:                300,
+		DPIResolvedFromHI:  true,
+		CJKFont:            "ANSD.TTF",
+		FontResolvedFromHI: true,
+	}
+	p1HI.Normalize()
+	if p1HI.ResolutionSource != "hi" || !p1HI.DPIResolvedFromHI {
+		t.Errorf("expected hi resolution source")
+	}
+	if p1HI.FontSource != "hi" || !p1HI.FontResolvedFromHI {
+		t.Errorf("expected hi font source")
+	}
 
 	// 2. DPMM -> DPI & 4x6 paper size
 	p2 := Printer{

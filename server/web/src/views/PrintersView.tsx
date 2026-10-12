@@ -206,12 +206,20 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                           <span className="text-muted text-xs">—</span>
                         )}
                         <div className="flex items-center gap-1 flex-wrap">
-                          <span className="badge-pill text-xs font-mono" style={{ fontSize: '10px', padding: '1px 5px' }}>
-                            {p.dpi || 203} DPI
+                          <span
+                            className={`badge-pill text-xs font-mono ${p.dpi_resolved_from_hi ? 'badge-ok' : ''}`}
+                            style={{ fontSize: '10px', padding: '1px 5px' }}
+                            title={p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
+                          >
+                            {p.dpi || 203} DPI {p.dpi_resolved_from_hi ? '✓~HI' : ''}
                           </span>
                           {(p.cjk_supported || p.cjk_font) && (
-                            <span className="badge-pill badge-primary text-xs font-mono" style={{ fontSize: '10px', padding: '1px 5px' }} title={p.cjk_font || 'CJK Supported'}>
-                              中 {p.cjk_font || 'CJK'}
+                            <span
+                              className={`badge-pill text-xs font-mono ${p.font_resolved_from_hi ? 'badge-ok' : 'badge-primary'}`}
+                              style={{ fontSize: '10px', padding: '1px 5px' }}
+                              title={`${p.cjk_font || 'CJK'} (${p.font_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')})`}
+                            >
+                              中 {p.cjk_font || 'CJK'} {p.font_resolved_from_hi ? '✓~HI' : ''}
                             </span>
                           )}
                         </div>
@@ -720,8 +728,11 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
               </div>
               <div className="detail-item">
                 <span className="detail-label">{t('dpi_label')}</span>
-                <span className="detail-val font-mono">
-                  {p.dpi || 203} DPI ({p.dpmm || 8} dpmm)
+                <span className="detail-val font-mono flex items-center gap-1.5 flex-wrap">
+                  <span>{p.dpi || 203} DPI ({p.dpmm || 8} dpmm)</span>
+                  <span className={`badge-pill text-xs ${p.dpi_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}>
+                    {p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
+                  </span>
                 </span>
               </div>
               <div className="detail-item">
@@ -732,13 +743,18 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
               </div>
               <div className="detail-item">
                 <span className="detail-label">{t('cjk_font_label')}</span>
-                <span className="detail-val text-sm font-mono">
+                <span className="detail-val text-sm font-mono flex items-center gap-1.5 flex-wrap">
                   {p.cjk_font ? (
                     <span className="badge-pill badge-primary">中 {p.cjk_font}</span>
                   ) : p.cjk_supported ? (
                     <span className="badge-pill badge-ok">CJK Ready</span>
                   ) : (
                     '—'
+                  )}
+                  {(p.cjk_font || p.cjk_supported) && (
+                    <span className={`badge-pill text-xs ${p.font_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}>
+                      {p.font_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
+                    </span>
                   )}
                 </span>
               </div>

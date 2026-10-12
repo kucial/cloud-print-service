@@ -109,6 +109,17 @@ func (p MDNS) Scan(ctx context.Context) ([]Found, error) {
 				if ierr == nil {
 					f.Model, f.Serial, f.Vendor = id.Model, id.Serial, id.Vendor
 					f.Detail["identified"] = "true"
+					if id.DPI > 0 {
+						f.Detail["dpi"] = strconv.Itoa(id.DPI)
+						f.Detail["dpmm"] = fmt.Sprintf("%g", id.DPMM)
+						f.Detail["dpi_resolved_from_hi"] = "true"
+						f.Detail["resolution_source"] = "hi"
+					}
+					if id.CJKFont != "" {
+						f.Detail["cjk_font"] = id.CJKFont
+						f.Detail["font_resolved_from_hi"] = "true"
+						f.Detail["font_source"] = "hi"
+					}
 				} else {
 					// Not answering `~HI` on the advertised port: keep it as an unverified
 					// sighting, clearly labelled so an operator can judge.
@@ -255,9 +266,12 @@ func hostOf(e dnssd.BrowseEntry) string {
 
 // identity is what a device says it is.
 type identity struct {
-	Vendor string
-	Model  string
-	Serial string
+	Vendor  string
+	Model   string
+	Serial  string
+	DPI     int
+	DPMM    float64
+	CJKFont string
 }
 
 // identify asks a device for `~HI` and parses the model/serial fields.
@@ -305,6 +319,34 @@ func identify(p prCtx, logf func(string, ...any)) (identity, error) {
 			id.Serial = strings.TrimSpace(parts[1])
 		case "8":
 			id.Vendor = strings.TrimSpace(parts[1])
+		case "10":
+			if f, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64); err == nil && f > 0 {
+				if f >= 100 {
+					id.DPI = int(f)
+					id.DPMM = float64(int((f/25.4)*10+0.5)) / 10
+				} else {
+					id.DPMM = f
+					switch int(f) {
+					case 8:
+						id.DPI = 203
+					case 12:
+						id.DPI = 300
+					case 24:
+						id.DPI = 600
+					default:
+						id.DPI = int(f*25.4 + 0.5)
+					}
+				}
+			}
+		case "11":
+			upper := strings.ToUpper(strings.TrimSpace(parts[1]))
+			if strings.Contains(upper, "SIMSUN") {
+				id.CJKFont = "SIMSUN.FNT"
+			} else if strings.Contains(upper, "ANSD") || strings.Contains(upper, "ANDALE") {
+				id.CJKFont = "ANSD.TTF"
+			} else if strings.Contains(upper, "NOTO") {
+				id.CJKFont = "NotoSansCJK"
+			}
 		}
 	}
 	if id.Model == "" && id.Serial == "" {

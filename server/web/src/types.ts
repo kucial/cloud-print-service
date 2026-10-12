@@ -45,12 +45,16 @@ export interface Printer {
   media_height_mm?: number;
   dpi?: number;
   dpmm?: number;
+  resolution_source?: 'hi' | 'config' | 'default';
+  dpi_resolved_from_hi?: boolean;
   orientation?: string;
   media_orientation?: string;
   print_direction?: string;
   cjk_supported?: boolean;
   cjk_font?: string;
   fonts?: string[];
+  font_source?: 'hi' | 'config' | 'default';
+  font_resolved_from_hi?: boolean;
   status: PrinterStatus;
 }
 
@@ -60,6 +64,19 @@ export interface FleetStatusResponse {
   not_usable: number;
   observed_at: string;
   items: Printer[];
+}
+
+export interface BulkJobStatusResponse {
+  items: Job[];
+  count: number;
+  summary: {
+    queued: number;
+    sending: number;
+    printed: number;
+    sent_unknown: number;
+    failed: number;
+    cancelled: number;
+  };
 }
 
 export interface Job {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ type Filter struct {
 	PrinterID  string
 	State      string
 	ExternalID string
+	IDs        []string
 	From       *time.Time
 	To         *time.Time
 	Limit      int
@@ -138,6 +140,44 @@ func (s *MemoryStore) UpdateJob(ctx context.Context, j *domain.Job) error {
 func (s *MemoryStore) ListJobs(ctx context.Context, f Filter) ([]domain.Job, error) {
 	s.mu.RLock()
 	out := []domain.Job{}
+
+	if len(f.IDs) > 0 {
+		for _, id := range f.IDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			j, ok := s.jobs[id]
+			if !ok {
+				continue
+			}
+			if f.ClientID != "" && j.ClientID != f.ClientID {
+				continue
+			}
+			if f.PrinterID != "" && j.PrinterID != f.PrinterID {
+				continue
+			}
+			if f.State != "" && string(j.State) != f.State {
+				continue
+			}
+			if f.ExternalID != "" && j.ExternalID != f.ExternalID {
+				continue
+			}
+			if f.From != nil && j.QueuedAt.Before(*f.From) {
+				continue
+			}
+			if f.To != nil && j.QueuedAt.After(*f.To) {
+				continue
+			}
+			out = append(out, *cloneJob(j))
+		}
+		s.mu.RUnlock()
+		if f.Limit > 0 && len(out) > f.Limit {
+			out = out[:f.Limit]
+		}
+		return out, nil
+	}
+
 	for _, j := range s.jobs {
 		if f.ClientID != "" && j.ClientID != f.ClientID {
 			continue

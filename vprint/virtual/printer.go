@@ -512,8 +512,19 @@ func (p *Printer) parseStatus(buf []byte, isStatus bool) (reply, rest []byte, ok
 	if i := indexOf(buf, "~HI"); i >= 0 {
 		rest = append([]byte(nil), buf[i+3:]...)
 		p.mu.Lock()
-		reply = []byte(fmt.Sprintf(";9=%s;10=10.0;11=%s;12=%s;13=%s;",
-			p.Model, p.addr, p.Serial, p.Firmware))
+		dpmmVal := float64(p.opts.DPMM)
+		if dpmmVal == 0 && p.renderSize.DPMM > 0 {
+			dpmmVal = float64(p.renderSize.DPMM)
+		}
+		if dpmmVal == 0 {
+			dpmmVal = 8.0
+		}
+		fontVal := p.opts.CJKFont
+		if fontVal == "" {
+			fontVal = "STD"
+		}
+		reply = []byte(fmt.Sprintf(";8=Zebra;9=%s;10=%.1f;11=%s;12=%s;13=%s;",
+			p.Model, dpmmVal, fontVal, p.Serial, p.Firmware))
 		p.mu.Unlock()
 		return reply, rest, true
 	}

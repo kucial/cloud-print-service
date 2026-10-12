@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/kucial/cloud-print-service/server/internal/discovery"
@@ -100,6 +101,26 @@ func (s *Server) adoptCandidate(w http.ResponseWriter, r *http.Request) {
 		Orientation: body.Orientation, MediaOrientation: body.MediaOrientation,
 		PrintDirection: body.PrintDirection,
 		CJKSupported:   body.CJKSupported, CJKFont: body.CJKFont, Fonts: body.Fonts,
+	}
+	cand, hasCand := s.mgr.Registry().Candidate(r.PathValue("device_key"))
+	if hasCand && cand.Detail != nil {
+		if p.DPI == 0 && cand.Detail["dpi"] != "" {
+			p.DPI, _ = strconv.Atoi(cand.Detail["dpi"])
+		}
+		if p.DPMM == 0 && cand.Detail["dpmm"] != "" {
+			p.DPMM, _ = strconv.ParseFloat(cand.Detail["dpmm"], 64)
+		}
+		if cand.Detail["dpi_resolved_from_hi"] == "true" {
+			p.DPIResolvedFromHI = true
+			p.ResolutionSource = "hi"
+		}
+		if p.CJKFont == "" && cand.Detail["cjk_font"] != "" {
+			p.CJKFont = cand.Detail["cjk_font"]
+		}
+		if cand.Detail["font_resolved_from_hi"] == "true" {
+			p.FontResolvedFromHI = true
+			p.FontSource = "hi"
+		}
 	}
 	p.Normalize()
 	if err := s.mgr.Registry().AdoptCandidate(r.PathValue("device_key"), fleet.SourceDiscovery, "", p); err != nil {

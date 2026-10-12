@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -529,5 +530,52 @@ func TestSubmitJobWithPageCopies(t *testing.T) {
 	pc, ok := getReply["page_copies"].([]any)
 	if !ok || len(pc) != 2 || pc[0].(float64) != 4 || pc[1].(float64) != 1 {
 		t.Fatalf("unexpected page_copies: %+v", getReply["page_copies"])
+	}
+}
+
+func TestBulkJobStatusQuery(t *testing.T) {
+	ts := newTestServer(t, mockSpec("p1", &domain.MockCfg{State: "idle"}))
+
+	// Submit 3 jobs
+	_, r1 := do(t, ts, "POST", "/api/v1/jobs", erpKey, `{"printer_id":"p1","external_id":"bulk-1","zpl":"^XA^FD1^FS^XZ"}`)
+	_, r2 := do(t, ts, "POST", "/api/v1/jobs", erpKey, `{"printer_id":"p1","external_id":"bulk-2","zpl":"^XA^FD2^FS^XZ"}`)
+	_, r3 := do(t, ts, "POST", "/api/v1/jobs", erpKey, `{"printer_id":"p1","external_id":"bulk-3","zpl":"^XA^FD3^FS^XZ"}`)
+	id1, id2, id3 := r1["job_id"].(string), r2["job_id"].(string), r3["job_id"].(string)
+
+	// 1. GET /jobs?ids=id1,id2,id3
+	resp, body := do(t, ts, "GET", "/api/v1/jobs?ids="+id1+","+id2+","+id3, erpKey, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	items := body["items"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("expected 3 jobs, got %d", len(items))
+	}
+	if body["summary"] == nil {
+		t.Fatalf("expected summary in response")
+	}
+
+	// 2. GET /jobs/status?ids=id1,id2
+	resp, body = do(t, ts, "GET", "/api/v1/jobs/status?ids="+id1+","+id2, erpKey, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	items = body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(items))
+	}
+
+	// 3. POST /jobs/status with JSON body
+	postBody := fmt.Sprintf(`{"ids":["%s"]}`, id2)
+	resp, body = do(t, ts, "POST", "/api/v1/jobs/status", erpKey, postBody)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	items = body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(items))
+	}
+	if items[0].(map[string]any)["job_id"] != id2 {
+		t.Fatalf("expected job_id %s, got %v", id2, items[0].(map[string]any)["job_id"])
 	}
 }

@@ -68,6 +68,8 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("POST /api/v1/jobs/raw", s.submitRawJob)
 	apiMux.HandleFunc("POST /api/v1/jobs/batch", s.submitBatch)
 	apiMux.HandleFunc("GET /api/v1/jobs", s.listJobs)
+	apiMux.HandleFunc("GET /api/v1/jobs/status", s.bulkJobStatus)
+	apiMux.HandleFunc("POST /api/v1/jobs/status", s.bulkJobStatus)
 	apiMux.HandleFunc("GET /api/v1/jobs/{job_id}", s.getJob)
 	apiMux.HandleFunc("POST /api/v1/jobs/{job_id}/cancel", s.cancelJob)
 	apiMux.HandleFunc("POST /api/v1/jobs/{job_id}/resolve", s.resolveJob)
@@ -299,6 +301,37 @@ func (s *Server) identify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"printer_id": p.ID(), "info": info, "error": err.Error()})
 		return
 	}
+
+	// Update printer metadata with ~HI hardware-verified resolution and CJK font
+	patch := fleet.MetadataPatch{}
+	if dpiStr, ok := info["dpi"]; ok {
+		if dpiVal, err := strconv.Atoi(dpiStr); err == nil && dpiVal > 0 {
+			dpiHI := true
+			resSrc := "hi"
+			patch.DPI = &dpiVal
+			patch.DPIResolvedFromHI = &dpiHI
+			patch.ResolutionSource = &resSrc
+			if dpmmStr, ok := info["dpmm"]; ok {
+				if dpmmVal, err := strconv.ParseFloat(dpmmStr, 64); err == nil && dpmmVal > 0 {
+					patch.DPMM = &dpmmVal
+				}
+			}
+		}
+	}
+	if font, ok := info["cjk_font"]; ok && font != "" {
+		fontHI := true
+		fontSrc := "hi"
+		cjkSupp := true
+		patch.CJKFont = &font
+		patch.CJKSupported = &cjkSupp
+		patch.FontResolvedFromHI = &fontHI
+		patch.FontSource = &fontSrc
+	}
+	if patch.DPI != nil || patch.CJKFont != nil {
+		_, _ = s.mgr.Registry().UpdateMetadata(p.ID(), patch)
+		_ = s.mgr.Sync(r.Context())
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"printer_id": p.ID(), "info": info})
 }
 
@@ -505,6 +538,12 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 		ExternalID: q.Get("external_id"),
 		Limit:      intParam(r, "limit", 50),
 	}
+	if idsStr := q.Get("ids"); idsStr != "" {
+		f.IDs = splitCSV(idsStr)
+		if f.Limit < len(f.IDs) {
+			f.Limit = len(f.IDs)
+		}
+	}
 	f.From, _ = timeParam(q.Get("from"))
 	f.To, _ = timeParam(q.Get("to"))
 	items, err := s.jobs.List(r.Context(), f)
@@ -512,7 +551,57 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
+	res := map[string]any{"items": items, "count": len(items)}
+	if len(f.IDs) > 0 {
+		summary := map[string]int{
+			"queued": 0, "sending": 0, "printed": 0, "sent_unknown": 0, "failed": 0, "cancelled": 0,
+		}
+		for _, j := range items {
+			summary[string(j.State)]++
+		}
+		res["summary"] = summary
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) bulkJobStatus(w http.ResponseWriter, r *http.Request) {
+	var ids []string
+	if r.Method == http.MethodPost {
+		var body struct {
+			IDs []string `json:"ids"`
+		}
+		if err := decodeJSON(r, &body); err == nil && len(body.IDs) > 0 {
+			ids = body.IDs
+		}
+	}
+	if len(ids) == 0 {
+		ids = splitCSV(r.URL.Query().Get("ids"))
+	}
+	limit := len(ids)
+	if limit < 100 {
+		limit = 100
+	}
+	f := store.Filter{
+		ClientID: ClientFrom(r.Context()).ID,
+		IDs:      ids,
+		Limit:    limit,
+	}
+	items, err := s.jobs.List(r.Context(), f)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	summary := map[string]int{
+		"queued": 0, "sending": 0, "printed": 0, "sent_unknown": 0, "failed": 0, "cancelled": 0,
+	}
+	for _, j := range items {
+		summary[string(j.State)]++
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":   items,
+		"count":   len(items),
+		"summary": summary,
+	})
 }
 
 // ----------------------------------------------------------------- events
