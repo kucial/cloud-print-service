@@ -1,0 +1,92 @@
+name: release-agent
+
+# Builds cps-agent for packing PCs. Push a tag like `agent-v0.2.0` to publish a GitHub
+# release; run it manually to get the same files as workflow artifacts only.
+on:
+  push:
+    tags: ["agent-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/agent-v* ]]; then
+            version="${GITHUB_REF_NAME#agent-}"
+          else
+            version="dev-${GITHUB_SHA::7}"
+          fi
+          ext=""; [[ "$GOOS" == windows ]] && ext=".exe"
+          name="cps-agent-${version}-${GOOS}-${GOARCH}"
+          mkdir -p "dist/$name"
+          go build -trimpath -ldflags="-s -w -X main.version=${version}" \
+            -o "dist/$name/cps-agent${ext}" ./agent/cmd/cps-agent
+          printf '%s\n' \
+            "cps-agent ${version} (${GOOS}/${GOARCH})" \
+            "" \
+            "1. On the server:  cpsctl agent enroll --site <site> --id <pc-name>   -> one-time token" \
+            "2. On this PC, from an elevated prompt:" \
+            "     set CPS_AGENT_SERVER=http://<server>:8080" \
+            "     cps-agent.exe -enroll <token> -site <site> -install" \
+            "   Config and credential: %ProgramData%\\cps-agent\\agent.json" \
+            "   Log:                   %ProgramData%\\cps-agent\\agent.log" \
+            "3. Remove:         cps-agent.exe -uninstall" \
+            > "dist/$name/README.txt"
+          cd dist
+          if [[ "$GOOS" == windows ]]; then
+            zip -qr "$name.zip" "$name"
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          rm -rf "$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cps-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    if: startsWith(github.ref, 'refs/tags/agent-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "cps-agent ${GITHUB_REF_NAME#agent-}" --generate-notes

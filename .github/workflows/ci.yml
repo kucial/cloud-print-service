@@ -39,6 +39,12 @@ jobs:
             CGO_ENABLED=0 go build -o /tmp/$b ./server/cmd/$b
           done
           CGO_ENABLED=0 go build -o /tmp/cps-agent ./agent/cmd/cps-agent
+
+      # The agent ships to Windows packing PCs; its service code only compiles there.
+      - name: agent cross-compile (windows)
+        run: |
+          GOOS=windows GOARCH=amd64 go vet ./agent/...
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/cps-agent.exe ./agent/cmd/cps-agent
           for b in vprint zplpng; do
             CGO_ENABLED=0 go build -o /tmp/$b ./vprint/cmd/$b
           done
@@ -87,6 +93,29 @@ jobs:
           curl -sS -o /dev/null http://localhost:18080/healthz
           VPRINT_ADMIN=http://localhost:19200 ./examples/flow.sh http://localhost:18080 \
             dev-key-ops-0123456789abcdef
+
+  agent-windows:
+    name: agent as a Windows service
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Installs the agent as a real service, prints through it to a virtual printer,
+      # then uninstalls. The only place the Windows service code actually runs.
+      - name: build
+        shell: pwsh
+        run: |
+          $bin = "$env:RUNNER_TEMP\bin"
+          go build -o "$bin\cps.exe" ./server/cmd/cps
+          go build -o "$bin\vprint.exe" ./vprint/cmd/vprint
+          go build -o "$bin\cps-agent.exe" ./agent/cmd/cps-agent
+      - name: service smoke
+        shell: pwsh
+        run: ./examples/agent-windows-smoke.ps1 -Bin "$env:RUNNER_TEMP\bin"
 
   render:
     name: render matches published reference

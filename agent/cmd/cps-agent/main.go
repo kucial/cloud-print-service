@@ -14,15 +14,17 @@
 //	cpsctl agent enroll --site wh1 --id pc7-pack01        # → one-time token
 //	cps-agent -config agent.json -enroll <token>
 //
-// On Windows the agent also installs itself as a service:
+// On Windows, enroll and install as a service in one step (elevated prompt):
 //
-//	cps-agent.exe -install -config C:\\ProgramData\\cps-agent\\agent.json
+//	cps-agent.exe -enroll <token> -site wh1 -install
+//	cps-agent.exe -uninstall
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -42,27 +44,37 @@ func main() {
 		site       = flag.String("site", "", "override the site from config")
 		id         = flag.String("id", "", "override the agent id (default: hostname)")
 		listenBase = flag.Int("listen-base", 0, "override the first local port (default: config/base_port)")
-		version    = flag.Bool("version", false, "print version and exit")
+		showVer    = flag.Bool("version", false, "print version and exit")
 		install    = flag.Bool("install", false, "Windows: install as a service (requires admin)")
 		uninstall  = flag.Bool("uninstall", false, "Windows: remove the service")
 		service    = flag.Bool("service", false, "internal: run under the Windows service manager")
 	)
 	flag.Parse()
 
-	if *version {
+	if *showVer {
 		fmt.Println("cps-agent", version, runtime.GOOS, runtime.GOARCH)
 		return
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	var logOut io.Writer = os.Stdout
+	if *service {
+		// Under the service manager there is no console; log next to the config instead.
+		f, err := openServiceLog(serviceLogPath(*configPath))
+		if err == nil {
+			defer f.Close()
+			logOut = f
+		}
+	}
+	log := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	// Windows service install/uninstall needs no config and no hardware.
-	if *install || *uninstall {
-		os.Exit(runServiceCommand(log, *install, *configPath))
+	// Uninstall needs no config and no hardware. Install comes after enrollment so the
+	// two can run as one step.
+	if *uninstall {
+		os.Exit(runServiceCommand(log, false, *configPath))
 	}
 
 	cfg, err := loadConfig(*configPath)
-	if err != nil && *enroll == "" {
+	if err != nil && *enroll == "" && !*install {
 		log.Error("cannot load config", "err", err, "hint", "run once with -enroll <token> to create it")
 		os.Exit(1)
 	}
@@ -86,6 +98,9 @@ func main() {
 			os.Exit(1)
 		}
 		log.Info("enrolled", "agent_id", cfg.AgentID, "config", *configPath)
+	}
+	if *install {
+		os.Exit(runServiceCommand(log, true, *configPath))
 	}
 	if cfg.Token == "" {
 		log.Error("no credential: re-run with -enroll <token>")
@@ -123,4 +138,18 @@ func defaultConfigPath() string {
 		return filepath.Join(os.Getenv("ProgramData"), "cps-agent", "agent.json")
 	}
 	return "/etc/cps-agent/agent.json"
+}
+
+func serviceLogPath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "agent.log")
+}
+
+// maxServiceLog caps the service log; one previous file is kept as agent.log.1.
+const maxServiceLog = 10 << 20
+
+func openServiceLog(path string) (*os.File, error) {
+	if fi, err := os.Stat(path); err == nil && fi.Size() > maxServiceLog {
+		_ = os.Rename(path, path+".1")
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }

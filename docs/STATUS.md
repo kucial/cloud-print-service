@@ -87,7 +87,8 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | **Tier 1 is what ships today** | most Windows packing PCs get a driver TCP share, which needs no privileges at all | measure on real hardware before investing in tier 2 |
 | Postgres store | schema exists (`db/schema.sql`), binary uses the memory store | implement `store.Postgres`; issued tokens currently die on restart |
 | mDNS live sweep | see §6 | one machine on the warehouse LAN |
-| Agent auto-update / fleet rollout | Windows service install (`-install`) is stubbed for non-Windows | implement `svc` wiring, firewall rule, SCM reporting |
+| Agent auto-update / fleet rollout | Windows service (`-enroll <token> -install`: SCM, recovery restarts, firewall rule, ACL'd config, `agent.log`) is built and exercised by the `agent-windows` CI job; binaries come from `release-agent.yml` (`agent-v*` tags), unsigned | code-sign the `.exe`; self-update or MSI/Intune rollout |
+| Agent finds printers only at start | no hot-plug rescan; with none found the process exits and the service manager restarts it (30s) | periodic rescan inside `Run` |
 | Job callback to ERP | events are on the bus | expose a webhook |
 
 ---
