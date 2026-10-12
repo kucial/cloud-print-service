@@ -9,6 +9,8 @@ export const zh: Record<TranslationKey, string> = {
   refresh: '刷新',
   auto_refresh: '自动刷新',
   lang_switch: '语言 / Language',
+  theme_light: '切换至浅色模式',
+  theme_dark: '切换至深色模式',
 
   // 卷纸规格横幅
   strip_label: '已装载卷纸打印机列表',

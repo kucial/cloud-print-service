@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useI18n } from '../i18n/context';
 import { AppConfig } from '../types';
-import { Package, RefreshCw, Languages, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Package, RefreshCw, Languages, Sun, Moon } from 'lucide-react';
+
+const THEME_KEY = 'demo_web.theme';
 
 interface HeaderProps {
   config: AppConfig | null;
@@ -21,6 +23,20 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
 }) => {
   const { t, locale, toggleLocale } = useI18n();
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    const saved = (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'dark';
+    setTheme(saved);
+    document.documentElement.dataset.theme = saved;
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem(THEME_KEY, next);
+    document.documentElement.dataset.theme = next;
+  };
 
   return (
     <header className="topbar">
@@ -74,6 +90,15 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Languages size={14} />
           <span>{locale === 'zh-Hans' ? '简中' : 'EN'}</span>
+        </button>
+
+        {/* Theme Switch */}
+        <button
+          className="btn btn-sm btn-icon"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? t('theme_light') : t('theme_dark')}
+        >
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
       </div>
     </header>

@@ -7,6 +7,8 @@ export const en = {
   refresh: 'Refresh',
   auto_refresh: 'Auto',
   lang_switch: 'Language / 语言',
+  theme_light: 'Switch to light mode',
+  theme_dark: 'Switch to dark mode',
 
   // Rolls Strip
   strip_label: 'Installed Printer Rolls',
