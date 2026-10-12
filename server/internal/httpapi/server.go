@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/pkg/render"
 	"github.com/kucial/cloud-print-service/server/internal/discovery"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
@@ -276,9 +277,8 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 	if external == "" {
 		external = fmt.Sprintf("test-%s-%d", p.ID(), time.Now().Unix())
 	}
-	zpl := fmt.Sprintf("^XA^CI28^FO40,40^A0N,50,50^FDCloudPrintService OK^FS"+
-		"^FO40,110^A0N,30,30^FDprinter: %s^FS^FO40,150^A0N,30,30^FD%s^FS^XZ",
-		p.Spec().Name, time.Now().Format("2006-01-02 15:04:05"))
+	geo := testLabelSize(r.Context(), p)
+	zpl := testLabelZPL(p.Spec().Name, geo, time.Now())
 	j, replayed, err := s.jobs.Submit(r.Context(), job.SubmitRequest{
 		ClientID: ClientFrom(r.Context()).ID, PrinterID: p.ID(),
 		ExternalID: external, ZPL: zpl, BizRef: "test", Priority: "high",
@@ -287,7 +287,10 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 		s.writeJobErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, jobAccepted(j, replayed))
+	out := jobAccepted(j, replayed)
+	out["label"] = map[string]any{"width_mm": geo.WidthMM, "height_mm": geo.HeightMM,
+		"dpi": printer.DPIFromDPMM(geo.DPMM), "size_source": geo.Source}
+	writeJSON(w, http.StatusAccepted, out)
 }
 
 func (s *Server) identify(w http.ResponseWriter, r *http.Request) {
