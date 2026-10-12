@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kucial/cloud-print-service/server/internal/domain"
+	"github.com/kucial/cloud-print-service/pkg/agentapi"
 )
 
 // Config is the agent's on-disk state. Created on first enrollment.
@@ -139,7 +139,7 @@ type Backend interface {
 // error means the caller must NOT retry — the same contract the network driver has.
 type Sink interface {
 	Write(ctx context.Context, p []byte) (int, error)
-	Status(ctx context.Context) (domain.Status, error)
+	Status(ctx context.Context) (agentapi.Status, error)
 	Close() error
 }
 

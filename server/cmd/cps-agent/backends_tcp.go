@@ -15,7 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kucial/cloud-print-service/server/internal/domain"
+	"github.com/kucial/cloud-print-service/pkg/agentapi"
+	"github.com/kucial/cloud-print-service/pkg/printer"
 )
 
 // Tier 1 backend: a driver-provided local TCP share.
@@ -129,11 +130,11 @@ func (s *tcpSink) Write(ctx context.Context, p []byte) (int, error) {
 	return n, err
 }
 
-func (s *tcpSink) Status(ctx context.Context) (domain.Status, error) {
+func (s *tcpSink) Status(ctx context.Context) (agentapi.Status, error) {
 	raw, err := s.share.query(ctx, "^HS")
 	now := time.Now().UTC()
 	if err != nil {
-		return domain.Status{State: domain.StateOffline, ObservedAt: now, Detail: err.Error()}, err
+		return agentapi.Status{State: printer.StateOffline, ObservedAt: now, Detail: err.Error()}, err
 	}
 	return ParseHostStatus(raw, now), nil
 }
@@ -174,8 +175,8 @@ func (s *tcpShare) Identify(ctx context.Context) (model string, serial string, e
 // The table mirrors server/internal/driver's zebra decoder; the agent keeps its own copy so
 // pushing a status from a USB device does not drag the whole driver package (and its
 // sockets) onto the packing PC.
-func ParseHostStatus(raw string, observedAt time.Time) domain.Status {
-	st := domain.Status{Raw: strings.TrimSpace(raw), ObservedAt: observedAt, State: domain.StateUnknown}
+func ParseHostStatus(raw string, observedAt time.Time) agentapi.Status {
+	st := agentapi.Status{Raw: strings.TrimSpace(raw), ObservedAt: observedAt, State: printer.StateUnknown}
 	seg := st.Raw
 	if i := strings.Index(seg, "^HS"); i >= 0 {
 		seg = seg[i+3:]
@@ -198,21 +199,21 @@ func ParseHostStatus(raw string, observedAt time.Time) domain.Status {
 	st.Detail = fmt.Sprintf("device=%d media=%d ribbon=%d head=%d", device, media, ribbon, head)
 	switch {
 	case head == 1:
-		st.State = domain.StateHeadError
+		st.State = printer.StateHeadError
 	case device == 3:
-		st.State = domain.StateError
+		st.State = printer.StateError
 	case ribbon == 2:
-		st.State = domain.StateRibbonOut
+		st.State = printer.StateRibbonOut
 	case media == 2:
-		st.State = domain.StateMediaOut
+		st.State = printer.StateMediaOut
 	case device == 1:
-		st.State = domain.StatePrinting
+		st.State = printer.StatePrinting
 	case device == 2:
-		st.State = domain.StateBusy
+		st.State = printer.StateBusy
 	case media == 1 || ribbon == 1:
-		st.State = domain.StateMediaLow
+		st.State = printer.StateMediaLow
 	default:
-		st.State = domain.StateIdle
+		st.State = printer.StateIdle
 	}
 	return st
 }

@@ -7,40 +7,28 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kucial/cloud-print-service/pkg/printer"
 )
 
-// PrinterState is the coarse, vendor-neutral state of a printer.
-// The raw vendor codes stay available in Status.Raw so decoding can be tuned per model.
-type PrinterState string
+// PrinterState is the coarse, vendor-neutral state of a printer. It lives in pkg/printer
+// so the edge agent can speak it without importing server internals.
+type PrinterState = printer.State
 
 const (
-	StateUnknown   PrinterState = "unknown"
-	StateIdle      PrinterState = "idle"
-	StatePrinting  PrinterState = "printing"
-	StateBusy      PrinterState = "busy"
-	StateMediaLow  PrinterState = "media_low"
-	StateMediaOut  PrinterState = "media_out"
-	StateRibbonLow PrinterState = "ribbon_low"
-	StateRibbonOut PrinterState = "ribbon_out"
-	StateHeadError PrinterState = "head_error"
-	StateError     PrinterState = "error"
-	StateOffline   PrinterState = "offline"
-	StateDisabled  PrinterState = "disabled"
+	StateUnknown   = printer.StateUnknown
+	StateIdle      = printer.StateIdle
+	StatePrinting  = printer.StatePrinting
+	StateBusy      = printer.StateBusy
+	StateMediaLow  = printer.StateMediaLow
+	StateMediaOut  = printer.StateMediaOut
+	StateRibbonLow = printer.StateRibbonLow
+	StateRibbonOut = printer.StateRibbonOut
+	StateHeadError = printer.StateHeadError
+	StateError     = printer.StateError
+	StateOffline   = printer.StateOffline
+	StateDisabled  = printer.StateDisabled
 )
-
-// Activity reports whether the printer state represents an active problem that blocks use.
-func (s PrinterState) BlocksUse() bool {
-	switch s {
-	case StateMediaOut, StateRibbonOut, StateHeadError, StateError, StateOffline, StateDisabled:
-		return true
-	}
-	return false
-}
-
-// Activity reports whether the printer is currently busy producing output.
-func (s PrinterState) Busy() bool {
-	return s == StatePrinting || s == StateBusy
-}
 
 // JobRef is a pointer from a printer to the last job that touched it.
 type JobRef struct {

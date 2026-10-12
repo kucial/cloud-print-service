@@ -6,9 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/agentapi"
 	"github.com/kucial/cloud-print-service/server/internal/config"
-	"github.com/kucial/cloud-print-service/server/internal/domain"
-	"github.com/kucial/cloud-print-service/server/internal/fleet"
 	"github.com/kucial/cloud-print-service/server/internal/token"
 )
 
@@ -24,13 +23,10 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "not_configured", "agent support is not enabled")
 		return
 	}
-	var p fleet.RegisterPayload
+	var p agentapi.RegisterRequest
 	if err := decodeJSON(r, &p); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
 		return
-	}
-	if p.Printers == nil {
-		p.Printers = []domain.Printer{}
 	}
 	agent, err := s.agents.Register(p)
 	if err != nil {
@@ -77,7 +73,7 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
-	var p fleet.HeartbeatPayload
+	var p agentapi.HeartbeatRequest
 	if err := decodeJSON(r, &p); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
 		return
@@ -90,7 +86,7 @@ func (s *Server) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) agentPrinterStatus(w http.ResponseWriter, r *http.Request) {
-	var st domain.Status
+	var st agentapi.Status
 	if err := decodeJSON(r, &st); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
 		return

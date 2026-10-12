@@ -13,7 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kucial/cloud-print-service/server/internal/domain"
+	"github.com/kucial/cloud-print-service/pkg/agentapi"
+	"github.com/kucial/cloud-print-service/pkg/printer"
 )
 
 // agent is the running process: backends for local printers, one TCP listener per
@@ -30,11 +31,11 @@ type agent struct {
 }
 
 type localPrinter struct {
-	domain.Printer
+	agentapi.Printer
 	backend Backend
 	sink    Sink
 	ln      net.Listener
-	status  domain.Status
+	status  agentapi.Status
 }
 
 // query answers a host command (`^HS`, `~HI`) on the printer's control connection and
@@ -98,7 +99,7 @@ func (a *agent) serveLocal(ctx context.Context, backends []Backend) error {
 			continue
 		}
 		p := &localPrinter{
-			Printer: domain.Printer{
+			Printer: agentapi.Printer{
 				PrinterID: id, Name: b.Name(), Site: a.cfg.Site,
 				Driver: "zebra9100", Host: a.cfg.Host, Port: port, Enabled: true,
 				Model: b.Name(),
@@ -227,7 +228,7 @@ func (a *agent) registerAndHeartbeat(ctx context.Context) {
 
 func (a *agent) register(ctx context.Context) error {
 	a.mu.RLock()
-	printers := make([]domain.Printer, 0, len(a.printers))
+	printers := make([]agentapi.Printer, 0, len(a.printers))
 	for _, p := range a.printers {
 		printers = append(printers, p.Printer)
 	}
@@ -236,14 +237,12 @@ func (a *agent) register(ctx context.Context) error {
 		return errors.New("no printers to register")
 	}
 
-	payload := map[string]any{
-		"agent_id": a.cfg.AgentID, "site": a.cfg.Site, "hostname": hostname(),
-		"os": goRuntime(), "version": version, "agent_addr": a.cfg.Host, "printers": printers,
+	payload := agentapi.RegisterRequest{
+		AgentID: a.cfg.AgentID, Site: a.cfg.Site, Hostname: hostname(),
+		OS: goRuntime(), Version: version, AgentAddr: a.cfg.Host, Printers: printers,
 	}
-	var out struct {
-		Token string `json:"token"` // present only when this was the first registration
-	}
-	if err := a.post(ctx, "/api/v1/agents/register", payload, &out); err != nil {
+	var out agentapi.RegisterResponse // Token is present only on the first registration
+	if err := a.post(ctx, agentapi.PathRegister, payload, &out); err != nil {
 		return err
 	}
 	if out.Token != "" && out.Token != a.cfg.Token {
@@ -262,22 +261,21 @@ func (a *agent) register(ctx context.Context) error {
 }
 
 func (a *agent) heartbeat(ctx context.Context) {
-	statuses := map[string]domain.Status{}
+	statuses := map[string]agentapi.Status{}
 	a.mu.RLock()
 	for id, p := range a.printers {
 		stctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		st, err := p.sink.Status(stctx)
 		cancel()
 		if err != nil {
-			st = domain.Status{State: domain.StateOffline, ObservedAt: time.Now().UTC(), Detail: err.Error()}
+			st = agentapi.Status{State: printer.StateOffline, ObservedAt: time.Now().UTC(), Detail: err.Error()}
 		}
 		statuses[id] = st
 	}
 	a.mu.RUnlock()
 
-	payload := map[string]any{"agent_id": a.cfg.AgentID, "status": statuses}
-	var out map[string]any
-	if err := a.post(ctx, "/api/v1/agents/heartbeat", payload, &out); err != nil {
+	payload := agentapi.HeartbeatRequest{AgentID: a.cfg.AgentID, Status: statuses}
+	if err := a.post(ctx, agentapi.PathHeartbeat, payload, nil); err != nil {
 		a.log.Warn("heartbeat failed", "err", err)
 	}
 }

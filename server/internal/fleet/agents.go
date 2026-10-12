@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/agentapi"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 	"github.com/kucial/cloud-print-service/server/internal/observ"
 )
@@ -43,42 +44,32 @@ func NewAgentRegistry(fleet *Registry, mgr *Manager, log *observ.Log) *AgentRegi
 	return &AgentRegistry{agents: map[string]*Agent{}, fleet: fleet, mgr: mgr, log: log}
 }
 
-// RegisterPayload is what an agent sends when it starts or re-attaches.
-type RegisterPayload struct {
-	AgentID   string           `json:"agent_id"`
-	Site      string           `json:"site"`
-	Hostname  string           `json:"hostname"`
-	OS        string           `json:"os"`
-	Version   string           `json:"version"`
-	AgentAddr string           `json:"agent_addr"` // where the server can reach it
-	Printers  []domain.Printer `json:"printers"`
-}
-
 // Register records an agent and its printers. Printers are claimed under the agent
 // source, so they never shadow a config-declared printer with the same id.
-func (ar *AgentRegistry) Register(p RegisterPayload) (Agent, error) {
+func (ar *AgentRegistry) Register(p agentapi.RegisterRequest) (Agent, error) {
 	if p.AgentID == "" {
 		return Agent{}, fmt.Errorf("agent_id is required")
 	}
 	if p.AgentAddr == "" {
 		return Agent{}, fmt.Errorf("agent_addr is required: the server must be able to reach the agent")
 	}
-	for i := range p.Printers {
-		if p.Printers[i].Enabled == false {
-			p.Printers[i].Enabled = true // an agent only reports printers it can serve
+	printers := make([]domain.Printer, 0, len(p.Printers))
+	for _, ap := range p.Printers {
+		pr := PrinterFromAgent(ap)
+		pr.Enabled = true // an agent only reports printers it can serve
+		if pr.Site == "" {
+			pr.Site = p.Site
 		}
-		if p.Printers[i].Site == "" {
-			p.Printers[i].Site = p.Site
-		}
+		printers = append(printers, pr)
 	}
-	if err := ar.fleet.UpsertMany(SourceAgent, p.AgentID, p.Printers); err != nil {
+	if err := ar.fleet.UpsertMany(SourceAgent, p.AgentID, printers); err != nil {
 		return Agent{}, err
 	}
 	// An agent that re-registers with fewer printers has lost one (unplugged, moved).
 	// Reconcile so a printer the agent no longer reports stops being dispatchable through
 	// it, instead of quietly hanging around.
-	ids := make([]string, 0, len(p.Printers))
-	for _, pr := range p.Printers {
+	ids := make([]string, 0, len(printers))
+	for _, pr := range printers {
 		ids = append(ids, pr.PrinterID)
 	}
 	if removed := ar.fleet.RemoveMissing(SourceAgent, p.AgentID, ids); len(removed) > 0 && ar.log != nil {
@@ -107,12 +98,7 @@ func (ar *AgentRegistry) Register(p RegisterPayload) (Agent, error) {
 
 // Heartbeat refreshes liveness and, when present, status snapshots for the agent's
 // printers. Agents push status on change *and* heartbeat, so a missed event heals.
-type HeartbeatPayload struct {
-	AgentID string                   `json:"agent_id"`
-	Status  map[string]domain.Status `json:"status"` // printer_id -> status
-}
-
-func (ar *AgentRegistry) Heartbeat(p HeartbeatPayload) error {
+func (ar *AgentRegistry) Heartbeat(p agentapi.HeartbeatRequest) error {
 	ar.mu.Lock()
 	a, ok := ar.agents[p.AgentID]
 	if !ok {
@@ -132,13 +118,13 @@ func (ar *AgentRegistry) Heartbeat(p HeartbeatPayload) error {
 		if !owned[printerID] {
 			continue // a heartbeat can only speak for the agent's own printers
 		}
-		ar.mgr.ApplyStatus(printerID, st)
+		ar.mgr.ApplyStatus(printerID, StatusFromAgent(st))
 	}
 	return nil
 }
 
 // Status pushes a single printer status from an agent.
-func (ar *AgentRegistry) Status(agentID, printerID string, st domain.Status) error {
+func (ar *AgentRegistry) Status(agentID, printerID string, st agentapi.Status) error {
 	ar.mu.Lock()
 	a, ok := ar.agents[agentID]
 	if !ok {
@@ -159,7 +145,7 @@ func (ar *AgentRegistry) Status(agentID, printerID string, st domain.Status) err
 		// misbehaving; accepting it would let one agent poison another's printers.
 		return fmt.Errorf("agent %q does not serve printer %q", agentID, printerID)
 	}
-	ar.mgr.ApplyStatus(printerID, st)
+	ar.mgr.ApplyStatus(printerID, StatusFromAgent(st))
 	return nil
 }
 
@@ -219,3 +205,26 @@ func (ar *AgentRegistry) Deregister(id string) []string {
 }
 
 var _ = context.Background
+
+// PrinterFromAgent maps an agent's printer report onto the server model. Live fields
+// stay zero: the manager fills them once the printer is synced.
+func PrinterFromAgent(p agentapi.Printer) domain.Printer {
+	return domain.Printer{
+		PrinterID: p.PrinterID, Name: p.Name, Site: p.Site, Model: p.Model, Driver: p.Driver,
+		Host: p.Host, Port: p.Port, Enabled: p.Enabled, Remark: p.Remark, CustomLabel: p.CustomLabel,
+
+		PaperSize: p.PaperSize, MediaWidthMM: p.MediaWidthMM, MediaHeightMM: p.MediaHeightMM,
+
+		DPI: p.DPI, DPMM: p.DPMM, ResolutionSource: p.ResolutionSource, DPIResolvedFromHI: p.DPIResolvedFromHI,
+		Orientation: p.Orientation, MediaOrientation: p.MediaOrientation, PrintDirection: p.PrintDirection,
+
+		CJKSupported: p.CJKSupported, CJKFont: p.CJKFont, Fonts: p.Fonts,
+		FontSource: p.FontSource, FontResolvedFromHI: p.FontResolvedFromHI,
+	}
+}
+
+// StatusFromAgent maps an agent's status observation onto the server model. Stale and
+// LastJob are the server's own bookkeeping, never taken from an agent.
+func StatusFromAgent(st agentapi.Status) domain.Status {
+	return domain.Status{State: st.State, Raw: st.Raw, Detail: st.Detail, ObservedAt: st.ObservedAt}
+}

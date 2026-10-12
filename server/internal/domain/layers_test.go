@@ -17,22 +17,24 @@ const module = "github.com/kucial/cloud-print-service/"
 
 // layers maps a package (module-relative path) to what it may import from this module.
 var layers = map[string][]string{
-	"server/internal/domain":    {},
+	"server/internal/domain":    {"pkg/printer"},
 	"server/internal/driver":    {"server/internal/domain"},
 	"server/internal/store":     {"server/internal/domain"},
 	"server/internal/observ":    {},
 	"server/internal/config":    {"server/internal/domain"},
 	"server/internal/token":     {"server/internal/domain"},
-	"server/internal/fleet":     {"server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/observ"},
+	"server/internal/fleet":     {"server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/observ", "pkg/agentapi"},
 	"server/internal/job":       {"server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/fleet", "server/internal/observ"},
 	"server/internal/discovery": {"server/internal/domain", "server/internal/fleet"},
 	"server/internal/httpapi": {
 		"server/internal/domain", "server/internal/driver", "server/internal/fleet", "server/internal/job",
 		"server/internal/store", "server/internal/token", "server/internal/observ", "server/internal/config",
-		"server/internal/discovery", "server/web", "pkg/render",
+		"server/internal/discovery", "server/web", "pkg/render", "pkg/agentapi",
 	},
 	"server/web":     {},
 	"pkg/render":     {},
+	"pkg/printer":    {},
+	"pkg/agentapi":   {"pkg/printer"},
 	"vprint/virtual": {"pkg/render"},
 }
 
@@ -82,9 +84,12 @@ func packagesUnder(t *testing.T, rel string) []string {
 	return out
 }
 
+// domain may share leaf vocabulary from pkg/ (printer states) but nothing of the server.
 func TestDomainHasNoInternalDependencies(t *testing.T) {
-	if deps := imports(t, "server/internal/domain"); len(deps) != 0 {
-		t.Fatalf("domain must import nothing internal, got %v", deps)
+	for _, dep := range imports(t, "server/internal/domain") {
+		if !strings.HasPrefix(dep, "pkg/") {
+			t.Errorf("domain must import nothing internal, got %s", dep)
+		}
 	}
 }
 
