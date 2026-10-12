@@ -444,7 +444,7 @@
         "tags": [
           "Fleet Visibility"
         ],
-        "summary": "Printer Diagnostics (~HI, ~HS, ^HH)",
+        "summary": "Printer Diagnostics (~HI, ~HS, ^HH, ^HW)",
         "description": "Asks the printer how it is actually set up — identity, live status and its configuration dump (print width, label pitch, resolution, darkness, media type, offsets) — and lists warnings where that disagrees with the declared spec, such as a different roll width or resolution. Read-only: nothing is printed. Admin only.\n",
         "security": [
           {
@@ -465,7 +465,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Diagnostics report. A query that failed is listed under `errors` (keys `hi`, `hs`, `hh`) while the others are still reported.\n",
+            "description": "Diagnostics report. A query that failed is listed under `errors` (keys `hi`, `hs`, `hh`, `hw`) while the others are still reported.\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -584,7 +584,10 @@
                               "length_mismatch",
                               "dpi_mismatch",
                               "offset_set",
-                              "not_zpl"
+                              "direction_undeclared",
+                              "not_zpl",
+                              "cjk_font_missing",
+                              "cjk_font_undeclared"
                             ]
                           },
                           "message": {
@@ -601,6 +604,22 @@
                     },
                     "raw_config": {
                       "type": "string"
+                    },
+                    "cjk_fonts": {
+                      "type": "array",
+                      "description": "Fonts stored on the printer (^HW) that can print CJK text",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "example": "E:SIMSUN.FNT"
+                          },
+                          "size": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }

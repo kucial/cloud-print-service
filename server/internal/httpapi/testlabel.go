@@ -19,11 +19,42 @@ import (
 //     visible tick is how many mm were cut off — multiply by dots/mm for ^LT / ^LS
 //   - a centre crosshair, a TOP marker and the size/dpi line, to check centring,
 //     feed direction and scale
+//   - a line of Chinese in the printer's CJK font, to check the font prints (blanks
+//     or boxes mean the font or its encoding table is missing)
 
 type testLabelGeometry struct {
 	WidthMM, HeightMM float64
 	DPMM              float64
 	Source            string // declared | printer | default
+}
+
+// testLabelCJK is the font the CJK line uses; Setup maps it to font slot 1.
+type testLabelCJK struct {
+	Font  string // device-qualified, e.g. E:SIMSUN.FNT; "" when the printer has none
+	Setup string
+	Note  string // why there is no CJK line, when Font is ""
+}
+
+// testLabelFont picks the CJK font: the declared one if the printer has it, else the
+// printer's best CJK font (^HW).
+func testLabelFont(ctx context.Context, p *fleet.Printer) testLabelCJK {
+	qctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	raw, err := p.HostDirectory(qctx)
+	cancel()
+	if err != nil {
+		return testLabelCJK{Note: "font list unavailable"}
+	}
+	files := printer.ParseHostDirectory(raw)
+	if want := p.Spec().CJKFont; want != "" {
+		if f, ok := printer.FindFile(files, want); ok {
+			return testLabelCJK{Font: f.Name, Setup: printer.CJKFieldPrefix(f, files)}
+		}
+		return testLabelCJK{Note: "declared " + want + " not installed"}
+	}
+	if cjk := printer.CJKFonts(files); len(cjk) > 0 {
+		return testLabelCJK{Font: cjk[0].Name, Setup: printer.CJKFieldPrefix(cjk[0], files)}
+	}
+	return testLabelCJK{Note: "no CJK font on printer"}
 }
 
 // testLabelSize picks the media to draw for: what the fleet declares, else what the
@@ -57,7 +88,7 @@ func testLabelSize(ctx context.Context, p *fleet.Printer) testLabelGeometry {
 	return g
 }
 
-func testLabelZPL(name string, g testLabelGeometry, now time.Time) string {
+func testLabelZPL(name string, g testLabelGeometry, cjk testLabelCJK, now time.Time) string {
 	d := func(mm float64) int { return int(mm*g.DPMM + 0.5) }
 	w, h := d(g.WidthMM), d(g.HeightMM)
 	m := d(1) // border inset
@@ -79,14 +110,16 @@ func testLabelZPL(name string, g testLabelGeometry, now time.Time) string {
 		}
 		return d(1.2)
 	}
-	for mm := 0; float64(mm) <= g.WidthMM*0.6; mm++ {
+	// Offsets are a few mm, so 20 mm of ruler is plenty and keeps the label small.
+	rulerX, rulerY := min(g.WidthMM*0.6, 20), min(g.HeightMM*0.6, 20)
+	for mm := 0; float64(mm) <= rulerX; mm++ {
 		x := d(float64(mm))
 		f("^FO%d,0^GB1,%d,2^FS", x, tick(mm))
 		if mm%5 == 0 && mm > 0 {
 			f("^FO%d,%d^A0N,%d,%d^FD%d^FS", x-small/4, d(2.8), small, small*3/4, mm)
 		}
 	}
-	for mm := 0; float64(mm) <= g.HeightMM*0.6; mm++ {
+	for mm := 0; float64(mm) <= rulerY; mm++ {
 		y := d(float64(mm))
 		f("^FO0,%d^GB%d,1,2^FS", y, tick(mm))
 		if mm%5 == 0 && mm > 0 {
@@ -106,6 +139,17 @@ func testLabelZPL(name string, g testLabelGeometry, now time.Time) string {
 	f("^FO%d,%d^A0N,%d,%d^FD%g x %g mm  %d dpi (%s)^FS", tx, ty+fs+small+10, small, small,
 		g.WidthMM, g.HeightMM, printer.DPIFromDPMM(g.DPMM), g.Source)
 	f("^FO%d,%d^A0N,%d,%d^FD%s^FS", tx, ty+fs+2*small+16, small, small, now.Format("2006-01-02 15:04:05"))
+
+	// CJK check, bottom left, clear of the crosshair. Its font setup comes last so the
+	// ASCII fields above are unaffected.
+	cjkH := max(fs, 24)
+	cy2 := h - m - d(2) - cjkH
+	if cjk.Font != "" {
+		f("^FO%d,%d^A0N,%d,%d^FDCJK %s^FS", tx, cy2-small-6, small, small, cjk.Font)
+		f("%s^FO%d,%d^A1N,%d,%d^FD中文测试 简体 繁體^FS", cjk.Setup, tx, cy2, cjkH, cjkH)
+	} else {
+		f("^FO%d,%d^A0N,%d,%d^FDCJK: %s^FS", tx, cy2, small, small, zplText(cjk.Note))
+	}
 	f("^XZ")
 	return b.String()
 }

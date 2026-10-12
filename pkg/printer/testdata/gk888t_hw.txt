@@ -1,0 +1,72 @@
+
+- DIR *:*.*         
+* E:GB18030.DAT   95760  P                
+* E:SIMSUN.FNT  1668928  P                
+* E:GB.DAT   29780  P                     
+* E:CHS.FNT  2470476  P                   
+* Z:AZTEC.BAR       2  P                  
+* Z:CODE49.BAR   43218  P                 
+* Z:CODABAR.BAR       2  P                
+* Z:CODABLK.BAR       2  P                
+* Z:CODE11.BAR       2  P                 
+* Z:CODE39.BAR       2  P                 
+* Z:CODE93.BAR       2  P                 
+* Z:CODE128.BAR       2  P                
+* Z:EAN-8.BAR       2  P                  
+* Z:EAN-13.BAR       2  P                 
+* Z:0.FNT   45022  P    0                 
+* Z:I2OF5.BAR       2  P                  
+* Z:IDMATRIX.BAR       2  P               
+* Z:IND2OF5.BAR       2  P                
+* Z:LOGMARS.BAR       2  P                
+* Z:MAXICODE.BAR       2  P               
+* Z:MICROPDF.BAR       2  P               
+* Z:MSICODE.BAR       2  P                
+* Z:PLANETCD.BAR       2  P               
+* Z:PLESSEY.BAR       2  P                
+* Z:POSTNET.BAR       2  P                
+* Z:RSS.BAR       2  P                    
+* Z:QRCODE.BAR       2  P                 
+* Z:S2OF5.BAR       2  P                  
+* Z:TLC39.BAR       2  P                  
+* Z:UPC-A.BAR       2  P                  
+* Z:UPC-E.BAR       2  P                  
+* Z:UPC/EAN.BAR       2  P                
+* Z:D.FNT   15028  P    CD                
+* Z:PDF417.BAR       2  P                 
+* Z:A.FNT   11219  P    A                 
+* Z:B.FNT   12126  P    B                 
+* Z:F.FNT   17655  P    F                 
+* Z:G.FNT   54043  P    G                 
+* Z:H6.FNT   11627  P                     
+* Z:H8.FNT   12205  P    H                
+* Z:H12.FNT   15916  P                    
+* Z:H24.FNT   34816  P                    
+* Z:E6.FNT   12900  P                     
+* Z:E8.FNT   15273  P    E                
+* Z:E12.FNT   20071  P                    
+* Z:E24.FNT   51436  P                    
+* Z:P.FNT       2  P    P                 
+* Z:Q.FNT       2  P    Q                 
+* Z:R.FNT       2  P    R                 
+* Z:S.FNT       2  P    S                 
+* Z:T.FNT       2  P    T                 
+* Z:U.FNT       2  P    U                 
+* Z:V.FNT       2  P    V                 
+* Z:EPL1.FNT   19216  P    1              
+* Z:EPL2.FNT   22416  P    2              
+* Z:EPL3.FNT   25616  P    3              
+* Z:EPL4.FNT   32368  P    4              
+* Z:EPL5.FNT   59536  P    5              
+* Z:EPL6.FNT    9996  P    6              
+* Z:EPL7.FNT   10426  P    7              
+* Z:LMx.FNT   11013  P                    
+* Z:LMw.FNT   11013  P                    
+* Z:LMv.FNT   11013  P                    
+* Z:LMy.FNT   22980  P                    
+* Z:LMz.FNT   13840  P                    
+* Z:LMu.FNT   10320  P                    
+
+-   2054496 bytes free R: RAM 
+-   1441598 bytes free E: ONBOARD FLASH 
+

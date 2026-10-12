@@ -278,7 +278,8 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 		external = fmt.Sprintf("test-%s-%d", p.ID(), time.Now().Unix())
 	}
 	geo := testLabelSize(r.Context(), p)
-	zpl := testLabelZPL(p.Spec().Name, geo, time.Now())
+	cjk := testLabelFont(r.Context(), p)
+	zpl := testLabelZPL(p.Spec().Name, geo, cjk, time.Now())
 	j, replayed, err := s.jobs.Submit(r.Context(), job.SubmitRequest{
 		ClientID: ClientFrom(r.Context()).ID, PrinterID: p.ID(),
 		ExternalID: external, ZPL: zpl, BizRef: "test", Priority: "high",
@@ -289,7 +290,8 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 	}
 	out := jobAccepted(j, replayed)
 	out["label"] = map[string]any{"width_mm": geo.WidthMM, "height_mm": geo.HeightMM,
-		"dpi": printer.DPIFromDPMM(geo.DPMM), "size_source": geo.Source}
+		"dpi": printer.DPIFromDPMM(geo.DPMM), "size_source": geo.Source,
+		"cjk_font": cjk.Font, "cjk_note": cjk.Note}
 	writeJSON(w, http.StatusAccepted, out)
 }
 

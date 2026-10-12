@@ -90,6 +90,15 @@ func (m *Mock) HostConfig(ctx context.Context) (string, error) {
 	return printer.SimulatedHostConfig("mock", "n/a", m.spec.DPMM, w, h), nil
 }
 
+// HostDirectory lists the declared CJK font, if any, plus a Latin font.
+func (m *Mock) HostDirectory(ctx context.Context) (string, error) {
+	files := []printer.StoredFile{{Name: "Z:0.FNT", Size: 45022}}
+	if m.spec.CJKFont != "" {
+		files = append(files, printer.StoredFile{Name: "E:" + m.spec.CJKFont, Size: 1668928})
+	}
+	return printer.FormatHostDirectory(files), nil
+}
+
 func (m *Mock) Control(ctx context.Context, cmd string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

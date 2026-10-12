@@ -23,9 +23,10 @@ type diagnosticsReport struct {
 	Identity  *printer.HostID      `json:"identity,omitempty"`
 	Status    *domain.Status       `json:"status,omitempty"`
 	Config    *printer.HostConfig  `json:"config,omitempty"`
+	CJKFonts  []printer.StoredFile `json:"cjk_fonts"` // from ^HW: fonts that can print CJK
 	Declared  declaredMedia        `json:"declared"`
 	Warnings  []diagnosticsWarning `json:"warnings"`
-	Errors    map[string]string    `json:"errors,omitempty"` // per query: hi, hs, hh
+	Errors    map[string]string    `json:"errors,omitempty"` // per query: hi, hs, hh, hw
 	RawID     string               `json:"raw_identity,omitempty"`
 	RawConfig string               `json:"raw_config,omitempty"`
 }
@@ -37,6 +38,7 @@ type declaredMedia struct {
 	DPI           int     `json:"dpi,omitempty"`
 	// Feed direction is physical: no Zebra query reports it, so it is only ever declared.
 	PrintDirection string `json:"print_direction,omitempty"`
+	CJKFont        string `json:"cjk_font,omitempty"`
 }
 
 type diagnosticsWarning struct {
@@ -57,8 +59,9 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 	rep := diagnosticsReport{
 		PrinterID: p.ID(), CheckedAt: time.Now().UTC(), Errors: map[string]string{},
 		Declared: declaredMedia{PaperSize: spec.PaperSize, MediaWidthMM: spec.MediaWidthMM,
-			MediaHeightMM: spec.MediaHeightMM, DPI: spec.DPI, PrintDirection: spec.PrintDirection},
-		Warnings: []diagnosticsWarning{},
+			MediaHeightMM: spec.MediaHeightMM, DPI: spec.DPI, PrintDirection: spec.PrintDirection,
+			CJKFont: spec.CJKFont},
+		Warnings: []diagnosticsWarning{}, CJKFonts: []printer.StoredFile{},
 	}
 
 	if info, err := p.Identify(ctx); err != nil {
@@ -84,7 +87,17 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 			rep.Errors["hh"] = "unrecognised configuration reply"
 		}
 	}
+	var files []printer.StoredFile
+	if raw, err := p.HostDirectory(ctx); err != nil {
+		rep.Errors["hw"] = err.Error()
+	} else {
+		files = printer.ParseHostDirectory(raw)
+		rep.CJKFonts = printer.CJKFonts(files)
+	}
 	rep.Warnings = append(rep.Warnings, compareMedia(rep.Declared, rep.Config, rep.Status)...)
+	if _, failed := rep.Errors["hw"]; !failed {
+		rep.Warnings = append(rep.Warnings, compareFonts(rep.Declared, files, rep.CJKFonts)...)
+	}
 	if len(rep.Errors) == 0 {
 		rep.Errors = nil
 	}
@@ -136,6 +149,22 @@ func compareMedia(d declaredMedia, c *printer.HostConfig, st *domain.Status) []d
 		add("not_zpl", "printer language is %q; ZPL labels may not print", c.Language)
 	}
 	return out
+}
+
+// compareFonts checks the declared CJK font against what the printer actually stores.
+func compareFonts(d declaredMedia, files, cjk []printer.StoredFile) []diagnosticsWarning {
+	switch {
+	case d.CJKFont != "":
+		if _, ok := printer.FindFile(files, d.CJKFont); !ok {
+			return []diagnosticsWarning{{Code: "cjk_font_missing", Message: fmt.Sprintf(
+				"declared CJK font %s is not installed on the printer; Chinese text will print as blanks or boxes",
+				d.CJKFont)}}
+		}
+	case len(cjk) > 0:
+		return []diagnosticsWarning{{Code: "cjk_font_undeclared", Message: fmt.Sprintf(
+			"printer has CJK font %s but none is declared; set cjk_font so labels can use it", cjk[0].Name)}}
+	}
+	return nil
 }
 
 // Maintenance actions change the printer, so they are admin-only, refused while work is

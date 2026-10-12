@@ -371,6 +371,11 @@ func (z *Zebra) HostConfig(ctx context.Context) (string, error) {
 	return z.query(ctx, printer.CmdHostConfig, 16<<10)
 }
 
+// HostDirectory lists the printer's stored objects (^HW), raw.
+func (z *Zebra) HostDirectory(ctx context.Context) (string, error) {
+	return z.query(ctx, printer.CmdHostDirectory, 32<<10)
+}
+
 // Control sends a maintenance command (~JC calibrate, ^LT…^JUS) on the print connection,
 // so it is ordered with label data instead of racing it.
 func (z *Zebra) Control(ctx context.Context, cmd string) error {

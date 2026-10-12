@@ -27,6 +27,8 @@ type Driver interface {
 	Identify(ctx context.Context) (map[string]string, error)
 	// HostConfig returns the printer's configuration dump (^HH), raw.
 	HostConfig(ctx context.Context) (string, error)
+	// HostDirectory lists stored objects (^HW) — fonts, encoding tables — raw.
+	HostDirectory(ctx context.Context) (string, error)
 	// Control sends a maintenance command such as ~JC (calibrate).
 	Control(ctx context.Context, cmd string) error
 	Close() error

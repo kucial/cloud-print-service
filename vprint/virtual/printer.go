@@ -537,6 +537,20 @@ func (p *Printer) parseStatus(buf []byte, isStatus bool) (reply, rest []byte, ok
 	if !isStatus && !strings.HasPrefix(trimmed, "~") {
 		return nil, buf, false
 	}
+	if i := indexOf(buf, "^HW"); i >= 0 {
+		rest = append([]byte(nil), buf[i+3:]...)
+		if j := indexOf(rest, "^XZ"); j >= 0 {
+			rest = rest[j+3:]
+		}
+		p.mu.Lock()
+		files := []printer.StoredFile{{Name: "Z:0.FNT", Size: 45022}}
+		if p.opts.CJKFont != "" {
+			files = append(files, printer.StoredFile{Name: "E:" + p.opts.CJKFont, Size: 1668928})
+		}
+		reply = []byte(printer.FormatHostDirectory(files))
+		p.mu.Unlock()
+		return reply, rest, true
+	}
 	if i := indexOf(buf, "^HH"); i >= 0 {
 		rest = append([]byte(nil), buf[i+3:]...)
 		if j := indexOf(rest, "^XZ"); j >= 0 {
@@ -656,7 +670,7 @@ func (p *Printer) recordLabel(zpl string) {
 func looksLikeStatusQuery(b []byte) bool {
 	s := strings.TrimSpace(string(b))
 	return strings.HasPrefix(s, "~HS") || strings.HasPrefix(s, "^HS") || strings.HasPrefix(s, "~HI") ||
-		strings.HasPrefix(s, "^XA^HH") || strings.HasPrefix(s, "~JA")
+		strings.HasPrefix(s, "^XA^HH") || strings.HasPrefix(s, "^XA^HW") || strings.HasPrefix(s, "~JA")
 }
 
 func indexOf(b []byte, sub string) int {

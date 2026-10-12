@@ -17,7 +17,14 @@ func TestAlignmentLabelRendersAtMediaSize(t *testing.T) {
 		{WidthMM: 60, HeightMM: 40, DPMM: 8, Source: "declared"},
 		{WidthMM: 101.6, HeightMM: 152.4, DPMM: 12, Source: "default"},
 	} {
-		zpl := testLabelZPL("GK888t (USB)", g, time.Date(2026, 10, 12, 23, 0, 0, 0, time.UTC))
+		zpl := testLabelZPL("GK888t (USB)", g, testLabelCJK{Font: "E:SIMSUN.FNT",
+			Setup: "^CW1,E:SIMSUN.FNT^CI28^SEE:GB18030.DAT"}, time.Date(2026, 10, 12, 23, 0, 0, 0, time.UTC))
+		if !strings.Contains(zpl, "^CW1,E:SIMSUN.FNT^CI28^SEE:GB18030.DAT") || !strings.Contains(zpl, "中文") {
+			t.Fatalf("no CJK line: %s", zpl)
+		}
+		if len(zpl) > 4096 {
+			t.Fatalf("%gx%g: test label is %d bytes; keep it small enough for tight payload limits", g.WidthMM, g.HeightMM, len(zpl))
+		}
 		if !strings.Contains(zpl, "^GB") || !strings.HasPrefix(zpl, "^XA") || !strings.HasSuffix(zpl, "^XZ") {
 			t.Fatalf("not a bordered label: %s", zpl)
 		}
@@ -41,5 +48,13 @@ func TestAlignmentLabelRendersAtMediaSize(t *testing.T) {
 func TestZPLTextCannotBreakOutOfAField(t *testing.T) {
 	if got := zplText("a^XZ~JA"); strings.ContainsAny(got, "^~") {
 		t.Fatalf("control characters survived: %q", got)
+	}
+}
+
+func TestAlignmentLabelWithoutCJKFontSaysWhy(t *testing.T) {
+	g := testLabelGeometry{WidthMM: 60, HeightMM: 40, DPMM: 8}
+	zpl := testLabelZPL("p", g, testLabelCJK{Note: "no CJK font on printer"}, time.Now())
+	if strings.Contains(zpl, "^A1") || !strings.Contains(zpl, "CJK: no CJK font on printer") {
+		t.Fatalf("want an ASCII note instead of CJK glyphs: %s", zpl)
 	}
 }

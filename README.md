@@ -206,7 +206,11 @@ cpsctl left-shift <printer-id> 8     # ^LS + ^JUS: shift printing left 8 dots, s
 **Test label:** `POST /printers/{id}/test` prints an alignment target sized to the media —
 a border 1 mm inside every edge and mm rulers from the top and left label edges. A
 clipped border side shows the offset direction; the first visible ruler tick is how
-many mm were lost (× dots/mm = the `label_top` / `left_shift` value).
+many mm were lost (× dots/mm = the `label_top` / `left_shift` value). It also prints a line of
+Chinese in the printer's CJK font (the declared `cjk_font`, else the one the printer
+stores, found with `^HW`); boxes or blanks there mean the font or its encoding table is
+missing. Diagnostics lists the printer's CJK fonts and warns when the declared one is
+not installed.
 
 The panel's printer dialog has the same report and actions under **Printer diagnostics**.
 

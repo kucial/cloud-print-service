@@ -43,7 +43,7 @@ func TestParseHostConfigRealGK888t(t *testing.T) {
 }
 
 func TestHostQueryFraming(t *testing.T) {
-	for _, q := range []string{"~HS", " ~HI", "^XA^HH^XZ", "^HS"} {
+	for _, q := range []string{"~HS", " ~HI", "^XA^HH^XZ", CmdHostDirectory, "^HS"} {
 		if !IsHostQuery(q) {
 			t.Errorf("%q should be a host query", q)
 		}

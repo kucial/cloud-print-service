@@ -310,6 +310,11 @@ func (p *Printer) HostConfig(ctx context.Context) (string, error) {
 	return p.driver().HostConfig(ctx)
 }
 
+// HostDirectory lists the printer's stored objects (^HW).
+func (p *Printer) HostDirectory(ctx context.Context) (string, error) {
+	return p.driver().HostDirectory(ctx)
+}
+
 // Control sends a maintenance command to the printer.
 func (p *Printer) Control(ctx context.Context, cmd string) error {
 	return p.driver().Control(ctx, cmd)

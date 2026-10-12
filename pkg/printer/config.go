@@ -14,7 +14,7 @@ const CmdHostConfig = "^XA^HH^XZ"
 // Everything else on a printer connection is label data and gets no reply.
 func IsHostQuery(data string) bool {
 	s := strings.TrimLeft(data, " \r\n\t")
-	for _, p := range []string{CmdHostStatus, CmdHostID, "^XA^HH", "^HH", "^HS"} {
+	for _, p := range []string{CmdHostStatus, CmdHostID, "^XA^HH", "^HH", "^XA^HW", "^HW", "^HS"} {
 		if strings.HasPrefix(s, p) {
 			return true
 		}
