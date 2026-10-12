@@ -185,7 +185,9 @@ func (z *Zebra) queryOnce(ctx context.Context, cmd string, maxBytes int) (string
 	buf := make([]byte, maxBytes)
 	var acc []byte
 	first := true
-	for i := 0; i < 4; i++ {
+	// Read until the reply is complete (framed replies) or the line goes quiet. Large
+	// replies such as ^HH arrive in many segments.
+	for i := 0; i < 64; i++ {
 		d := z.readTimeout
 		if !first {
 			d = 400 * time.Millisecond // printers often dribble the reply in pieces
@@ -195,7 +197,7 @@ func (z *Zebra) queryOnce(ctx context.Context, cmd string, maxBytes int) (string
 		n, err := z.statusCon.Read(buf)
 		if n > 0 {
 			acc = append(acc, buf[:n]...)
-			if len(acc) >= maxBytes {
+			if len(acc) >= maxBytes || printer.ReplyComplete(cmd, acc) {
 				break
 			}
 		}
@@ -268,7 +270,7 @@ func ParseHIResponse(raw string) (model, serial, firmware string, dpi int, dpmm 
 		// Real firmware: MODEL,Vfirmware,dpmm,memory — no serial, no font list.
 		if id, ok := printer.ParseHostID(raw); ok {
 			model, firmware, dpmm = id.Model, id.Firmware, id.DPMM
-			dpi = dpiFromDPMM(dpmm)
+			dpi = printer.DPIFromDPMM(dpmm)
 		}
 		return
 	}
@@ -364,6 +366,31 @@ func splitFields(s string) []string {
 	return strings.FieldsFunc(s, func(r rune) bool { return r == ';' || r == '\n' || r == '\r' })
 }
 
+// HostConfig returns the printer's ^HH configuration dump, raw.
+func (z *Zebra) HostConfig(ctx context.Context) (string, error) {
+	return z.query(ctx, printer.CmdHostConfig, 16<<10)
+}
+
+// Control sends a maintenance command (~JC calibrate, ^LT…^JUS) on the print connection,
+// so it is ordered with label data instead of racing it.
+func (z *Zebra) Control(ctx context.Context, cmd string) error {
+	z.pmu.Lock()
+	defer z.pmu.Unlock()
+	if z.printCon == nil {
+		c, err := z.dial(ctx)
+		if err != nil {
+			return err
+		}
+		z.printCon = c
+	}
+	_ = z.printCon.SetWriteDeadline(deadlineFor(ctx, z.writeTimeout))
+	if _, err := z.printCon.Write([]byte(cmd)); err != nil {
+		z.dropPrint()
+		return err
+	}
+	return nil
+}
+
 // Close releases both sockets.
 func (z *Zebra) Close() error {
 	z.pmu.Lock()
@@ -380,21 +407,4 @@ func (z *Zebra) Close() error {
 func ParseHostStatus(raw []byte) (domain.Status, bool) {
 	state, detail, ok := printer.ParseHostStatus(string(raw))
 	return domain.Status{Raw: strings.TrimSpace(string(raw)), State: state, Detail: detail}, ok
-}
-
-// dpiFromDPMM maps the dots-per-mm a printer reports to its nominal resolution.
-func dpiFromDPMM(dpmm float64) int {
-	switch int(dpmm) {
-	case 0:
-		return 0
-	case 6:
-		return 152
-	case 8:
-		return 203
-	case 12:
-		return 300
-	case 24:
-		return 600
-	}
-	return int(dpmm*25.4 + 0.5)
 }

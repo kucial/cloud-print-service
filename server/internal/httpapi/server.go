@@ -61,6 +61,8 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/printers/{printer_id}/jobs", s.listPrinterJobs)
 	apiMux.HandleFunc("POST /api/v1/printers/{printer_id}/test", RequireAdmin(s.testPrint))
 	apiMux.HandleFunc("POST /api/v1/printers/{printer_id}/identify", RequireAdmin(s.identify))
+	apiMux.HandleFunc("GET /api/v1/printers/{printer_id}/diagnostics", RequireAdmin(s.diagnostics))
+	apiMux.HandleFunc("POST /api/v1/printers/{printer_id}/maintenance", RequireAdmin(s.maintenance))
 	apiMux.HandleFunc("POST /api/v1/printers/probe", RequireAdmin(s.probeAll))
 
 	// --- dispatch ---------------------------------------------------------

@@ -333,6 +333,29 @@ export const en = {
   metrics_explorer_title: 'Prometheus Metrics Explorer',
   filter_metrics_placeholder: 'Filter metrics (e.g. cps_jobs)',
   no_matching_metrics: 'No metrics matching the filter.',
+
+  // Diagnostics
+  diag_title: 'Printer diagnostics',
+  diag_hint: 'Asks the printer how it is actually set up. Read-only: nothing is printed.',
+  diag_run: 'Run diagnostics',
+  diag_running: 'Asking printer…',
+  diag_print_width: 'Print width',
+  diag_label_pitch: 'Label pitch (label + gap)',
+  diag_label_top: 'Label top offset',
+  diag_media: 'Media / method',
+  diag_darkness_speed: 'Darkness / speed',
+  diag_language: 'Language',
+  diag_head_usage: 'Head usage',
+  diag_firmware: 'Model / firmware',
+  diag_no_warnings: 'The printer matches its declared setup.',
+  diag_query_failed: 'Query {q} failed: {err}',
+  diag_raw: 'Raw configuration (^HH)',
+  diag_calibrate: 'Calibrate',
+  diag_calibrate_confirm: 'Confirm: feeds a few labels',
+  diag_label_top_apply: 'Set label top',
+  diag_label_top_confirm: 'Confirm: saved on printer',
+  diag_dots: 'dots',
+  diag_sent: 'Sent {cmd}: {note}',
 };
 
 export type TranslationKey = keyof typeof en;

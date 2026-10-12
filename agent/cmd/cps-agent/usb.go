@@ -206,15 +206,10 @@ func model1284(id string) string {
 	return ""
 }
 
-// readReply collects the reply to a host command. A complete ~HS reply is three
-// STX…ETX frames, other replies one; replies without framing (virtual printers) end
-// when the line goes quiet. read returns 0, errUSBTimeout (or any timeout) when no data
+// readReply collects the reply to a host command: until printer.ReplyComplete, or,
+// for replies without framing (virtual printers), until the line goes quiet. read returns 0, errUSBTimeout (or any timeout) when no data
 // arrived within its window.
 func readReply(read func(p []byte, timeout time.Duration) (int, error), cmd string, total time.Duration) (string, error) {
-	want := 1
-	if strings.HasPrefix(strings.TrimSpace(cmd), printer.CmdHostStatus) {
-		want = 3
-	}
 	const quiet = 300 * time.Millisecond
 	deadline := time.Now().Add(total)
 	buf := make([]byte, 512)
@@ -227,7 +222,7 @@ func readReply(read func(p []byte, timeout time.Duration) (int, error), cmd stri
 		n, err := read(buf, window)
 		if n > 0 {
 			acc = append(acc, buf[:n]...)
-			if strings.Count(string(acc), "\x03") >= want {
+			if printer.ReplyComplete(cmd, acc) {
 				break
 			}
 			continue

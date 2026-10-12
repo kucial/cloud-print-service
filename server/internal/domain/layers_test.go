@@ -29,13 +29,13 @@ var layers = map[string][]string{
 	"server/internal/httpapi": {
 		"server/internal/domain", "server/internal/driver", "server/internal/fleet", "server/internal/job",
 		"server/internal/store", "server/internal/token", "server/internal/observ", "server/internal/config",
-		"server/internal/discovery", "server/web", "pkg/render", "pkg/agentapi",
+		"server/internal/discovery", "server/web", "pkg/render", "pkg/agentapi", "pkg/printer",
 	},
 	"server/web":     {},
 	"pkg/render":     {},
 	"pkg/printer":    {},
 	"pkg/agentapi":   {"pkg/printer"},
-	"vprint/virtual": {"pkg/render"},
+	"vprint/virtual": {"pkg/render", "pkg/printer"},
 }
 
 func moduleRoot(t *testing.T) string {

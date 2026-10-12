@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/pkg/render"
 )
 
@@ -494,6 +495,20 @@ func (p *Printer) writeReply(c net.Conn, b []byte) {
 	_, _ = c.Write(b)
 }
 
+// hostConfigReply answers ^HH with the loaded media, shaped like real firmware's
+// configuration dump. Caller holds p.mu.
+func (p *Printer) hostConfigReply() string {
+	dpmm := float64(p.opts.DPMM)
+	if dpmm == 0 {
+		dpmm = float64(p.renderSize.DPMM)
+	}
+	w, h := p.renderSize.WidthMM, p.renderSize.HeightMM
+	if w == 0 || h == 0 {
+		w, h = 101.6, 152.4 // 4x6in
+	}
+	return printer.SimulatedHostConfig(p.Model, p.Firmware, dpmm, w, h)
+}
+
 // hostStatusReply answers ~HS the way real firmware does: three STX…ETX framed lines
 // (ZPL II manual, ~HS). ~HS has no "low" flags, so media/ribbon low read as idle, exactly
 // as they would on a real printer. Caller holds p.mu.
@@ -521,6 +536,16 @@ func (p *Printer) parseStatus(buf []byte, isStatus bool) (reply, rest []byte, ok
 	trimmed := strings.TrimLeft(string(buf), " \r\n")
 	if !isStatus && !strings.HasPrefix(trimmed, "~") {
 		return nil, buf, false
+	}
+	if i := indexOf(buf, "^HH"); i >= 0 {
+		rest = append([]byte(nil), buf[i+3:]...)
+		if j := indexOf(rest, "^XZ"); j >= 0 {
+			rest = rest[j+3:]
+		}
+		p.mu.Lock()
+		reply = []byte(p.hostConfigReply())
+		p.mu.Unlock()
+		return reply, rest, true
 	}
 	if i := indexOf(buf, "~HS"); i >= 0 {
 		rest = append([]byte(nil), buf[i+3:]...)
@@ -630,7 +655,8 @@ func (p *Printer) recordLabel(zpl string) {
 
 func looksLikeStatusQuery(b []byte) bool {
 	s := strings.TrimSpace(string(b))
-	return strings.HasPrefix(s, "~HS") || strings.HasPrefix(s, "^HS") || strings.HasPrefix(s, "~HI") || strings.HasPrefix(s, "~JA")
+	return strings.HasPrefix(s, "~HS") || strings.HasPrefix(s, "^HS") || strings.HasPrefix(s, "~HI") ||
+		strings.HasPrefix(s, "^XA^HH") || strings.HasPrefix(s, "~JA")
 }
 
 func indexOf(b []byte, sub string) int {

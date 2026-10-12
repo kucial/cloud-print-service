@@ -278,6 +278,141 @@ paths:
         '200':
           description: Hardware identity map
 
+  /printers/{printer_id}/diagnostics:
+    get:
+      tags:
+        - Fleet Visibility
+      summary: Printer Diagnostics (~HI, ~HS, ^HH)
+      description: >
+        Asks the printer how it is actually set up — identity, live status and its
+        configuration dump (print width, label pitch, resolution, darkness, media type,
+        offsets) — and lists warnings where that disagrees with the declared spec, such as
+        a different roll width or resolution. Read-only: nothing is printed. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: >
+            Diagnostics report. A query that failed is listed under `errors` (keys `hi`,
+            `hs`, `hh`) while the others are still reported.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  printer_id: { type: string }
+                  checked_at: { type: string, format: date-time }
+                  identity:
+                    type: object
+                    properties:
+                      model: { type: string }
+                      firmware: { type: string }
+                      dpmm: { type: number }
+                  status: { $ref: '#/components/schemas/PrinterStatus' }
+                  config:
+                    type: object
+                    properties:
+                      dpi: { type: integer }
+                      dpmm: { type: number }
+                      print_width_mm: { type: number }
+                      print_width_dots: { type: integer }
+                      label_length_mm: { type: number, description: 'Measured pitch: label plus gap' }
+                      label_length_dots: { type: integer }
+                      label_top_dots: { type: integer }
+                      left_position_dots: { type: integer }
+                      darkness: { type: string }
+                      print_speed: { type: string }
+                      print_method: { type: string }
+                      print_mode: { type: string }
+                      media_type: { type: string }
+                      language: { type: string }
+                      head_usage: { type: string }
+                      settings:
+                        type: object
+                        additionalProperties: { type: string }
+                        description: Every line of the configuration dump, as printed
+                  declared:
+                    type: object
+                    properties:
+                      paper_size: { type: string }
+                      media_width_mm: { type: number }
+                      media_height_mm: { type: number }
+                      dpi: { type: integer }
+                  warnings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                          enum: [status_blocking, media_undeclared, width_mismatch, length_mismatch, dpi_mismatch, offset_set, not_zpl]
+                        message: { type: string }
+                  errors:
+                    type: object
+                    additionalProperties: { type: string }
+                  raw_config: { type: string }
+        '404':
+          description: Unknown printer
+
+  /printers/{printer_id}/maintenance:
+    post:
+      tags:
+        - Fleet Visibility
+      summary: Printer Maintenance (calibrate, label top)
+      description: >
+        Changes the printer. `calibrate` sends ~JC: the printer feeds a few blank labels
+        while it re-measures the label gap. `label_top` sends ^LT with ^JUS, saving a
+        vertical print offset on the printer (positive moves printing down). Refused with
+        409 while the printer has queued jobs or is printing. Admin only; logged.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [calibrate, label_top]
+                dots:
+                  type: integer
+                  minimum: -120
+                  maximum: 120
+                  description: label_top only
+      responses:
+        '200':
+          description: Command sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  printer_id: { type: string }
+                  action: { type: string }
+                  sent: { type: string, example: '~JC' }
+                  note: { type: string }
+        '409':
+          description: Printer busy (queued jobs or printing)
+        '422':
+          description: Unknown action or offset out of range
+        '502':
+          description: Printer unreachable
+
   /printers/probe:
     post:
       tags:

@@ -130,11 +130,11 @@ func decodeLegacyHS(s string) (State, string, bool) {
 
 // HostID is what a printer says about itself in reply to ~HI.
 type HostID struct {
-	Model    string
-	Firmware string
-	Serial   string  // only virtual printers report it; real ~HI has no serial
-	DPMM     float64 // dots per millimetre, 0 when not reported
-	Options  string
+	Model    string  `json:"model"`
+	Firmware string  `json:"firmware,omitempty"`
+	Serial   string  `json:"serial,omitempty"` // only virtual printers report it; real ~HI has no serial
+	DPMM     float64 `json:"dpmm,omitempty"`   // dots per millimetre, 0 when not reported
+	Options  string  `json:"options,omitempty"`
 }
 
 // ParseHostID decodes a ~HI reply.

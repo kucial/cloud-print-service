@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 )
 
@@ -15,7 +16,10 @@ func init() {
 
 // Mock is a fake printer: no sockets, deterministic behaviour for tests and demos.
 type Mock struct {
-	cfg domain.MockCfg
+	cfg  domain.MockCfg
+	spec domain.Printer
+
+	controls []string // maintenance commands received, for tests
 
 	mu      sync.Mutex
 	sends   int
@@ -30,7 +34,7 @@ func NewMock(p domain.Printer) *Mock {
 	if cfg.State == "" {
 		cfg.State = string(domain.StateIdle)
 	}
-	return &Mock{cfg: cfg}
+	return &Mock{cfg: cfg, spec: p}
 }
 
 func (m *Mock) Send(ctx context.Context, data []byte) (int, error) {
@@ -72,6 +76,32 @@ func (m *Mock) Cancel(ctx context.Context) error { return nil }
 
 func (m *Mock) Identify(ctx context.Context) (map[string]string, error) {
 	return map[string]string{"model": "mock", "serial": "mock-0001", "fw": "n/a"}, nil
+}
+
+// HostConfig reports the declared media, so diagnostics against a mock show no mismatch.
+func (m *Mock) HostConfig(ctx context.Context) (string, error) {
+	if m.cfg.Offline {
+		return "", fmt.Errorf("mock printer offline")
+	}
+	w, h := m.spec.MediaWidthMM, m.spec.MediaHeightMM
+	if w == 0 || h == 0 {
+		w, h = 101.6, 152.4 // 4x6in
+	}
+	return printer.SimulatedHostConfig("mock", "n/a", m.spec.DPMM, w, h), nil
+}
+
+func (m *Mock) Control(ctx context.Context, cmd string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.controls = append(m.controls, cmd)
+	return nil
+}
+
+// Controls returns the maintenance commands sent so far.
+func (m *Mock) Controls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.controls...)
 }
 
 func (m *Mock) Close() error { return nil }

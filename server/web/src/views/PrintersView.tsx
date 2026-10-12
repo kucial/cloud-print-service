@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/context';
 import { Printer } from '../types';
 import { api } from '../api';
 import { useToast } from '../components/Toast';
+import { DiagnosticsPanel } from '../components/DiagnosticsPanel';
 import {
   Printer as PrinterIcon,
   Search,
@@ -795,6 +796,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
               )}
             </div>
           )}
+          {!isEditing && <DiagnosticsPanel printerId={p.printer_id} />}
         </div>
 
         <div className="modal-footer">

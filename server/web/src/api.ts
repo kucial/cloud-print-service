@@ -107,6 +107,12 @@ export const api = {
     }
   ) => request<Printer>(`/printers/${id}`, { method: 'PATCH', body }),
   testPrint: (id: string) => request(`/printers/${id}/test`, { method: 'POST' }),
+  diagnostics: (id: string) => request<Diagnostics>(`/printers/${id}/diagnostics`),
+  maintenance: (id: string, action: 'calibrate' | 'label_top', dots?: number) =>
+    request<{ sent: string; note: string }>(`/printers/${id}/maintenance`, {
+      method: 'POST',
+      body: { action, dots },
+    }),
   probePrinters: (id?: string) =>
     request(id ? `/printers/${id}/status` : '/printers/probe', {
       method: id ? 'GET' : 'POST',
@@ -209,3 +215,33 @@ export const api = {
   getHealthz: () => fetch('/healthz').then((r) => r.json()),
   getReadyz: () => fetch('/readyz').then((r) => r.json()),
 };
+
+export interface Diagnostics {
+  printer_id: string;
+  checked_at: string;
+  identity?: { model: string; firmware?: string; serial?: string; dpmm?: number };
+  status?: { state: string; detail?: string; raw?: string };
+  config?: {
+    settings: Record<string, string>;
+    dpi?: number;
+    dpmm?: number;
+    print_width_mm?: number;
+    print_width_dots?: number;
+    label_length_mm?: number;
+    label_length_dots?: number;
+    label_top_dots: number;
+    left_position_dots: number;
+    darkness?: string;
+    print_speed?: string;
+    print_method?: string;
+    print_mode?: string;
+    media_type?: string;
+    language?: string;
+    firmware?: string;
+    head_usage?: string;
+  };
+  declared: { paper_size?: string; media_width_mm?: number; media_height_mm?: number; dpi?: number };
+  warnings: { code: string; message: string }[];
+  errors?: Record<string, string>;
+  raw_config?: string;
+}

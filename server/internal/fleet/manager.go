@@ -305,6 +305,16 @@ func (p *Printer) Identify(ctx context.Context) (map[string]string, error) {
 	return p.driver().Identify(ctx)
 }
 
+// HostConfig reads the printer's configuration dump (^HH).
+func (p *Printer) HostConfig(ctx context.Context) (string, error) {
+	return p.driver().HostConfig(ctx)
+}
+
+// Control sends a maintenance command to the printer.
+func (p *Printer) Control(ctx context.Context, cmd string) error {
+	return p.driver().Control(ctx, cmd)
+}
+
 func (p *Printer) Close() { _ = p.driver().Close() }
 
 // NoteJob records the last job seen on this printer, so a dashboard opened after the fact

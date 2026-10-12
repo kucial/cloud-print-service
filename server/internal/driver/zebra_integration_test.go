@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 	"github.com/kucial/cloud-print-service/server/internal/driver"
 	"github.com/kucial/cloud-print-service/vprint/virtual"
@@ -266,3 +267,25 @@ func waitPrinterState(ctx context.Context, z *driver.Zebra, want domain.PrinterS
 }
 
 func boolp(b bool) *bool { return &b }
+
+func TestZebraHostConfigAndControl(t *testing.T) {
+	vp := startVirtual(t, virtual.Opts{Model: "GK888t", DPMM: 8})
+	z := driverFor(t, vp)
+	ctx := context.Background()
+
+	raw, err := z.HostConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := printer.ParseHostConfig(raw)
+	if !ok || c.DPMM != 8 || c.PrintWidthDots == 0 || c.Language != "ZPL II" {
+		t.Fatalf("config %+v ok=%v from %q", c, ok, raw)
+	}
+	// The config query must leave the status socket aligned for the next ~HS.
+	if st, err := z.Status(ctx); err != nil || st.State != domain.StateIdle {
+		t.Fatalf("status after ^HH: %+v err=%v", st, err)
+	}
+	if err := z.Control(ctx, "~JC"); err != nil {
+		t.Fatalf("control: %v", err)
+	}
+}

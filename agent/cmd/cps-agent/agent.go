@@ -176,8 +176,7 @@ func (a *agent) serveConn(ctx context.Context, p *localPrinter, conn net.Conn) {
 func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chunk []byte) bool {
 	trimmed := strings.TrimLeft(string(chunk), " \r\n\t")
 	switch {
-	case strings.HasPrefix(trimmed, printer.CmdHostStatus), strings.HasPrefix(trimmed, printer.CmdHostID),
-		strings.HasPrefix(trimmed, "^HS"): // ^HS: servers before the switch to real ~HS
+	case printer.IsHostQuery(trimmed): // ~HS, ~HI, ^HH (and ^HS from older servers)
 		reply, err := p.query(ctx, string(chunk))
 		if err != nil {
 			a.log.Warn("host query failed", "printer_id", p.PrinterID, "err", err)

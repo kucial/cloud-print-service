@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -49,6 +50,12 @@ func main() {
 		err = statusCmd(args)
 	case "test":
 		err = testCmd(args)
+	case "diag":
+		err = diagCmd(args)
+	case "calibrate":
+		err = maintenanceCmd("calibrate", args)
+	case "label-top":
+		err = maintenanceCmd("label_top", args)
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -77,6 +84,9 @@ Commands:
   discover adopt  <device-key> --printer-id wh1-pack-04 --site wh1
   discover dismiss <device-key>
   printers                       list the fleet with status
+  diag      <printer-id>         ask the printer how it is set up; flag mismatches
+  calibrate <printer-id>         re-measure the label gap (~JC; feeds a few labels)
+  label-top <printer-id> <dots>  shift printing down (+) or up (-), saved on the printer
   status                         service health
   test <printer-id>              print a test label
 
@@ -505,4 +515,105 @@ func trunc(s string, n int) string {
 		return s[:n]
 	}
 	return s
+}
+
+func diagCmd(args []string) error {
+	fs := flag.NewFlagSet("diag", flag.ExitOnError)
+	c := newClient(fs)
+	raw := fs.Bool("raw", false, "also print the printer's raw configuration dump")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	c.resolve()
+	if fs.NArg() < 1 {
+		return fmt.Errorf("usage: cpsctl diag <printer-id>")
+	}
+	out, err := c.do("GET", "/api/v1/printers/"+fs.Arg(0)+"/diagnostics", nil)
+	if err != nil {
+		return err
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	row := func(k string, v any) {
+		if v != nil && fmt.Sprint(v) != "" {
+			fmt.Fprintf(w, "%s\t%v\n", k, v)
+		}
+	}
+	if id, ok := out["identity"].(map[string]any); ok {
+		row("model", id["model"])
+		row("firmware", id["firmware"])
+	}
+	if st, ok := out["status"].(map[string]any); ok {
+		row("state", fmt.Sprintf("%v (%v)", st["state"], st["detail"]))
+	}
+	if cfg, ok := out["config"].(map[string]any); ok {
+		row("resolution", fmt.Sprintf("%v dpi (%v dots/mm)", cfg["dpi"], cfg["dpmm"]))
+		row("print width", fmt.Sprintf("%v mm (%v dots)", cfg["print_width_mm"], cfg["print_width_dots"]))
+		row("label pitch", fmt.Sprintf("%v mm (%v dots, label + gap)", cfg["label_length_mm"], cfg["label_length_dots"]))
+		row("label top", fmt.Sprintf("%v dots", cfg["label_top_dots"]))
+		row("media", cfg["media_type"])
+		row("method", cfg["print_method"])
+		row("mode", cfg["print_mode"])
+		row("darkness", cfg["darkness"])
+		row("speed", cfg["print_speed"])
+		row("language", cfg["language"])
+		row("head usage", cfg["head_usage"])
+	}
+	if d, ok := out["declared"].(map[string]any); ok {
+		decl := "no paper size"
+		if d["paper_size"] != nil {
+			decl = fmt.Sprintf("%v (%v x %v mm)", d["paper_size"], d["media_width_mm"], d["media_height_mm"])
+		}
+		if d["dpi"] != nil {
+			decl += fmt.Sprintf(", %v dpi", d["dpi"])
+		}
+		row("declared", decl)
+	}
+	_ = w.Flush()
+	if errs, ok := out["errors"].(map[string]any); ok {
+		for k, v := range errs {
+			fmt.Printf("query %s failed: %v\n", k, v)
+		}
+	}
+	ws, _ := out["warnings"].([]any)
+	if len(ws) == 0 {
+		fmt.Println("\nno warnings: the printer matches its declared setup")
+	} else {
+		fmt.Println("\nwarnings:")
+		for _, it := range ws {
+			m := it.(map[string]any)
+			fmt.Printf("  [%v] %v\n", m["code"], m["message"])
+		}
+	}
+	if *raw {
+		fmt.Println("\n" + strings.Trim(fmt.Sprint(out["raw_config"]), "\x02\x03"))
+	}
+	return nil
+}
+
+func maintenanceCmd(action string, args []string) error {
+	fs := flag.NewFlagSet(action, flag.ExitOnError)
+	c := newClient(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	c.resolve()
+	body := map[string]any{"action": action}
+	switch {
+	case action == "label_top" && fs.NArg() == 2:
+		dots, err := strconv.Atoi(fs.Arg(1))
+		if err != nil {
+			return fmt.Errorf("dots must be a number: %w", err)
+		}
+		body["dots"] = dots
+	case action == "label_top":
+		return fmt.Errorf("usage: cpsctl label-top <printer-id> <dots>")
+	case fs.NArg() != 1:
+		return fmt.Errorf("usage: cpsctl calibrate <printer-id>")
+	}
+	out, err := c.do("POST", "/api/v1/printers/"+fs.Arg(0)+"/maintenance", body)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("sent %v to %v: %v\n", out["sent"], out["printer_id"], out["note"])
+	return nil
 }

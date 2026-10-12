@@ -184,6 +184,26 @@ All admin routes require an admin credential — either a bootstrap key or a tok
 with `role=admin`. A revoked token is rejected identically to an unknown one, so probing
 cannot tell them apart.
 
+## Printer diagnostics
+
+Bringing up a real printer usually means finding out how it is *actually* set up. CPS
+asks the printer directly (`~HI` identity, `~HS` status, `^HH` configuration dump) and
+says where that disagrees with the declared spec. Works the same for network printers
+and USB printers behind an agent.
+
+```bash
+cpsctl diag <printer-id>             # width, label pitch, dpi, darkness, offsets + warnings
+cpsctl calibrate <printer-id>        # ~JC: re-measure the label gap (feeds a few labels)
+cpsctl label-top <printer-id> 20     # ^LT + ^JUS: shift printing down 20 dots, saved on the printer
+```
+
+| Route (admin) | Effect |
+|---|---|
+| `GET /api/v1/printers/{id}/diagnostics` | read-only report; warnings such as `width_mismatch`, `length_mismatch`, `dpi_mismatch`, `offset_set` |
+| `POST /api/v1/printers/{id}/maintenance` | `{"action":"calibrate"}` or `{"action":"label_top","dots":20}`; 409 while jobs are queued or printing |
+
+The panel's printer dialog has the same report and actions under **Printer diagnostics**.
+
 ## Layout
 
 ```
