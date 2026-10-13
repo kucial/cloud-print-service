@@ -102,6 +102,18 @@ func TestSQLiteTokensSurviveRestart(t *testing.T) {
 	if err != nil || got.ID != tok.ID || got.AgentID != "pc7" {
 		t.Fatalf("agent credential lost across restart: %+v %v", got, err)
 	}
+	// Verify records the use in the background; let that write finish before the
+	// database closes, or SQLite's journal can outlive the test's temp directory.
+	deadline := time.Now().Add(time.Second)
+	for {
+		if g, _ := s.Get(ctx, tok.ID); g != nil && g.Uses == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("use after restart not recorded")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	next, _, _ := s.Issue(ctx, IssueRequest{ClientID: "erp"})
 	if next.ID == tok.ID || next.ID[:6] != "tok_2_" {
 		t.Fatalf("token ids must continue after restart: %q", next.ID)
