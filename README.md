@@ -1,7 +1,8 @@
 # Cloud Print Service (CPS)
 
-A small service that sits between ERP/WMS and warehouse label printers.
-**Business systems own the label content (ZPL); CPS owns fleet visibility and safe dispatch.**
+A small service that sits between ERP/WMS and warehouse printers: label printers (ZPL),
+receipt printers (ESC/POS) and office printers (IPP, PCL/PostScript).
+**Business systems own the content; CPS owns fleet visibility and safe dispatch.**
 
 > Design, state machine, API contract and failure policy: **[docs/DESIGN.md](docs/DESIGN.md)**
 > What is built, verified and still missing: **[docs/STATUS.md](docs/STATUS.md)**
@@ -17,14 +18,14 @@ A small service that sits between ERP/WMS and warehouse label printers.
 | | |
 |---|---|
 | **Fleet visibility** | `GET /api/v1/printers/status` — every printer's state, consumables, queue depth and `usable` flag in one round trip |
-| **Dispatch** | `POST /api/v1/jobs` — hand a printer ready-made ZPL, tracked by your business document id |
+| **Dispatch** | `POST /api/v1/jobs` — hand a printer its own language (ZPL, ESC/POS, PCL…) or a PDF/PNG/JPEG that CPS converts for it, tracked by your business document id |
 | **No duplicate labels** | Idempotency on `(client, external_id)`; once bytes reach a printer CPS never retries blindly — it reports `sent_unknown` for a human |
 | **Token issuance** | `cpsctl token issue` / `POST /api/v1/admin/tokens` — secrets shown once, stored hashed, rotatable and revocable |
 | **Operator panel** | Embedded SPA at `/ui/`: fleet, jobs, tokens, ZPL preview — same origin as the API |
-| **Virtual printer** | `vprint` speaks real ZPL on :9100, answers `^HS`/`~HI`/`~JA`, renders every label to PNG, and takes fault injection over HTTP |
+| **Virtual printer** | `vprint` speaks real ZPL on :9100, answers `^HS`/`~HI`/`~JA`, renders every label to PNG, and takes fault injection over HTTP; `-language escpos\|ipp\|pdl` plays a receipt or office printer |
 | **Testable** | `go test -race ./...` — the flow test drives a virtual printer through the real HTTP API with issued tokens |
 
-Out of scope on purpose: ZPL rendering in the service, USB print agents, document composition.
+Out of scope on purpose: document composition (CPS prints documents, it does not lay them out).
 
 ## Operator panel
 

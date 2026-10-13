@@ -11,9 +11,10 @@ deliberately not built, and what to do next.
 
 ## 1. One-paragraph summary
 
-A single Go service that sits between ERP/WMS and warehouse label printers. Business
-systems own the label content (ZPL); the service owns **fleet visibility** and **dispatch
-safety**. Around it: a virtual printer that misbehaves on command, an edge agent that
+A single Go service that sits between ERP/WMS and warehouse printers — label printers
+(ZPL), receipt printers (ESC/POS) and office printers (IPP, PCL/PostScript). Business
+systems own the content (ZPL, ESC/POS, or a PDF/image CPS converts); the service owns
+**fleet visibility** and **dispatch safety**. Around it: a virtual printer that misbehaves on command, an edge agent that
 makes USB printers look like network printers, an admin CLI, a reference WMS integration,
 and an embedded operator panel. 12 commits, ~12.4k lines of Go, no hardware required for
 any test.
@@ -33,6 +34,7 @@ any test.
 | M5 | Agent v1 (driver-share tier) | **done** | end-to-end against `vprint`, no hardware |
 | M6 | Real USB (printer-class driver) | **built** | pure Go via `usbprint.sys` (Windows) / `usblp` (Linux); opt-in libusb on macOS (`-tags usb_libusb`). Verified end to end on a real GK888t over libusb; Windows/Linux paths unit-tested only |
 | M7 | Harden: runbook, agent-loss recovery, metrics polish | **done** | [RUNBOOK.md](RUNBOOK.md); `FailOnAgentLost` + panel Agents/Discovery views; metrics for scans/adoptions; agent-loss e2e test |
+| M8 | Receipt (ESC/POS) and office (IPP, PCL/PostScript) printers | **done against virtual printers** | drivers `escpos9100`, `ipp`, `pdl9100`; agent classifies USB printers by device id; PDF/PNG/JPEG converted per printer (poppler in Docker); `vprint -language escpos|ipp|pdl`. No real receipt or office printer tried yet (§5) |
 
 ---
 
@@ -52,6 +54,10 @@ Everything below was exercised end to end during development, not just unit-test
 | Agent credential cannot dispatch | `TestAgentRegistersAndServesAPrinter` + `TestCredentialKindFlowsIntoRequest` |
 | Tenant isolation | cross-client job read/cancel → `404`, never `403` |
 | Layering | `TestLayerDependencyDirection` fails on an upward import |
+| Receipt printer end to end | raw ESC/POS, PNG→raster, copies, paper-out → not usable, test receipt: `TestReceiptPrinterEndToEnd` against `vprint -language escpos`; through the agent's local-share tier on this Mac |
+| Office printer over IPP | copies as a job attribute, confirmed by the printer's job state; aborted → failed; held past `track_timeout` → `sent_unknown`; refused format not retried: `TestOfficePrinter*`; discovered over real mDNS and adopted |
+| Office printer on 9100 (PJL) | status and languages from PJL; discovery asks over PJL, never `~HI` (0 stray pages over 4 scans, real mDNS); PCL test page, PostScript via the agent |
+| PDF conversion | in the Docker image (poppler 25.04): the A4 test page as a receipt raster, a 4×6 `^GFA` label (rendered back with zebrash), PostScript for a PCL/PS printer |
 
 Run everything:
 
@@ -70,10 +76,10 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 
 | Binary | Status | Purpose |
 |---|---|---|
-| `cps` | done | server: fleet registry, dispatch queue, status poller, REST API, embedded panel, ZPL preview, discovery, agent surface |
+| `cps` | done | server: fleet registry, dispatch queue, status poller, REST API, embedded panel, ZPL preview, discovery, agent surface, PDF/image conversion |
 | `cpsctl` | done | admin CLI: tokens, printers, **agents**, **discover** |
-| `vprint` | done | virtual network printer: real ZPL, `^HS`/`~HI`/`~JA`, renders every label, gallery, fault injection, `-mdns` advertise |
-| `cps-agent` | done (TCP share + USB) | edge agent: discover, forward, register, heartbeat, status push; `-tags gui` builds `cps-agent-gui.exe` (tray icon + local setup/status/settings page) |
+| `vprint` | done | virtual network printer: real ZPL, `^HS`/`~HI`/`~JA`, renders every label, gallery, fault injection, `-mdns` advertise; `-language escpos|ipp|pdl` for receipt and office printers |
+| `cps-agent` | done (TCP share + USB) | edge agent: discover, forward, register, heartbeat, status push; label, receipt and office printers; `-tags gui` builds `cps-agent-gui.exe` (tray icon + local setup/status/settings page) |
 | `demo-web` | done | reference WMS integration (open source, meant to be read) |
 | `zplpng` | done | dev tool: file/stdin → PNG/SVG/PDF |
 
@@ -90,6 +96,10 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | Agent auto-update / fleet rollout | Windows service (`-enroll <token> -install`: SCM, recovery restarts, firewall rule, ACL'd config, `agent.log`) is built and exercised by the `agent-windows` CI job; binaries come from `release-agent.yml` (`agent-v*` tags), unsigned | code-sign the `.exe`; self-update or MSI/Intune rollout |
 | Agent finds printers only at start | no hot-plug rescan; with none found the process exits and the service manager (or, in the desktop app, its supervisor) restarts it after 30s | periodic rescan inside `Run` |
 | Desktop agent not yet run on Windows | `cps-agent-gui.exe` is cross-built and its panel and supervisor are unit-tested; end-to-end run only on macOS (setup, settings change, print through `vprint`). Tray, Start at login and the firewall prompt are untested on Windows | run the release zip on the packing PC |
+| **No real receipt or office printer tried** | ESC/POS, IPP and PJL are implemented to the specs and tested against `vprint`; the USB device-id table uses representative ids, not captures | print to one Epson/Xprinter and one office printer; capture their device ids, `DLE EOT` and IPP attributes as test data |
+| Copies of a ZPL label sent as is | `copies` is stored but a label carries its own `^PQ`; CPS does not add one (a client that already sets `^PQ` would print twice) | decide whether `copies` should set `^PQ` for ZPL |
+| An IPP job holds the printer's queue while followed | the per-printer worker waits for the job's outcome (up to `track_timeout`, 10 min) before the next job | send while following, if office printers prove slow |
+| PDF to an IPP printer without PDF | only single-page PDFs go as JPEG; URF/PWG raster is not produced | add a PWG raster encoder if such printers turn up |
 | Job callback to ERP | events are on the bus | expose a webhook |
 
 ---

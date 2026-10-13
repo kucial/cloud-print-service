@@ -132,8 +132,45 @@ type Driver interface {
 }
 ```
 
-MVP ships `zebra9100` + `mock`. A `tsc9100` is ~60 lines (TSPL echo/parser differences) and can be
+MVP shipped `zebra9100` + `mock`. A `tsc9100` is ~60 lines (TSPL echo/parser differences) and can be
 added without touching the API or job layers.
+
+### Printer kinds (added after the MVP)
+
+A printer has a **kind** — `label`, `receipt` or `document` — and the **formats** it takes as is.
+Both default from the driver and are learned from the printer where it can say.
+
+| driver | kind | transport | status | confirmation |
+|---|---|---|---|---|
+| `zebra9100` | label | raw 9100, two sockets | `~HS` | busy → idle after the send |
+| `escpos9100` | receipt | raw 9100, two sockets | `DLE EOT 1/2/4` | idle after a settle window (ESC/POS has no "printing" bit) |
+| `pdl9100` | document | raw 9100, two sockets | `@PJL INFO STATUS` | busy → idle, or settle when the printer has no PJL |
+| `ipp` | document | IPP over HTTP (631) | `printer-state` + `-reasons` | **the printer's own job record** (`job-state` completed / aborted / canceled) |
+
+The core `Driver` interface above is what every printer has. What only some have is an optional
+interface, found by type assertion:
+
+- `LabelTools` (`^HH`, `^HW`, maintenance commands): Zebras only. Diagnostics, maintenance and
+  font learning check for it, and the API answers `409 not_supported_by_printer` without it.
+- `DocumentSender` / `JobTracker`: IPP. The document goes with its format and `copies`, and the
+  job is followed on the printer for up to `track_timeout`. A printer that *refuses* a document
+  (an IPP client error) returns `ErrRejected`: nothing printed, the job fails without retry.
+- `FormatReporter`: IPP (`document-format-supported`) and PJL (`LANGUAGES`).
+
+The "never retry after the first byte" rule holds for every kind: a raw socket counts bytes
+written; IPP counts request bytes that left, and an answered refusal counts as zero.
+
+### Formats and conversion
+
+Jobs carry a `format` (default `zpl`, so the original API is unchanged). A PDF, PNG or JPEG sent
+to a printer that does not take it is converted **once, at submit**, so the stored payload is
+exactly what the printer gets and retries resend identical bytes; idempotency hashes what the
+client sent. Printer languages are never converted into one another.
+
+| source | receipt | label | office |
+|---|---|---|---|
+| PNG/JPEG | dithered `GS v 0` raster, cut | `^GFA` fitted to the label, `^PQ` copies | PDF page, JPEG, or PCL raster |
+| PDF | rasterised (poppler `pdftoppm`) | rasterised | as is, PostScript (`pdftops`), or PCL raster |
 
 ### Status polling
 

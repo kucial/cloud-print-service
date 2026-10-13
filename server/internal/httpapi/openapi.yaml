@@ -3,7 +3,14 @@ info:
   title: Cloud Print Service API
   description: |
     Cloud printing service for ERP and WMS business systems.
-    Provides fleet visibility, status query, and safe label dispatch for industrial thermal printers.
+    Provides fleet visibility, status query, and safe dispatch to label printers (ZPL),
+    receipt printers (ESC/POS) and office printers (IPP, or PCL/PostScript on port 9100).
+
+    A job carries a `format`. A printer lists the formats it takes as is (`formats`);
+    a PDF, PNG or JPEG sent to a printer that does not take it is converted when the
+    job is accepted — to a raster receipt, a ZPL graphic, PostScript or PCL — and the
+    job records both (`source_format` → `format`). Printer languages (ZPL, ESC/POS,
+    PCL, PostScript) are sent as is and never converted into one another.
   version: 1.0.0
 servers:
   - url: /api/v1
@@ -246,8 +253,11 @@ paths:
     post:
       tags:
         - Fleet Visibility
-      summary: Dispatch Test Label
-      description: Prints a built-in diagnostic test label. Admin only.
+      summary: Dispatch Test Page
+      description: |
+        Prints a built-in test page for the printer's kind: an alignment label (ZPL),
+        a receipt with Chinese text, a QR code, a barcode and a cut (ESC/POS), or an
+        A4 page with a border and rulers (PDF, or PCL). Admin only.
       security:
         - BearerAuth: []
       parameters:
@@ -258,7 +268,9 @@ paths:
             type: string
       responses:
         '202':
-          description: Test label accepted and queued
+          description: Test page accepted and queued; `label` describes it (kind, size, columns)
+        '409':
+          description: No test page for this printer (e.g. an office printer that takes neither PDF nor PCL)
 
   /printers/{printer_id}/identify:
     post:
@@ -300,7 +312,8 @@ paths:
         '200':
           description: >
             Diagnostics report. A query that failed is listed under `errors` (keys `hi`,
-            `hs`, `hh`, `hw`) while the others are still reported.
+            `hs`, `hh`, `hw`) while the others are still reported. Label printers only:
+            other printers answer 409 `not_supported_by_printer`.
           content:
             application/json:
               schema:
@@ -423,7 +436,7 @@ paths:
                   sent: { type: string, example: '~JC' }
                   note: { type: string }
         '409':
-          description: Printer busy (queued jobs or printing)
+          description: Printer busy (queued jobs or printing), or not a label printer (`not_supported_by_printer`)
         '422':
           description: Unknown action or offset out of range
         '502':
@@ -497,6 +510,10 @@ paths:
             - `invalid_copies`: copies must be between 1 and max_copies (default 1000, admin configurable)
             - `invalid_page_copies`: page copies array count doesn't match multi-page ZPL format count
             - `invalid_priority`: priority must be `normal` or `high`
+            - `invalid_format`: `format` is not a format CPS knows
+            - `format_not_supported`: the printer does not take this format and it cannot be converted for it (e.g. ZPL to a receipt printer)
+            - `document_unreadable`: the PDF or image does not decode
+            - `pdf_conversion_unavailable`: the PDF needs converting for this printer and the server has no poppler (pdftoppm)
           content:
             application/json:
               schema:
@@ -593,8 +610,12 @@ paths:
     post:
       tags:
         - Print Jobs
-      summary: Dispatch Raw Octet-Stream ZPL Job
-      description: Send raw binary ZPL payload to avoid base64 overhead.
+      summary: Dispatch a Raw Document
+      description: |
+        Send the document as the request body, without base64. The format comes from
+        `?format=`, else from the Content-Type: `application/pdf`, `image/png`,
+        `image/jpeg`. `application/octet-stream` or `text/plain` without `?format=`
+        means ZPL.
       security:
         - BearerAuth: []
       parameters:
@@ -608,6 +629,21 @@ paths:
           required: true
           schema:
             type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [zpl, escpos, pdf, png, jpeg, pcl, postscript, pwg, urf]
+        - name: copies
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [normal, high]
         - name: biz_ref
           in: query
           schema:
@@ -616,6 +652,18 @@ paths:
         required: true
         content:
           application/octet-stream:
+            schema:
+              type: string
+              format: binary
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
             schema:
               type: string
               format: binary
@@ -1271,10 +1319,32 @@ components:
           type: string
         driver:
           type: string
+          enum: [zebra9100, escpos9100, ipp, pdl9100, mock]
+        kind:
+          type: string
+          enum: [label, receipt, document]
+          description: What the printer is for. Defaults from the driver.
+        formats:
+          type: array
+          items:
+            type: string
+          description: |
+            Formats the printer takes as is — learned from the printer (IPP
+            document-format-supported, PJL LANGUAGES, the USB device id) or declared.
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [test_print, diagnostics, maintenance, fonts]
+          description: Tools beyond printing. diagnostics, maintenance and fonts are label-printer tools; for other printers those endpoints answer 409 not_supported_by_printer.
         host:
           type: string
         port:
           type: integer
+          description: 9100 for raw-socket printers, 631 for IPP.
+        path:
+          type: string
+          description: IPP resource path (e.g. ipp/print).
         enabled:
           type: boolean
         usable:
@@ -1357,7 +1427,7 @@ components:
       properties:
         state:
           type: string
-          enum: [idle, printing, busy, media_low, media_out, ribbon_low, ribbon_out, head_error, error, offline, disabled, unknown]
+          enum: [idle, printing, busy, media_low, media_out, ribbon_low, ribbon_out, head_error, door_open, paper_jam, toner_low, toner_out, error, offline, disabled, unknown]
         raw:
           type: string
         detail:
@@ -1395,17 +1465,30 @@ components:
           type: string
         zpl:
           type: string
+          description: A ZPL label as text. For any other format use `payload_base64`.
         payload_base64:
           type: string
+          description: The document, base64-encoded, in `format`.
+        format:
+          type: string
+          enum: [zpl, escpos, pdf, png, jpeg, pcl, postscript, pwg, urf]
+          default: zpl
+          description: |
+            What the payload is. `zpl` when omitted, so existing clients are unaffected.
+            PDF, PNG and JPEG are converted for printers that do not take them as is.
         copies:
           type: integer
           default: 1
-          description: Total label copies to print (1..max_copies, default limit 1000, configurable by admin)
+          description: |
+            Copies to print (1..max_copies, default limit 1000, configurable by admin).
+            IPP printers get it as a job attribute; a converted label as ^PQ; an ESC/POS
+            receipt or PCL/PostScript document is sent that many times. A ZPL label
+            sent as is carries its own quantity (^PQ).
         page_copies:
           type: array
           items:
             type: integer
-          description: Targeted copy counts per ^XA...^XZ format page (e.g. [4, 1] for 4 full cartons + 1 tail remainder carton). If an entry is 0, that page is omitted.
+          description: ZPL only. Targeted copy counts per ^XA...^XZ format page (e.g. [4, 1] for 4 full cartons + 1 tail remainder carton). If an entry is 0, that page is omitted.
         priority:
           type: string
           enum: [normal, high]
@@ -1472,6 +1555,12 @@ components:
           type: string
         printer_id:
           type: string
+        format:
+          type: string
+          description: What was sent to the printer.
+        source_format:
+          type: string
+          description: What the client sent, when CPS converted it (e.g. pdf for a receipt sent as escpos).
         state:
           type: string
           enum: [queued, sending, printed, sent_unknown, failed, cancelled]

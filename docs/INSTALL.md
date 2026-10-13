@@ -76,6 +76,18 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o cpsctl ./server/cmd/cpsctl
 
 The panel is compiled into `cps`; there is nothing else to copy.
 
+To convert PDFs for receipt, label and PCL printers, install poppler and fonts on the
+server too: they are what turns a PDF into dots. PDFs for office printers that take PDF,
+and images for every printer, work without them.
+
+```bash
+sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei   # Debian/Ubuntu
+brew install poppler                                               # macOS
+```
+
+The server logs `PDF conversion available` at start when it finds `pdftoppm`; set
+`pdf_tools_dir` in the config if it is not on the PATH. The Docker image includes them.
+
 ### Configure
 
 Start from `server/config.example.json`, or from this minimal config:
@@ -218,6 +230,35 @@ cpsctl diag wh1-pack-01      # what the printer says about itself, plus any mism
 cpsctl test wh1-pack-01      # prints an alignment label sized to its media
 ```
 
+### Receipt and office printers
+
+The `driver` says how CPS talks to a printer; its kind and the formats it takes follow
+from it, and are learned from the printer where it can say.
+
+| printer | `driver` | port | status from | takes as is |
+|---|---|---|---|---|
+| Zebra and ZPL label printers | `zebra9100` | 9100 | `~HS` | ZPL |
+| ESC/POS receipt printers (Epson TM, Xprinter, …) | `escpos9100` | 9100 | DLE EOT | ESC/POS |
+| office printers with IPP (most network laser/inkjet) | `ipp` | 631 | IPP printer state and the job's own state | what the printer reports (PDF, JPEG, URF, …) |
+| office printers on JetDirect | `pdl9100` | 9100 | PJL | what PJL reports (PCL, PostScript) |
+
+```json
+{ "printer_id": "wh1-desk-01", "name": "Front desk", "driver": "escpos9100",
+  "host": "192.168.10.40", "media_width_mm": 80, "enabled": true },
+{ "printer_id": "hq-office-01", "name": "Office 3F", "driver": "ipp",
+  "host": "192.168.10.60", "path": "ipp/print", "enabled": true }
+```
+
+- Prefer `ipp` for an office printer that has it: copies go as a job attribute, and a
+  job is confirmed by the printer's own record of it, not by watching its status.
+- Discovery finds IPP printers (`_ipp._tcp`) and JetDirect printers that advertise their
+  languages; receipt printers rarely advertise, so declare them.
+- `formats` can be declared to keep a printer to fewer formats than it reports.
+- Receipt printers: set `media_width_mm` to 58 or 80. It sets the test page's columns and
+  how wide converted images print.
+- Calibration, offsets, fonts and `diag` are label-printer tools; for other printers the
+  panel hides them and the API answers 409.
+
 ---
 
 ## 4. Credentials for business systems
@@ -243,6 +284,12 @@ The API is described at `http://<server>:8080/docs/` (OpenAPI at `/openapi.yaml`
 Get `cps-agent` from the CI build: a tag like `agent-v0.2.0` publishes a release with
 Windows and Linux archives and `SHA256SUMS`; a manual run of the `release-agent` workflow
 leaves the same files as a workflow artifact.
+
+The agent serves label, receipt and office printers. It tells them apart by the
+printer's USB device id (maker, model, command set): a Zebra is confirmed with `~HI`, a
+receipt printer (ESC/POS) and an office printer (PCL/PostScript) are asked in their own
+language. Each appears on the server with its driver, kind and formats. Host-based
+inkjets that need a vendor driver to render pages cannot be served.
 
 On the server side, each agent needs a one-time enrollment token:
 
@@ -431,11 +478,15 @@ libusb (`brew install libusb`, then `go build -tags usb_libusb ./agent/cmd/cps-a
 | Symptom | Likely cause | What to do |
 |---|---|---|
 | Printer stays *not usable*, state `unknown` | the printer does not answer status queries | set it to ZPL mode; run `cpsctl diag <printer-id>` |
-| Agent logs `no local printers found` | no USB printer seen, or it is not in ZPL mode | check the USB cable and driver; the log line names any printer that did not identify itself |
+| Agent logs `no local printers found` | no USB printer seen, a Zebra not in ZPL mode, or a printer whose device id does not say what it is | check the USB cable and driver; the log line names any printer that did not identify itself, with its device id |
 | Agent registered, printer *not usable* | heartbeats stopped, or the server cannot reach the agent's port | `cpsctl agent list` for the last heartbeat; allow ports 19100+ in the PC firewall |
 | Agent gets 401 | its credential was revoked, or the server's database was replaced or lost | re-enroll the agent with a new token |
 | Server will not start: `cannot open the data store` | `data_path` is not writable by the server's user | fix the directory's owner, or point `data_path` / `CPS_DATA_PATH` elsewhere |
 | Labels print shifted or clipped | the printer's offset or calibration | print `cpsctl test <printer-id>`; adjust *label top* / *left shift* in the panel's Edit tab, or calibrate |
 | Chinese prints as blanks or boxes | the font is not on the printer | the printer's fonts are listed in the panel's Info tab and in the API as `available_fonts` |
+| Job refused: `format_not_supported` | the printer cannot take that format and CPS cannot convert it (ZPL to a receipt printer, PCL to IPP) | send PDF or PNG, or the printer's own language; the printer's `formats` lists what it takes |
+| Job refused: `pdf_conversion_unavailable` | the PDF needs converting and the server has no poppler | install `poppler-utils` (section 2) or use the Docker image |
+| Converted PDF prints without text | the PDF does not embed its fonts and the server has none to stand in | install `fonts-liberation` (and `fonts-wqy-zenhei` for Chinese) |
+| Receipt or office printer shows state `unknown` | it prints but does not report status (no PJL, or a write-only USB interface) | jobs still print and are confirmed after a short settle time |
 
 Day-to-day operations are in [RUNBOOK.md](RUNBOOK.md).
