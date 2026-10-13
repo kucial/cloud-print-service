@@ -86,6 +86,7 @@ func (a *agent) setStatus(phase string, err error) {
 
 type localPrinter struct {
 	agentapi.Printer
+	profile printer.Profile
 	backend Backend
 	sink    Sink
 	ln      net.Listener
@@ -93,6 +94,14 @@ type localPrinter struct {
 	// job is held by a connection while it is inside a label, so that a host query from
 	// another connection cannot reach the printer between two pieces of it.
 	job sync.Mutex
+}
+
+// profileOf is what a backend's printer is; backends that cannot tell serve Zebras.
+func profileOf(b Backend) printer.Profile {
+	if p, ok := b.(interface{ Profile() printer.Profile }); ok && p.Profile().Driver != "" {
+		return p.Profile()
+	}
+	return zebraProfile
 }
 
 // query answers a host command (`^HS`, `~HI`) on the printer's control connection and
@@ -169,18 +178,19 @@ func (a *agent) serveLocal(ctx context.Context, backends []Backend) error {
 		if m, ok := b.(interface{ Model() string }); ok && m.Model() != "" {
 			model = m.Model()
 		}
+		prof := profileOf(b)
 		p := &localPrinter{
 			Printer: agentapi.Printer{
 				PrinterID: id, Name: model, Site: a.cfg.Site,
-				Driver: "zebra9100", Host: a.cfg.Host, Port: port, Enabled: true,
-				Model: model,
+				Driver: prof.Driver, Kind: prof.Kind, Formats: prof.Formats,
+				Host: a.cfg.Host, Port: port, Enabled: true, Model: model,
 			},
-			backend: b, sink: sink, ln: ln,
+			profile: prof, backend: b, sink: sink, ln: ln,
 		}
 		a.mu.Lock()
 		a.printers[id] = p
 		a.mu.Unlock()
-		a.log.Info("serving printer", "printer_id", id, "backend", b.Name(),
+		a.log.Info("serving printer", "printer_id", id, "backend", b.Name(), "kind", prof.Kind,
 			"listen", fmt.Sprintf("%s:%d", a.cfg.Host, port))
 		go a.acceptLoop(ctx, p)
 		port++
@@ -217,6 +227,15 @@ func (a *agent) serveConn(ctx context.Context, p *localPrinter, conn net.Conn) {
 	defer conn.Close()
 	var label labelState
 	defer label.release(p)
+	// The server sends each job on a connection of its own; when it closes, the job is
+	// over. Pass that on: an office printer prints a PDF or PostScript job when its
+	// connection ends, not when the next job begins.
+	wroteDocument := false
+	defer func() {
+		if e, ok := p.sink.(interface{ EndJob() }); ok && wroteDocument {
+			e.EndJob()
+		}
+	}()
 	buf := make([]byte, 32<<10)
 	for {
 		wait := 5 * time.Minute
@@ -226,6 +245,9 @@ func (a *agent) serveConn(ctx context.Context, p *localPrinter, conn net.Conn) {
 		_ = conn.SetReadDeadline(time.Now().Add(wait))
 		n, err := conn.Read(buf)
 		if n > 0 {
+			if !isServerQuery(p.profile, buf[:n]) {
+				wroteDocument = true
+			}
 			if !a.handle(ctx, p, conn, buf[:n], &label) {
 				return
 			}
@@ -247,17 +269,18 @@ func (a *agent) serveConn(ctx context.Context, p *localPrinter, conn net.Conn) {
 
 // handle forwards one chunk and returns false when the connection should be dropped.
 //
-// The agent must be *transparent in both directions*: the server's driver sends `^HS` on
-// its status socket and expects a reply. A write-only forwarder would leave every job
-// stuck in `sending`, because confirmation could never observe a non-printing state.
+// The agent must be *transparent in both directions*: the server's driver asks the
+// printer for its status (~HS, DLE EOT, @PJL INFO) on its status socket and expects a
+// reply. A write-only forwarder would leave every job stuck in `sending`, because
+// confirmation could never observe a non-printing state.
 func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chunk []byte, label *labelState) bool {
 	trimmed := strings.TrimLeft(string(chunk), " \r\n\t")
 	switch {
-	case printer.IsHostQuery(trimmed): // ~HS, ~HI, ^HH (and ^HS from older servers)
+	case isServerQuery(p.profile, chunk):
 		// The server asks for status on its own connection right after sending a job,
-		// while the agent may still be passing the label on in pieces. A query between
-		// two pieces lands inside the label (in a ^GF graphic, the printer then drops
-		// the whole label without an error), so it waits for the label to end.
+		// while the agent may still be passing the document on in pieces. A query between
+		// two pieces lands inside the document (in a ^GF graphic, the printer then drops
+		// the whole label without an error), so it waits for the document to end.
 		if !label.held {
 			p.job.Lock()
 		}
@@ -266,6 +289,13 @@ func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chun
 			p.job.Unlock()
 		}
 		if err != nil {
+			if p.profile.Driver != printer.DriverZebra {
+				// A receipt or office printer that cannot answer (write-only, no PJL)
+				// gets no reply rather than a dropped connection: the server reads that
+				// as "reachable, state unknown". The query is never sent on as data.
+				a.log.Debug("printer cannot answer the server's query", "printer_id", p.PrinterID, "err", err)
+				return true
+			}
 			a.log.Warn("host query failed", "printer_id", p.PrinterID, "err", err)
 			return false
 		}
@@ -275,14 +305,14 @@ func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chun
 		}
 		return true
 
-	case strings.HasPrefix(trimmed, "~JA"):
+	case p.profile.Driver == printer.DriverZebra && strings.HasPrefix(trimmed, "~JA"):
 		wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, err := p.sink.Write(wctx, []byte(chunk))
 		cancel()
 		return err == nil
 
 	default:
-		// Label data: straight through, no buffering, no interpretation.
+		// Document data: straight through, no buffering, no interpretation.
 		label.hold(p)
 		wctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		_, err := p.sink.Write(wctx, chunk)

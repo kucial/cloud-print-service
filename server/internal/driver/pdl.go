@@ -76,4 +76,13 @@ func (d *PDL) Identify(ctx context.Context) (map[string]string, error) {
 	return info, nil
 }
 
+// Formats asks the printer which page languages it has (@PJL INFO CONFIG).
+func (d *PDL) Formats(ctx context.Context) ([]printer.Format, error) {
+	raw, err := d.pjl(ctx, printer.CmdPJLConfig)
+	if err != nil {
+		return nil, err
+	}
+	return printer.ParsePJLLanguages(raw), nil
+}
+
 func (d *PDL) Close() error { return d.link.close() }

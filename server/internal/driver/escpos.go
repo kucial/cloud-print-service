@@ -51,6 +51,12 @@ func (e *ESCPOS) Status(ctx context.Context) (domain.Status, error) {
 				return domain.Status{State: domain.StateUnknown, ObservedAt: now,
 					Detail: "printer answers only part of the ESC/POS status requests"}, nil
 			}
+			if isTimeout(err) && e.reachable(ctx) {
+				// Connected but silent: a printer that cannot report status (write-only
+				// behind the agent, or one without real-time status) still prints.
+				return domain.Status{State: domain.StateUnknown, ObservedAt: now,
+					Detail: "printer does not answer ESC/POS status requests; reachable"}, nil
+			}
 			return domain.Status{State: domain.StateOffline, ObservedAt: now, Detail: "status query failed"}, err
 		}
 		b[i] = v
@@ -99,6 +105,16 @@ func (e *ESCPOS) Identify(ctx context.Context) (map[string]string, error) {
 		return info, err
 	}
 	return info, nil
+}
+
+// reachable reports whether a fresh connection opens.
+func (e *ESCPOS) reachable(ctx context.Context) bool {
+	c, err := e.link.dial(ctx)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 func (e *ESCPOS) Close() error { return e.link.close() }

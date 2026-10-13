@@ -37,7 +37,7 @@ static int find_printer(libusb_context *ctx, const char *want, libusb_device_han
 				if ((ep->bmAttributes & 3) != LIBUSB_TRANSFER_TYPE_BULK) continue;
 				if (ep->bEndpointAddress & 0x80) in = ep->bEndpointAddress; else o = ep->bEndpointAddress;
 			}
-			if (!o || !in) continue; // write-only printers cannot answer ~HS
+			if (!o) continue; // no way in; a missing IN endpoint is a write-only printer
 			libusb_device_handle *h;
 			if (libusb_open(list[i], &h) != 0) continue;
 			char k[128] = {0};
@@ -125,7 +125,7 @@ func listUSBPrinters() ([]usbDevice, error) {
 		if err != nil {
 			break
 		}
-		out = append(out, usbDevice{Path: p.key, Key: p.key, ID1284: p.id1284})
+		out = append(out, usbDevice{Path: p.key, Key: p.key, ID1284: p.id1284, WriteOnly: p.in == 0})
 		p.Close()
 	}
 	return out, nil
@@ -167,6 +167,9 @@ func (p *libusbPort) Write(b []byte, timeout time.Duration) (int, error) {
 }
 
 func (p *libusbPort) Read(b []byte, timeout time.Duration) (int, error) {
+	if p.in == 0 {
+		return 0, errWriteOnly
+	}
 	n, err := p.transfer(p.in, b, timeout)
 	if n > 0 && errors.Is(err, errUSBTimeout) {
 		err = nil

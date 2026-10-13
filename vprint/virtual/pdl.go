@@ -46,6 +46,9 @@ func (p *Printer) pjlAnswer(q []byte) ([]byte, int, bool) {
 			return "@PJL INFO STATUS\r\nCODE=" + itoa(code) + "\r\nDISPLAY=\"" + display + "\"\r\nONLINE=TRUE\r\n\f"
 		}},
 		{"@PJL INFO ID", func() string { return "@PJL INFO ID\r\n\"" + p.Model + "\"\r\n\f" }},
+		{"@PJL INFO CONFIG", func() string {
+			return "@PJL INFO CONFIG\r\nLANGUAGES [3 ENUMERATED]\r\n\tPCL\r\n\tPCLXL\r\n\tPOSTSCRIPT\r\n\f"
+		}},
 	} {
 		if bytes.HasPrefix(q, []byte(c.cmd)) {
 			end := bytes.IndexByte(q, '\n')
@@ -114,8 +117,10 @@ func (p *Printer) servePDL(c net.Conn) {
 
 func (p *Printer) recordPDL(doc []byte) {
 	body := bytes.TrimSpace(bytes.ReplaceAll(doc, pjlUEL, nil))
-	if len(body) == 0 {
-		return // a status connection
+	if len(body) == 0 || onlyControl(body) {
+		// A status connection, or bytes that make no marks (a real printer ejects a
+		// page only when something is on it).
+		return
 	}
 	format := "application/octet-stream"
 	switch {
@@ -141,4 +146,13 @@ func (p *Printer) recordPDL(doc []byte) {
 		}
 		p.mu.Unlock()
 	}()
+}
+
+func onlyControl(b []byte) bool {
+	for _, c := range b {
+		if c >= 0x20 || c == 0x1b || c == '\f' {
+			return false
+		}
+	}
+	return true
 }

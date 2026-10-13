@@ -15,6 +15,7 @@ const pjlUEL = "\x1b%-12345X"
 var (
 	CmdPJLStatus = []byte(pjlUEL + "@PJL INFO STATUS\r\n" + pjlUEL)
 	CmdPJLID     = []byte(pjlUEL + "@PJL INFO ID\r\n" + pjlUEL)
+	CmdPJLConfig = []byte(pjlUEL + "@PJL INFO CONFIG\r\n" + pjlUEL)
 )
 
 // IsPJLQuery reports whether p is a PJL INFO request (after any UEL prefix).
@@ -105,4 +106,47 @@ func ParsePJLID(reply []byte) (string, bool) {
 		return line, line != ""
 	}
 	return "", false
+}
+
+// ParsePJLLanguages reads the page languages from an @PJL INFO CONFIG answer:
+//
+//	LANGUAGES [3 ENUMERATED]
+//		PCL
+//		PCLXL
+//		POSTSCRIPT
+//
+// in the formats CPS names (PCL and PCL XL are both "pcl").
+func ParsePJLLanguages(reply []byte) []Format {
+	var out []Format
+	seen := map[Format]bool{}
+	in := false
+	for _, line := range strings.Split(string(reply), "\n") {
+		raw := strings.TrimRight(line, "\r\f")
+		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(raw)), "LANGUAGES") {
+			in = true
+			continue
+		}
+		if !in {
+			continue
+		}
+		if raw == "" || (raw[0] != ' ' && raw[0] != '\t') {
+			break // the next setting
+		}
+		var f Format
+		switch v := strings.ToUpper(strings.TrimSpace(raw)); {
+		case strings.HasPrefix(v, "PCL"):
+			f = FormatPCL
+		case v == "POSTSCRIPT":
+			f = FormatPostScript
+		case v == "PDF":
+			f = FormatPDF
+		default:
+			continue
+		}
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }

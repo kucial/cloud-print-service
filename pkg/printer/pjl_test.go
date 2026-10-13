@@ -50,3 +50,15 @@ func TestParsePJLID(t *testing.T) {
 		t.Fatal("query detection")
 	}
 }
+
+func TestParsePJLLanguages(t *testing.T) {
+	reply := "@PJL INFO CONFIG\r\nIN TRAYS [1 ENUMERATED]\r\n\tINTRAY1 MP\r\nLANGUAGES [4 ENUMERATED]\r\n" +
+		"\tPCL\r\n\tPCLXL\r\n\tPOSTSCRIPT\r\n\tPDF\r\nUSTATUS [4 ENUMERATED]\r\n\tDEVICE\r\n\f"
+	got := ParsePJLLanguages([]byte(reply))
+	if len(got) != 3 || got[0] != FormatPCL || got[1] != FormatPostScript || got[2] != FormatPDF {
+		t.Fatalf("languages: %v", got)
+	}
+	if len(ParsePJLLanguages([]byte("@PJL INFO CONFIG\r\n\f"))) != 0 {
+		t.Fatal("no LANGUAGES section")
+	}
+}

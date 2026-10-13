@@ -566,8 +566,8 @@ func (m *Manager) pollOne(ctx context.Context, p *Printer) {
 // config is left alone: an operator may keep a printer to fewer formats on purpose.
 func (m *Manager) learnFormats(ctx context.Context, p *Printer) {
 	fr, ok := p.driver().(driver.FormatReporter)
-	if !ok || p.formatsLearned.Load() {
-		return
+	if !ok || p.formatsLearned.Load() || m.sourceOf(p.ID()) == SourceAgent {
+		return // an agent reports its printers' formats itself
 	}
 	if !slices.Equal(p.Spec().Formats, printer.DefaultFormats(p.Spec().Driver)) {
 		p.formatsLearned.Store(true)

@@ -31,10 +31,11 @@ import (
 var defaultSharePorts = []int{9100, 9200, 9101, 9102, 2100, 6400}
 
 type tcpShare struct {
-	host   string
-	port   int
-	model  string // from ~HI at discovery
-	serial string // virtual printers report one; real ~HI does not
+	host    string
+	port    int
+	model   string // from ~HI (or GS I / PJL) at discovery
+	serial  string // virtual printers report one; real ~HI does not
+	profile printer.Profile
 
 	mu sync.Mutex
 	// Each printer gets one control connection for ^HI/^HS and one for data, mirroring
@@ -42,8 +43,9 @@ type tcpShare struct {
 	ctl net.Conn
 }
 
-func (s *tcpShare) Name() string  { return fmt.Sprintf("tcp-share/%s:%d", s.host, s.port) }
-func (s *tcpShare) Model() string { return s.model }
+func (s *tcpShare) Name() string             { return fmt.Sprintf("tcp-share/%s:%d", s.host, s.port) }
+func (s *tcpShare) Model() string            { return s.model }
+func (s *tcpShare) Profile() printer.Profile { return s.profile }
 
 // Key identifies the share in its printer id: the serial when the printer reports one,
 // else the local port it answers on.
@@ -82,10 +84,24 @@ func (s *tcpShare) Close() error {
 
 // query sends a short command and returns the reply, redialing once on a stale socket.
 func (s *tcpShare) query(ctx context.Context, cmd string) (string, error) {
+	return s.queryWith(ctx, cmd, 2, 3*time.Second)
+}
+
+// probe asks once, briefly, and drops the connection when there is no answer, so the
+// next probe starts on a clean stream.
+func (s *tcpShare) probe(ctx context.Context, cmd string) (string, error) {
+	reply, err := s.queryWith(ctx, cmd, 1, 700*time.Millisecond)
+	if err != nil {
+		_ = s.Close()
+	}
+	return reply, err
+}
+
+func (s *tcpShare) queryWith(ctx context.Context, cmd string, attempts int, timeout time.Duration) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt > 0 && s.ctl != nil {
 			_ = s.ctl.Close()
 			s.ctl = nil
@@ -108,7 +124,7 @@ func (s *tcpShare) query(ctx context.Context, cmd string) (string, error) {
 		reply, err := readReply(func(p []byte, d time.Duration) (int, error) {
 			_ = conn.SetReadDeadline(time.Now().Add(d))
 			return conn.Read(p)
-		}, cmd, 3*time.Second)
+		}, cmd, timeout)
 		if err == nil {
 			return reply, nil
 		}
@@ -145,12 +161,18 @@ func (s *tcpSink) Write(ctx context.Context, p []byte) (int, error) {
 }
 
 func (s *tcpSink) Status(ctx context.Context) (agentapi.Status, error) {
-	raw, err := s.share.query(ctx, printer.CmdHostStatus)
-	now := time.Now().UTC()
-	if err != nil {
-		return agentapi.Status{State: printer.StateOffline, ObservedAt: now, Detail: err.Error()}, err
+	return statusFor(ctx, s.share.profile, s.share.query)
+}
+
+// EndJob closes the data connection, which ends the job for the printer behind the
+// share; the next job opens a fresh one.
+func (s *tcpSink) EndJob() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.data != nil {
+		_ = s.data.Close()
+		s.data = nil
 	}
-	return ParseHostStatus(raw, now), nil
 }
 
 func (s *tcpSink) Close() error {
@@ -163,17 +185,42 @@ func (s *tcpSink) Close() error {
 	return s.share.Close()
 }
 
-// Identify reads model/serial over `~HI`.
-func (s *tcpShare) Identify(ctx context.Context) (model string, serial string, err error) {
-	raw, err := s.query(ctx, printer.CmdHostID)
+// Identify works out what printer answers on the share, in an order that cannot waste
+// paper: the ESC/POS status request first (a no-op to label and office printers), then
+// PJL (ignored by a Zebra), then ~HI — each of the last two would print as text on a
+// receipt printer.
+func (s *tcpShare) Identify(ctx context.Context) error {
+	if raw, err := s.probe(ctx, string(printer.CmdESCPOSPrinterStatus)); err == nil && len(raw) == 1 {
+		if _, ok := printer.ParseESCPOSStatus(raw[0], 0x12, 0x12); ok {
+			s.profile = printer.Profile{Driver: printer.DriverESCPOS, Kind: printer.KindReceipt,
+				Formats: []printer.Format{printer.FormatESCPOS}}
+			s.model = identifyModel(ctx, s.profile, "ESC/POS printer", s.query)
+			return nil
+		}
+	}
+	if raw, err := s.probe(ctx, string(printer.CmdPJLID)); err == nil {
+		if model, ok := printer.ParsePJLID([]byte(raw)); ok {
+			s.profile = printer.Profile{Driver: printer.DriverPDL, Kind: printer.KindDocument,
+				Formats: []printer.Format{printer.FormatPCL}, PJL: true}
+			if raw, err := s.query(ctx, string(printer.CmdPJLConfig)); err == nil {
+				if langs := printer.ParsePJLLanguages([]byte(raw)); len(langs) > 0 {
+					s.profile.Formats = langs
+				}
+			}
+			s.model = model
+			return nil
+		}
+	}
+	raw, err := s.probe(ctx, printer.CmdHostID)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 	id, ok := printer.ParseHostID(raw)
 	if !ok {
-		return "", "", fmt.Errorf("unrecognised ~HI reply %q", raw)
+		return fmt.Errorf("unrecognised ~HI reply %q", raw)
 	}
-	return id.Model, id.Serial, nil
+	s.profile, s.model, s.serial = zebraProfile, id.Model, id.Serial
+	return nil
 }
 
 // ParseHostStatus decodes a host status reply (real ~HS or legacy ^HS form) for a
@@ -204,12 +251,11 @@ func probeBackends(ctx context.Context, log *slog.Logger) ([]Backend, error) {
 			break
 		}
 		share := &tcpShare{host: "127.0.0.1", port: p}
-		model, serial, err := share.Identify(ctx)
-		if err != nil {
+		if err := share.Identify(ctx); err != nil {
 			continue // not a printer share
 		}
-		share.model, share.serial = model, serial
-		log.Info("found local printer share", "port", p, "model", model, "serial", serial)
+		log.Info("found local printer share", "port", p, "model", share.model, "serial", share.serial,
+			"kind", share.profile.Kind)
 		out = append(out, share)
 	}
 	out = append(out, usbBackends(ctx, log)...)
