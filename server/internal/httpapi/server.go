@@ -287,30 +287,37 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "printer_not_found", "unknown printer "+r.PathValue("printer_id"))
 		return
 	}
-	if p.Spec().Kind != printer.KindLabel {
-		writeErr(w, http.StatusConflict, "not_supported_by_printer",
-			fmt.Sprintf("no test page for %s printers yet", p.Spec().Kind))
-		return
-	}
 	external := r.URL.Query().Get("external_id")
 	if external == "" {
 		external = fmt.Sprintf("test-%s-%d", p.ID(), time.Now().Unix())
 	}
-	geo := testLabelSize(r.Context(), p)
-	cjk := testLabelFont(r.Context(), p)
-	zpl := testLabelZPL(p.Spec().Name, p.ID(), geo, cjk, time.Now())
-	j, replayed, err := s.jobs.Submit(r.Context(), job.SubmitRequest{
-		ClientID: ClientFrom(r.Context()).ID, PrinterID: p.ID(),
-		ExternalID: external, ZPL: zpl, BizRef: "test", Priority: "high",
-	})
+	req := job.SubmitRequest{ClientID: ClientFrom(r.Context()).ID, PrinterID: p.ID(),
+		ExternalID: external, BizRef: "test", Priority: "high"}
+	var page map[string]any
+	switch p.Spec().Kind {
+	case printer.KindReceipt:
+		data, cols := testReceiptESCPOS(p.Spec().Name, p.ID(), p.Spec().MediaWidthMM, time.Now())
+		req.Payload, req.Format = data, string(printer.FormatESCPOS)
+		page = map[string]any{"kind": "receipt", "columns": cols}
+	case printer.KindLabel:
+		geo := testLabelSize(r.Context(), p)
+		cjk := testLabelFont(r.Context(), p)
+		req.ZPL = testLabelZPL(p.Spec().Name, p.ID(), geo, cjk, time.Now())
+		page = map[string]any{"kind": "label", "width_mm": geo.WidthMM, "height_mm": geo.HeightMM,
+			"dpi": printer.DPIFromDPMM(geo.DPMM), "size_source": geo.Source,
+			"cjk_font": cjk.Font, "cjk_note": cjk.Note}
+	default:
+		writeErr(w, http.StatusConflict, "not_supported_by_printer",
+			fmt.Sprintf("no test page for %s printers yet", p.Spec().Kind))
+		return
+	}
+	j, replayed, err := s.jobs.Submit(r.Context(), req)
 	if err != nil {
 		s.writeJobErr(w, err)
 		return
 	}
 	out := jobAccepted(j, replayed)
-	out["label"] = map[string]any{"width_mm": geo.WidthMM, "height_mm": geo.HeightMM,
-		"dpi": printer.DPIFromDPMM(geo.DPMM), "size_source": geo.Source,
-		"cjk_font": cjk.Font, "cjk_note": cjk.Note}
+	out["label"] = page // kept as "label" for clients written against label printers
 	writeJSON(w, http.StatusAccepted, out)
 }
 
@@ -375,6 +382,7 @@ type submitBody struct {
 	ExternalID    string            `json:"external_id"`
 	ZPL           string            `json:"zpl"`
 	PayloadBase64 string            `json:"payload_base64"`
+	Format        string            `json:"format"` // zpl (default), escpos, pdf, png, …
 	Copies        int               `json:"copies"`
 	PageCopies    []int             `json:"page_copies"`
 	Priority      string            `json:"priority"`
@@ -395,6 +403,7 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey: r.Header.Get("Idempotency-Key"),
 		ZPL:            b.ZPL,
 		PayloadBase64:  b.PayloadBase64,
+		Format:         b.Format,
 		Copies:         b.Copies,
 		PageCopies:     b.PageCopies,
 		Priority:       b.Priority,
@@ -403,11 +412,24 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// submitRawJob takes application/octet-stream ZPL to avoid base64 for large payloads.
+// submitRawJob takes the document as the request body, to avoid base64 for large
+// payloads. The format comes from ?format=, else from the Content-Type (application/pdf,
+// image/png, image/jpeg); octet-stream and text/plain without ?format= mean ZPL.
 func (s *Server) submitRawJob(w http.ResponseWriter, r *http.Request) {
-	if ct := r.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, "application/octet-stream") && !strings.HasPrefix(ct, "text/plain") {
-		writeErr(w, http.StatusUnsupportedMediaType, "invalid_request", "expected application/octet-stream")
-		return
+	format := r.URL.Query().Get("format")
+	ct, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+	switch ct = strings.TrimSpace(strings.ToLower(ct)); ct {
+	case "", "application/octet-stream", "text/plain":
+	default:
+		f, ok := printer.ParseFormat(ct)
+		if !ok {
+			writeErr(w, http.StatusUnsupportedMediaType, "invalid_request",
+				"expected application/octet-stream (with ?format=), text/plain, application/pdf, image/png or image/jpeg")
+			return
+		}
+		if format == "" {
+			format = string(f)
+		}
 	}
 	var rdr io.Reader = r.Body
 	if s.maxPayload > 0 {
@@ -430,6 +452,7 @@ func (s *Server) submitRawJob(w http.ResponseWriter, r *http.Request) {
 		ExternalID:     q.Get("external_id"),
 		IdempotencyKey: r.Header.Get("Idempotency-Key"),
 		ZPL:            string(body),
+		Format:         format,
 		Copies:         intParam(r, "copies", 1),
 		Priority:       q.Get("priority"),
 		BizRef:         q.Get("biz_ref"),
@@ -804,6 +827,10 @@ func jobInvalidReason(err error) string {
 		return "invalid_page_copies"
 	case errors.Is(err, job.ErrInvalidPriority):
 		return "invalid_priority"
+	case errors.Is(err, job.ErrInvalidFormat):
+		return "invalid_format"
+	case errors.Is(err, job.ErrFormatUnsupported):
+		return "format_not_supported"
 	default:
 		return "invalid_request"
 	}

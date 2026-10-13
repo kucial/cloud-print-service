@@ -1,6 +1,7 @@
 package job
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -8,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 	"github.com/kucial/cloud-print-service/server/internal/driver"
 	"github.com/kucial/cloud-print-service/server/internal/fleet"
@@ -38,6 +41,8 @@ var (
 	ErrInvalidCopies     = errors.New("copies out of allowed range")
 	ErrInvalidPageCopies = errors.New("invalid page_copies")
 	ErrInvalidPriority   = errors.New("priority must be normal|high")
+	ErrInvalidFormat     = errors.New("unknown format")
+	ErrFormatUnsupported = errors.New("printer does not accept this format")
 )
 
 // SubmitRequest is the API-level request to dispatch one label.
@@ -48,11 +53,16 @@ type SubmitRequest struct {
 	IdempotencyKey string
 	ZPL            string // raw label, used when PayloadBase64 is empty
 	PayloadBase64  string
-	Copies         int
-	PageCopies     []int // targeted copies per format page, e.g. [4, 1] for 4 full cartons + 1 tail carton
-	Priority       string
-	BizRef         string
-	Meta           map[string]string
+	// Payload is the document as bytes, for callers inside the server (test pages).
+	Payload []byte
+	// Format names what the payload is (zpl, escpos, pdf, png, …); empty means zpl, the
+	// only format there was before receipt and office printers.
+	Format     string
+	Copies     int
+	PageCopies []int // targeted copies per format page, e.g. [4, 1] for 4 full cartons + 1 tail carton
+	Priority   string
+	BizRef     string
+	Meta       map[string]string
 }
 
 type Config struct {
@@ -189,6 +199,13 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 			return nil, false, fmt.Errorf("%w: %w", ErrInvalidRequest, ErrMissingExternalID)
 		}
 	}
+	format, err := resolveFormat(req.Format, p.Spec().Formats)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(req.PageCopies) > 0 && format != printer.FormatZPL {
+		return nil, false, fmt.Errorf("%w: %w: page_copies works on ZPL pages only", ErrInvalidRequest, ErrInvalidPageCopies)
+	}
 	copies := req.Copies
 	maxCopies := s.cfg.MaxCopies
 	if maxCopies <= 0 {
@@ -234,6 +251,17 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 	}
 	sum := h.Sum(nil)
 
+	// A ZPL label carries its own quantity (^PQ), and a driver that takes copies as a
+	// job attribute (IPP) gets the number; for anything else — an ESC/POS receipt —
+	// copies means sending the document that many times.
+	if format != printer.FormatZPL && copies > 1 && !p.TakesCopies() {
+		payload = bytes.Repeat(payload, copies)
+		if s.cfg.MaxPayloadSize > 0 && int64(len(payload)) > s.cfg.MaxPayloadSize {
+			return nil, false, fmt.Errorf("%w: %w (%d copies make %d bytes, max allowed is %d bytes)",
+				ErrInvalidRequest, ErrPayloadTooLarge, copies, len(payload), s.cfg.MaxPayloadSize)
+		}
+	}
+
 	// Idempotency: same (client, external_id) => same job, no second label.
 	if existing, err := s.st.GetByExternal(ctx, req.ClientID, externalID); err == nil {
 		if existing.PayloadSHA != hex.EncodeToString(sum) {
@@ -254,6 +282,7 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		Payload:        string(payload),
 		Bytes:          len(payload),
 		PayloadSHA:     hex.EncodeToString(sum),
+		Format:         format,
 		Copies:         copies,
 		PageCopies:     req.PageCopies,
 		Priority:       priority,
@@ -280,9 +309,29 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 	return job, false, nil
 }
 
+// resolveFormat names the payload's format and checks the printer takes it as is.
+func resolveFormat(name string, accepted []printer.Format) (printer.Format, error) {
+	format := printer.FormatZPL
+	if strings.TrimSpace(name) != "" {
+		f, ok := printer.ParseFormat(name)
+		if !ok {
+			return "", fmt.Errorf("%w: %w %q", ErrInvalidRequest, ErrInvalidFormat, name)
+		}
+		format = f
+	}
+	if !slices.Contains(accepted, format) {
+		return "", fmt.Errorf("%w: %w: %s (it takes %v)", ErrInvalidRequest, ErrFormatUnsupported, format, accepted)
+	}
+	return format, nil
+}
+
 func resolvePayload(req SubmitRequest, max int64) ([]byte, error) {
 	var payload []byte
 	switch {
+	case req.Payload != nil && (req.PayloadBase64 != "" || req.ZPL != ""):
+		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, ErrDuplicatePayload)
+	case req.Payload != nil:
+		payload = req.Payload
 	case req.PayloadBase64 != "" && req.ZPL != "":
 		return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, ErrDuplicatePayload)
 	case req.PayloadBase64 != "":

@@ -5,6 +5,7 @@ import { Printer } from '../types';
 import { useI18n } from '../i18n/context';
 import { useToast } from './Toast';
 import { useDiagnostics } from './DiagnosticsPanel';
+import { hasCapability, printerKind } from '../printerKind';
 
 // Everything editable about a printer, in sections that save independently: two are
 // CPS's own record, one writes to the printer itself. Keeping the saves apart means a
@@ -16,17 +17,76 @@ export const PrinterSettings: React.FC<{
   onUpdated: () => void;
   onTestPrint: () => void;
 }> = ({ printer, diag, onUpdated, onTestPrint }) => {
+  const labelTools = hasCapability(printer, 'maintenance');
+  const kind = printerKind(printer);
   // The printer's saved offsets come from its configuration dump; read it once.
   useEffect(() => {
-    if (!diag.result && !diag.running) void diag.run();
+    if (labelTools && !diag.result && !diag.running) void diag.run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="space-y-3">
       <BasicsSection p={printer} onUpdated={onUpdated} />
-      <MediaSection p={printer} onUpdated={onUpdated} />
-      <PrinterSideSection p={printer} diag={diag} onTestPrint={onTestPrint} />
+      {kind === 'label' && <MediaSection p={printer} onUpdated={onUpdated} />}
+      {kind === 'receipt' && <ReceiptPaperSection p={printer} onUpdated={onUpdated} />}
+      {labelTools ? (
+        <PrinterSideSection p={printer} diag={diag} onTestPrint={onTestPrint} />
+      ) : (
+        <TestPageCard kind={kind} onTestPrint={onTestPrint} />
+      )}
+    </div>
+  );
+};
+
+// Receipt printers have one paper fact that matters: the roll width (58 or 80 mm).
+const ReceiptPaperSection: React.FC<{ p: Printer; onUpdated: () => void }> = ({ p, onUpdated }) => {
+  const { t } = useI18n();
+  const f = useSectionForm({ media_width_mm: p.media_width_mm || 80 });
+  const { saving, save } = useSave(onUpdated);
+  return (
+    <Section
+      title={t('settings_receipt_paper')}
+      where={t('settings_saved_in_cps')}
+      dirty={f.dirty}
+      saving={saving}
+      onReset={f.reset}
+      onSave={() =>
+        save(() => api.updatePrinter(p.printer_id, { media_width_mm: f.draft.media_width_mm }))
+      }
+    >
+      <div className="form-group mb-0">
+        <label htmlFor="receipt-width">{t('receipt_paper_width')}</label>
+        <select
+          id="receipt-width"
+          value={f.draft.media_width_mm}
+          onChange={(e) => f.set('media_width_mm', Number(e.target.value))}
+        >
+          <option value={58}>58 mm</option>
+          <option value={80}>80 mm</option>
+        </select>
+        <span className="text-xs text-muted">{t('receipt_paper_note')}</span>
+      </div>
+    </Section>
+  );
+};
+
+const TestPageCard: React.FC<{ kind: string; onTestPrint: () => void }> = ({
+  kind,
+  onTestPrint,
+}) => {
+  const { t } = useI18n();
+  return (
+    <div className="adjust-card flex items-center justify-between gap-2 flex-wrap">
+      <div>
+        <div className="section-title">{t('test_page_title')}</div>
+        <p className="text-xs text-muted">
+          {kind === 'document' ? t('test_page_note_document') : t('test_page_note_receipt')}
+        </p>
+      </div>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={onTestPrint}>
+        <Play size={13} /> {t('btn_print_test_page')}
+      </button>
     </div>
   );
 };

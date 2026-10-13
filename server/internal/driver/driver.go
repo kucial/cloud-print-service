@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 )
 
@@ -43,6 +44,27 @@ type LabelTools interface {
 	HostDirectory(ctx context.Context) (string, error)
 	// Control sends a maintenance command such as ~JC (calibrate).
 	Control(ctx context.Context, cmd string) error
+}
+
+// Doc is one document with what a job-oriented printer needs to know about it.
+type Doc struct {
+	Data   []byte
+	Format printer.Format
+	Copies int
+	Name   string // job name shown on the printer, e.g. the CPS job id
+}
+
+// Sent is a document a DocumentSender handed over: Bytes as for Send, Ref the
+// printer's own job id (for JobTracker).
+type Sent struct {
+	Bytes int
+	Ref   string
+}
+
+// DocumentSender is a printer that takes whole documents with attributes (IPP): the
+// format, and copies as a number rather than repeated bytes.
+type DocumentSender interface {
+	SendDocument(ctx context.Context, doc Doc) (Sent, error)
 }
 
 // ErrNotSupported is returned for an operation the printer's kind does not have.

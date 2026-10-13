@@ -376,6 +376,7 @@ type Job struct {
 	Payload       string            `json:"-"`                        // never serialized by default; see docs/DESIGN.md §12
 	Bytes         int               `json:"payload_bytes"`
 	PayloadSHA    string            `json:"payload_sha256"`
+	Format        printer.Format    `json:"format,omitempty"` // what is sent: zpl, escpos, pdf, …
 	Copies        int               `json:"copies"`
 	PageCopies    []int             `json:"page_copies,omitempty"`
 	Priority      string            `json:"priority"`

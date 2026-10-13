@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { DiagnosticsPanel, useDiagnostics } from '../components/DiagnosticsPanel';
 import { PrinterSettings } from '../components/PrinterSettings';
 import { FontsSection } from '../components/FontsSection';
+import { hasCapability, printerKind, sizeTag } from '../printerKind';
 import {
   Printer as PrinterIcon,
   Search,
@@ -196,13 +197,22 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                     </td>
                     <td>{p.site || '—'}</td>
                     <td>
-                      {p.paper_size ? (
-                        <span className="badge-pill badge-warn font-mono">{p.paper_size}</span>
+                      {sizeTag(p) ? (
+                        <span className="badge-pill badge-warn font-mono">{sizeTag(p)}</span>
                       ) : (
                         <span className="text-muted text-xs">—</span>
                       )}
                     </td>
-                    <td className="font-mono text-sm">{p.model || p.driver}</td>
+                    <td className="font-mono text-sm">
+                      <div className="flex items-center gap-1.5">
+                        <span>{p.model || p.driver}</span>
+                        {printerKind(p) !== 'label' && (
+                          <span className="badge-pill badge-neutral text-xs">
+                            {t(`kind_${printerKind(p)}`)}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <span className={`state-badge state-${st.state}`}>
                         {tPrinterState(st.state)}
@@ -272,9 +282,9 @@ export const PrintersView: React.FC<PrintersViewProps> = ({
                           {p.custom_label}
                         </span>
                       )}
-                      {p.paper_size && (
+                      {sizeTag(p) && (
                         <span className="badge-pill badge-warn text-xs font-mono">
-                          {p.paper_size}
+                          {sizeTag(p)}
                         </span>
                       )}
                     </div>
@@ -390,15 +400,17 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                 ['diag', <Stethoscope size={13} key="d" />, t('diag_title')],
                 ['edit', <FileEdit size={13} key="e" />, t('tab_edit')],
               ] as const
-            ).map(([id, icon, label]) => (
-              <button
-                key={id}
-                className={`nav-tab ${tab === id ? 'active' : ''}`}
-                onClick={() => setTab(id)}
-              >
-                {icon} {label}
-              </button>
-            ))}
+            )
+              .filter(([id]) => id !== 'diag' || hasCapability(p, 'diagnostics'))
+              .map(([id, icon, label]) => (
+                <button
+                  key={id}
+                  className={`nav-tab ${tab === id ? 'active' : ''}`}
+                  onClick={() => setTab(id)}
+                >
+                  {icon} {label}
+                </button>
+              ))}
           </div>
           <div className="flex items-center gap-2">
             {tab === 'info' && (
@@ -471,6 +483,18 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                   </span>
                 </div>
                 <div className="detail-item">
+                  <span className="detail-label">{t('kind')}</span>
+                  <span className="detail-val">{t(`kind_${printerKind(p)}`)}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label" title={t('formats_hint')}>
+                    {t('formats')}
+                  </span>
+                  <span className="detail-val font-mono text-sm">
+                    {(p.formats || ['zpl']).join(', ')}
+                  </span>
+                </div>
+                <div className="detail-item">
                   <span className="detail-label">{t('detail_site')}</span>
                   <span className="detail-val">{p.site || '—'}</span>
                 </div>
@@ -484,45 +508,61 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                     )}
                   </span>
                 </div>
-                <div className="detail-item">
-                  <span className="detail-label">{t('paper_size')}</span>
-                  <span className="detail-val">
-                    {p.paper_size ? (
-                      <span className="badge-pill badge-warn font-mono">
-                        {p.paper_size}{' '}
-                        {p.media_width_mm && p.media_height_mm
-                          ? `(${p.media_width_mm}×${p.media_height_mm}mm)`
-                          : ''}
+                {printerKind(p) !== 'label' && (
+                  <div className="detail-item">
+                    <span className="detail-label">
+                      {printerKind(p) === 'receipt'
+                        ? t('receipt_paper_width')
+                        : t('settings_receipt_paper')}
+                    </span>
+                    <span className="detail-val">
+                      <span className="badge-pill badge-warn font-mono">{sizeTag(p)}</span>
+                    </span>
+                  </div>
+                )}
+                {printerKind(p) === 'label' && (
+                  <>
+                    <div className="detail-item">
+                      <span className="detail-label">{t('paper_size')}</span>
+                      <span className="detail-val">
+                        {p.paper_size ? (
+                          <span className="badge-pill badge-warn font-mono">
+                            {p.paper_size}{' '}
+                            {p.media_width_mm && p.media_height_mm
+                              ? `(${p.media_width_mm}×${p.media_height_mm}mm)`
+                              : ''}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </span>
-                    ) : (
-                      '—'
-                    )}
-                  </span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">{t('dpi_label')}</span>
-                  <span className="detail-val font-mono flex items-center gap-1.5 flex-wrap">
-                    <span>
-                      {p.dpi || 203} DPI ({p.dpmm || 8} dpmm)
-                    </span>
-                    <span
-                      className={`badge-pill text-xs ${p.dpi_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}
-                    >
-                      {p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
-                    </span>
-                  </span>
-                </div>
-                <div className="detail-item">
-                  <span className="detail-label">{t('orientation_label')}</span>
-                  <span className="detail-val text-sm font-mono">
-                    {p.orientation || t('not_set')} ·{' '}
-                    {p.print_direction === 'bottom_first'
-                      ? t('direction_bottom_first')
-                      : p.print_direction === 'top_first'
-                        ? t('direction_top_first')
-                        : t('not_set')}
-                  </span>
-                </div>
+                    </div>
+                    <div className="detail-item">
+                      <span className="detail-label">{t('dpi_label')}</span>
+                      <span className="detail-val font-mono flex items-center gap-1.5 flex-wrap">
+                        <span>
+                          {p.dpi || 203} DPI ({p.dpmm || 8} dpmm)
+                        </span>
+                        <span
+                          className={`badge-pill text-xs ${p.dpi_resolved_from_hi ? 'badge-ok' : 'badge-neutral'}`}
+                        >
+                          {p.dpi_resolved_from_hi ? t('verified_from_hi') : t('declared_in_config')}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="detail-label">{t('orientation_label')}</span>
+                      <span className="detail-val text-sm font-mono">
+                        {p.orientation || t('not_set')} ·{' '}
+                        {p.print_direction === 'bottom_first'
+                          ? t('direction_bottom_first')
+                          : p.print_direction === 'top_first'
+                            ? t('direction_top_first')
+                            : t('not_set')}
+                      </span>
+                    </div>
+                  </>
+                )}
                 {p.remark && (
                   <div className="detail-item col-span-2">
                     <span className="detail-label">{t('remark')}</span>
@@ -545,7 +585,9 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                 )}
                 {st.raw && (
                   <div className="detail-item col-span-2">
-                    <span className="detail-label">{t('detail_raw_hs')}</span>
+                    <span className="detail-label">
+                      {printerKind(p) === 'label' ? t('detail_raw_hs') : t('detail_raw_status')}
+                    </span>
                     <span className="detail-val font-mono text-xs code-box">{st.raw}</span>
                   </div>
                 )}
@@ -559,7 +601,7 @@ const PrinterDetailModal: React.FC<PrinterDetailModalProps> = ({
                   </div>
                 )}
               </div>
-              <FontsSection fonts={p.available_fonts} />
+              {hasCapability(p, 'fonts') && <FontsSection fonts={p.available_fonts} />}
             </>
           )}
           {tab === 'diag' && <DiagnosticsPanel diag={diag} />}

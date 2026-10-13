@@ -38,6 +38,7 @@ type Printer struct {
 	media        int // 0 ok, 1 low, 2 out
 	ribbon       int
 	head         int
+	door         bool // cover open (ESC/POS)
 	printing     bool
 	offline      bool
 	sticky       bool // ^always_printing: never returns to idle
@@ -71,6 +72,12 @@ type Label struct {
 	Bytes      int       `json:"bytes"`
 	ZPL        string    `json:"zpl"`
 	Image      *Preview  `json:"image,omitempty"`
+
+	// ESC/POS receipts: the language, the printed text (decoded), and how many
+	// pictures, barcodes and QR codes it carried.
+	Language string `json:"language,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Images   int    `json:"images,omitempty"`
 }
 
 // Preview describes the rendered image of a label.
@@ -124,6 +131,8 @@ type Opts struct {
 	Orientation    string
 	PrintDirection string
 	CJKFont        string
+	// Language is what the printer speaks: zpl (default) or escpos.
+	Language string
 }
 
 func New(id string, o Opts) *Printer {
@@ -263,7 +272,9 @@ func (p *Printer) Control(c Control) {
 	switch c.State {
 	case "":
 	case "idle":
-		p.device, p.media, p.ribbon, p.head, p.printing, p.sticky = 0, 0, 0, 0, false, false
+		p.device, p.media, p.ribbon, p.head, p.printing, p.sticky, p.door = 0, 0, 0, 0, false, false, false
+	case "door_open":
+		p.door = true
 	case "printing":
 		p.device, p.printing = 1, true
 	case "busy":
@@ -380,6 +391,8 @@ func (p *Printer) deviceName() string {
 		return "offline"
 	case p.head == 1:
 		return "head_error"
+	case p.door:
+		return "door_open"
 	case p.media == 2:
 		return "media_out"
 	case p.device == 3:
@@ -424,6 +437,11 @@ func (p *Printer) serve(c net.Conn) {
 		p.mu.Unlock()
 		_ = c.Close()
 	}()
+
+	if p.opts.Language == escposLanguage {
+		p.serveESCPOS(c)
+		return
+	}
 
 	isStatus := false
 	var buf []byte

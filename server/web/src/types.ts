@@ -10,7 +10,13 @@ export type PrinterState =
   | 'error'
   | 'offline'
   | 'disabled'
+  | 'door_open'
+  | 'paper_jam'
+  | 'toner_low'
+  | 'toner_out'
   | 'unknown';
+
+export type PrinterKind = 'label' | 'receipt' | 'document';
 
 export interface JobRef {
   job_id: string;
@@ -33,6 +39,11 @@ export interface Printer {
   site: string;
   model: string;
   driver: string;
+  // What the printer is for, what it takes as is, and which tools it has beyond printing
+  // (diagnostics, maintenance and fonts are label-printer tools).
+  kind?: PrinterKind;
+  formats?: string[];
+  capabilities?: string[];
   host: string;
   port: number;
   enabled: boolean;

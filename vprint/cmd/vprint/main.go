@@ -42,9 +42,10 @@ func main() {
 		count     = flag.Int("count", 1, "how many virtual printers to run")
 		basePort  = flag.Int("base-port", 19100, "first printer port when -listen is not given")
 		baseAdmin = flag.Int("base-admin-port", 19200, "first gallery port when -admin is not given")
-		model     = flag.String("model", "ZT411", "model reported by ~HI")
+		language  = flag.String("language", "zpl", "printer language: zpl (label printer) or escpos (receipt printer)")
+		model     = flag.String("model", "", "model reported by ~HI / GS I (default ZT411, or TM-T82 for escpos)")
 		serial    = flag.String("serial", "", "serial reported by ~HI (default derived from id)")
-		state     = flag.String("state", "idle", "initial state: idle|printing|media_low|media_out|error")
+		state     = flag.String("state", "idle", "initial state: idle|printing|media_low|media_out|door_open|error")
 		dur       = flag.Duration("print-duration", 150*time.Millisecond, "how long one label takes to print")
 
 		renderOn       = flag.Bool("render", false, "render each received label to PNG for debugging")
@@ -130,6 +131,17 @@ func main() {
 		*paperSize = fmt.Sprintf("%gx%gmm", *renderW, *renderH)
 	}
 
+	if *language != "zpl" && *language != "escpos" {
+		log.Error("-language must be zpl or escpos", "got", *language)
+		os.Exit(2)
+	}
+	if *model == "" {
+		*model = "ZT411"
+		if *language == "escpos" {
+			*model = "TM-T82"
+		}
+	}
+
 	var printers []*virtual.Printer
 	for i := 0; i < *count; i++ {
 		pid := *id
@@ -155,7 +167,7 @@ func main() {
 			Addr: addr, Model: *model, Serial: sn, PrintDuration: *dur,
 			DPI: *renderDPI, DPMM: *renderDPMM, PaperSize: *paperSize,
 			Orientation: *orientation, PrintDirection: *printDirection,
-			CJKFont: *cjkFont,
+			CJKFont: *cjkFont, Language: *language,
 		})
 		if err := p.Start(ctx); err != nil {
 			log.Error("cannot start virtual printer", "id", pid, "err", err)
@@ -199,7 +211,7 @@ func main() {
 		}
 		log.Info("virtual printer up",
 			"id", pid, "print", pPort, "gallery", aAddr,
-			"model", *model, "serial", sn, "renderer", p.RendererName(), "mdns", *mdns)
+			"language", *language, "model", *model, "serial", sn, "renderer", p.RendererName(), "mdns", *mdns)
 	}
 
 	if *printStartup != "" {

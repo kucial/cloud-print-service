@@ -310,6 +310,13 @@ func (p *Printer) Identify(ctx context.Context) (map[string]string, error) {
 	return p.driver().Identify(ctx)
 }
 
+// TakesCopies reports whether the printer takes copies as a job attribute (IPP)
+// rather than as repeated bytes.
+func (p *Printer) TakesCopies() bool {
+	_, ok := p.driver().(driver.DocumentSender)
+	return ok
+}
+
 // Capabilities names what this printer can do beyond printing (driver.Capabilities).
 func (p *Printer) Capabilities() []string { return driver.Capabilities(p.driver()) }
 

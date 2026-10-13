@@ -2,14 +2,9 @@ package driver
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
-	"net"
 	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/kucial/cloud-print-service/pkg/printer"
@@ -20,190 +15,26 @@ func init() {
 	Register(printer.DriverZebra, func(p domain.Printer, o Options) (Driver, error) { return NewZebra(p, o), nil })
 }
 
-// Zebra speaks raw ZPL over TCP 9100.
-//
-// Two independent sockets are used on purpose: printer status replies are interleaved
-// into whatever the print socket is sending, so status traffic gets its own connection
-// and can never corrupt label data or starve behind a large payload.
+// Zebra speaks raw ZPL over TCP 9100 (see tcpLink for the two-socket design).
 type Zebra struct {
-	host string
-	port int
-
-	dialTimeout  time.Duration
-	writeTimeout time.Duration
-	readTimeout  time.Duration
-
-	pmu      sync.Mutex
-	printCon net.Conn
-
-	// statusMu is independent of pmu so a status probe never blocks on a print write.
-	// (Printers are effectively single-connection for inbound status replies.)
-	statusMu  sync.Mutex
-	statusCon net.Conn
+	link *tcpLink
 }
 
 // ZebraOpts is the former name of Options.
 type ZebraOpts = Options
 
 func NewZebra(p domain.Printer, o Options) *Zebra {
-	o = o.withDefaults()
-	port := p.Port
-	if port == 0 {
-		port = 9100
-	}
-	return &Zebra{host: p.Host, port: port, dialTimeout: o.DialTimeout, writeTimeout: o.WriteTimeout, readTimeout: o.ReadTimeout}
-}
-
-func (z *Zebra) addr() string { return net.JoinHostPort(z.host, strconv.Itoa(z.port)) }
-
-func (z *Zebra) dial(ctx context.Context) (net.Conn, error) {
-	d := net.Dialer{Timeout: z.dialTimeout}
-	return d.DialContext(ctx, "tcp", z.addr())
-}
-
-func deadlineFor(ctx context.Context, d time.Duration) time.Time {
-	dl := time.Now().Add(d)
-	if cd, ok := ctx.Deadline(); ok && cd.Before(dl) {
-		return cd
-	}
-	return dl
+	return &Zebra{link: newTCPLink(p.Host, p.Port, o)}
 }
 
 // Send writes raw ZPL. Bytes actually flushed are returned; err != nil with n > 0 means
 // a partial label may exist on the printer and the caller must not retry.
-func (z *Zebra) Send(ctx context.Context, data []byte) (int, error) {
-	if len(data) == 0 {
-		return 0, nil
-	}
-	z.pmu.Lock()
-	defer z.pmu.Unlock()
+func (z *Zebra) Send(ctx context.Context, data []byte) (int, error) { return z.link.send(ctx, data) }
 
-	if err := ctx.Err(); err != nil {
-		return 0, err
-	}
-	// The print socket is per-job, not pooled across jobs: a printer that rebooted since
-	// the last job would have a half-open socket whose write "succeeds" into the kernel
-	// buffer, and the job layer could no longer tell whether a byte reached the printer.
-	// A fresh dial keeps "0 bytes written" as the reliable, retryable signal it is.
-	z.dropPrint()
-	c, err := z.dial(ctx)
-	if err != nil {
-		return 0, err // 0 bytes -> caller may retry
-	}
-	z.printCon = c
-	_ = z.printCon.SetWriteDeadline(deadlineFor(ctx, z.writeTimeout))
-	n, err := z.printCon.Write(data)
-	// Whatever happened, the socket is now single-use: the next job opens a fresh one.
-	z.dropPrint()
-	return n, err
-}
-
-func (z *Zebra) dropPrint() {
-	if z.printCon != nil {
-		_ = z.printCon.Close()
-		z.printCon = nil
-	}
-}
-
-func (z *Zebra) dropStatus() {
-	if z.statusCon != nil {
-		_ = z.statusCon.Close()
-		z.statusCon = nil
-	}
-}
-
-// query writes cmd on the status socket and accumulates the reply.
-//
-// A printer reboot (or a network blip) leaves a half-open socket that fails on write
-// rather than on connect, so one transparent redial-and-retry is normal housekeeping,
-// not an error the caller should see.
+// query asks a host query on the status socket; ZPL replies are STX/ETX framed.
 func (z *Zebra) query(ctx context.Context, cmd string, maxBytes int) (string, error) {
-	z.statusMu.Lock()
-	defer z.statusMu.Unlock()
-
-	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		if attempt > 0 {
-			z.dropStatus()
-		}
-		raw, err := z.queryOnce(ctx, cmd, maxBytes)
-		if err == nil {
-			return raw, nil
-		}
-		lastErr = err
-		if ctx.Err() != nil || !IsConnErr(err) {
-			break
-		}
-	}
-	return "", lastErr
-}
-
-// IsConnErr reports whether err means the socket itself is dead and the query may be
-// redialed. Exported because the classification is load-bearing: timeouts must not retry.
-func IsConnErr(err error) bool {
-	if isTimeout(err) {
-		return false // a slow printer is not a dead socket; redialing wastes a cycle
-	}
-	return errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE)
-}
-
-func isTimeout(err error) bool {
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
-}
-
-func (z *Zebra) queryOnce(ctx context.Context, cmd string, maxBytes int) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	if z.statusCon == nil {
-		c, err := z.dial(ctx)
-		if err != nil {
-			return "", err
-		}
-		z.statusCon = c
-	}
-	_ = z.statusCon.SetWriteDeadline(deadlineFor(ctx, z.dialTimeout))
-	if _, err := z.statusCon.Write([]byte(cmd)); err != nil {
-		z.dropStatus()
-		return "", err
-	}
-
-	buf := make([]byte, maxBytes)
-	var acc []byte
-	first := true
-	// Read until the reply is complete (framed replies) or the line goes quiet. Large
-	// replies such as ^HH arrive in many segments.
-	for i := 0; i < 64; i++ {
-		d := z.readTimeout
-		if !first {
-			d = 400 * time.Millisecond // printers often dribble the reply in pieces
-		}
-		first = false
-		_ = z.statusCon.SetReadDeadline(deadlineFor(ctx, d))
-		n, err := z.statusCon.Read(buf)
-		if n > 0 {
-			acc = append(acc, buf[:n]...)
-			if len(acc) >= maxBytes || printer.ReplyComplete(cmd, acc) {
-				break
-			}
-		}
-		if err != nil {
-			if len(acc) > 0 {
-				break // partial reply is still useful
-			}
-			// A read error (timeout included) means the next probe might read this
-			// command's late reply as the answer to its own - drop the socket so each
-			// query starts aligned.
-			z.dropStatus()
-			return string(acc), err
-		}
-	}
-	if len(acc) == 0 {
-		z.dropStatus()
-		return "", fmt.Errorf("no reply to %s from %s", strings.TrimSpace(cmd), z.addr())
-	}
-	return string(acc), nil
+	raw, err := z.link.query(ctx, []byte(cmd), maxBytes, func(acc []byte) bool { return printer.ReplyComplete(cmd, acc) })
+	return string(raw), err
 }
 
 // Status probes with the ZPL host status command. Falls back to reachability-only when the
@@ -225,23 +56,7 @@ func (z *Zebra) Status(ctx context.Context) (domain.Status, error) {
 }
 
 // Cancel aborts printing in progress (ZPL ~JA).
-func (z *Zebra) Cancel(ctx context.Context) error {
-	z.pmu.Lock()
-	defer z.pmu.Unlock()
-	if z.printCon == nil {
-		c, err := z.dial(ctx)
-		if err != nil {
-			return err
-		}
-		z.printCon = c
-	}
-	_ = z.printCon.SetWriteDeadline(deadlineFor(ctx, z.writeTimeout))
-	_, err := z.printCon.Write([]byte("~JA"))
-	if err != nil {
-		z.dropPrint()
-	}
-	return err
-}
+func (z *Zebra) Cancel(ctx context.Context) error { return z.link.control(ctx, []byte("~JA")) }
 
 // ParseHIResponse parses Zebra ~HI host identification string into structured hardware identity.
 // Standard fields in Zebra ~HI:
@@ -366,33 +181,11 @@ func (z *Zebra) HostDirectory(ctx context.Context) (string, error) {
 // Control sends a maintenance command (~JC calibrate, ^LT…^JUS) on the print connection,
 // so it is ordered with label data instead of racing it.
 func (z *Zebra) Control(ctx context.Context, cmd string) error {
-	z.pmu.Lock()
-	defer z.pmu.Unlock()
-	if z.printCon == nil {
-		c, err := z.dial(ctx)
-		if err != nil {
-			return err
-		}
-		z.printCon = c
-	}
-	_ = z.printCon.SetWriteDeadline(deadlineFor(ctx, z.writeTimeout))
-	if _, err := z.printCon.Write([]byte(cmd)); err != nil {
-		z.dropPrint()
-		return err
-	}
-	return nil
+	return z.link.control(ctx, []byte(cmd))
 }
 
 // Close releases both sockets.
-func (z *Zebra) Close() error {
-	z.pmu.Lock()
-	z.dropPrint()
-	z.pmu.Unlock()
-	z.statusMu.Lock()
-	z.dropStatus()
-	z.statusMu.Unlock()
-	return nil
-}
+func (z *Zebra) Close() error { return z.link.close() }
 
 // ParseHostStatus decodes a host status reply: real firmware's three-line ~HS answer, or
 // the legacy ^HS<device>,<media>,<ribbon>,<head>^HS form. See printer.ParseHostStatus.
