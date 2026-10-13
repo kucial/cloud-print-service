@@ -254,10 +254,45 @@ The token works once: the agent exchanges it for its own long-lived credential o
 contact. Without `--ttl` it stays valid for a year until used, so keep it short for a
 one-off install.
 
-### Windows
+On Windows there are two ways to run it. Pick one per PC: both would compete for the
+same printer.
 
-The agent talks to USB printers through Windows' own USB printer driver: keep the vendor
-driver (e.g. ZDesigner) installed; nothing has to be replaced.
+| | desktop app (`cps-agent-gui.exe`) | service (`cps-agent.exe -install`) |
+|---|---|---|
+| set up with | a page: server address and token | an Administrator command prompt |
+| runs | while someone is signed in (optional start at login) | from boot, signed in or not |
+| shows status | tray icon and a status page | `agent.log`, `cpsctl agent list` |
+| suits | a packing desk with one regular user | shared or unattended PCs |
+
+Either way the agent talks to USB printers through Windows' own USB printer driver: keep
+the vendor driver (e.g. ZDesigner) installed; nothing has to be replaced.
+
+### Windows: desktop app
+
+1. Copy `cps-agent-gui.exe` from the Windows archive to the PC and double-click it. A
+   page opens in the browser.
+2. Enter the server address (`http://<server>:8080`), the token, and the site. The agent
+   ID defaults to the PC name; use the `--id` you gave `cpsctl agent enroll`.
+   **Connect** checks the token against the server right away and shows the reason if
+   it is refused.
+3. When Windows Firewall asks whether `cps-agent-gui.exe` may accept connections, allow
+   it on **Private** networks. The server prints by connecting to the agent, so this
+   needs an administrator once. Without it, the printer shows up but jobs fail with
+   "connection refused" or time out.
+4. The tray icon turns green once the agent is connected. Left-click it for the status
+   page (printers, last heartbeat, recent log); right-click for **Start at login** and
+   **Quit**.
+
+The **Settings** tab changes the site, ports, heartbeat interval and the address the
+server dials. Changing the server address or the agent ID asks for a new token, because
+the credential belongs to both. The agent restarts when you save.
+
+Grey means not set up, amber means no printer found (plug it in; the agent looks again
+every 30 seconds), and red means the server cannot be reached. Config and log are in the
+same place as for the service (table below). If the service is installed, the desktop
+app stays idle and says so; remove the service first to switch.
+
+### Windows: service
 
 1. Copy `cps-agent.exe` to the PC, e.g. `C:\Program Files\cps-agent\`.
 2. Open a **Command Prompt as Administrator** in that folder and enroll:

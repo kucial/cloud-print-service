@@ -3,6 +3,7 @@ module github.com/kucial/cloud-print-service
 go 1.26.0
 
 require (
+	fyne.io/systray v1.12.2
 	github.com/brutella/dnssd v1.2.14
 	github.com/swiftpush/zebrash v1.38.1-0.20260823142831-a1263efd12b7
 	golang.org/x/sys v0.48.0
@@ -12,6 +13,7 @@ require (
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-pdf/fpdf v0.9.0 // indirect
+	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/ingridhq/gg v1.4.2 // indirect

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,58 @@ type agent struct {
 	mu       sync.RWMutex
 	printers map[string]*localPrinter // printer_id -> printer with its listener
 	ctx      context.Context
+	status   agentStatus
+}
+
+// Agent phases, as the tray and the local panel show them.
+const (
+	phaseStarting   = "starting"
+	phaseNoPrinters = "no_printers"
+	phaseConnected  = "connected"
+	phaseError      = "error"
+)
+
+// agentStatus is what the agent knows about itself, for the people at the PC: the
+// server sees the same facts through registration and heartbeats.
+type agentStatus struct {
+	Phase         string          `json:"phase"`
+	LastRegister  *time.Time      `json:"last_register,omitempty"`
+	LastHeartbeat *time.Time      `json:"last_heartbeat,omitempty"`
+	LastError     string          `json:"last_error,omitempty"`
+	Printers      []printerStatus `json:"printers"`
+}
+
+type printerStatus struct {
+	ID     string `json:"id"`
+	Model  string `json:"model"`
+	Port   int    `json:"port"`
+	State  string `json:"state,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// Snapshot returns a copy of the agent's status, safe to hand to another goroutine.
+func (a *agent) Snapshot() agentStatus {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	st := a.status
+	st.Printers = make([]printerStatus, 0, len(a.printers))
+	for _, p := range a.printers {
+		st.Printers = append(st.Printers, printerStatus{ID: p.PrinterID, Model: p.Model, Port: p.Port,
+			State: string(p.status.State), Detail: p.status.Detail})
+	}
+	sort.Slice(st.Printers, func(i, j int) bool { return st.Printers[i].Port < st.Printers[j].Port })
+	return st
+}
+
+// setStatus records a phase change and, when err is not nil, why.
+func (a *agent) setStatus(phase string, err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.status.Phase = phase
+	a.status.LastError = ""
+	if err != nil {
+		a.status.LastError = err.Error()
+	}
 }
 
 type localPrinter struct {
@@ -52,16 +105,19 @@ func (p *localPrinter) query(ctx context.Context, cmd string) (string, error) {
 // Run starts everything and blocks until ctx is cancelled.
 func (a *agent) Run(ctx context.Context) {
 	a.ctx = ctx
+	a.setStatus(phaseStarting, nil)
 
 	backends, err := openBackends(ctx, a.log)
 	if err != nil {
 		a.log.Error("no usable printer backends", "err", err)
+		a.setStatus(phaseNoPrinters, err)
 		return
 	}
 	a.log.Info("backends available", "backends", names(backends))
 
 	if err := a.serveLocal(ctx, backends); err != nil {
 		a.log.Error("cannot serve local printers", "err", err)
+		a.setStatus(phaseNoPrinters, err)
 		return
 	}
 
@@ -254,6 +310,7 @@ func (a *agent) register(ctx context.Context) error {
 	}
 	var out agentapi.RegisterResponse // Token is present only on the first registration
 	if err := a.post(ctx, agentapi.PathRegister, payload, &out); err != nil {
+		a.setStatus(phaseError, err)
 		return err
 	}
 	if out.Token != "" && out.Token != a.cfg.Token {
@@ -267,6 +324,10 @@ func (a *agent) register(ctx context.Context) error {
 			a.log.Info("agent credential exchanged and saved", "config", a.cfgPath)
 		}
 	}
+	now := time.Now()
+	a.mu.Lock()
+	a.status.Phase, a.status.LastError, a.status.LastRegister = phaseConnected, "", &now
+	a.mu.Unlock()
 	a.log.Info("registered with server", "agent_id", a.cfg.AgentID, "printers", len(printers))
 	return nil
 }
@@ -285,10 +346,24 @@ func (a *agent) heartbeat(ctx context.Context) {
 	}
 	a.mu.RUnlock()
 
+	a.mu.Lock()
+	for id, st := range statuses {
+		if p := a.printers[id]; p != nil {
+			p.status = st
+		}
+	}
+	a.mu.Unlock()
+
 	payload := agentapi.HeartbeatRequest{AgentID: a.cfg.AgentID, Status: statuses}
 	if err := a.post(ctx, agentapi.PathHeartbeat, payload, nil); err != nil {
 		a.log.Warn("heartbeat failed", "err", err)
+		a.setStatus(phaseError, err)
+		return
 	}
+	now := time.Now()
+	a.mu.Lock()
+	a.status.Phase, a.status.LastError, a.status.LastHeartbeat = phaseConnected, "", &now
+	a.mu.Unlock()
 }
 
 func (a *agent) post(ctx context.Context, path string, payload any, out any) error {
@@ -343,5 +418,6 @@ func newAgent(cfg Config, cfgPath string, log *slog.Logger) (*agent, error) {
 		cfgPath: cfgPath,
 		log:     log,
 		cli:     &http.Client{Timeout: 20 * time.Second},
+		status:  agentStatus{Phase: phaseStarting},
 	}, nil
 }

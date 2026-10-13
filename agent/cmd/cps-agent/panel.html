@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPS Agent</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
+    --accent: #007AFF; --ok: #34c759; --warn: #ff9f0a; --bad: #ff3b30; --idle: #8e8e93;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --muted: #98989d; --line: #3a3a3c;
+      --accent: #0A84FF;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  header h1 { font-size: 20px; margin: 0; flex: 1; }
+  .ver { color: var(--muted); font-size: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tabs button {
+    border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 8px;
+    font: inherit; cursor: pointer;
+  }
+  .tabs button.on { background: var(--card); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+  .grid .wide { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+  button.primary {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 18px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .msg { font-size: 13px; }
+  .msg.err { color: var(--bad); }
+  .msg.ok { color: var(--ok); }
+  .status { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--idle); flex: none; }
+  .dot.connected { background: var(--ok); }
+  .dot.starting, .dot.no_printers { background: var(--warn); }
+  .dot.error, .dot.blocked { background: var(--bad); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0 0; font-size: 13px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .empty { color: var(--muted); font-size: 13px; }
+  pre {
+    margin: 0; max-height: 280px; overflow: auto; font-family: var(--mono); font-size: 11.5px;
+    white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted);
+  }
+  .hidden { display: none; }
+  .tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 data-t="title"></h1>
+    <span class="ver" id="ver"></span>
+  </header>
+
+  <!-- First run: no credential yet -->
+  <section id="setup" class="hidden">
+    <div class="card">
+      <h2 data-t="setupTitle"></h2>
+      <p class="hint" data-t="setupHint"></p>
+      <form id="setupForm" class="grid" autocomplete="off">
+        <div class="wide"><label for="s_server" data-t="server"></label>
+          <input id="s_server" name="server_url" placeholder="http://print.example.com:8080" required></div>
+        <div class="wide"><label for="s_token" data-t="token"></label>
+          <input id="s_token" name="token" class="mono" required spellcheck="false"></div>
+        <div><label for="s_site" data-t="site"></label><input id="s_site" name="site"></div>
+        <div><label for="s_agent" data-t="agentId"></label><input id="s_agent" name="agent_id" required></div>
+      </form>
+      <div class="actions">
+        <button class="primary" form="setupForm" type="submit" data-t="connect"></button>
+        <span class="msg" id="setupMsg"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Enrolled -->
+  <section id="app" class="hidden">
+    <nav class="tabs">
+      <button type="button" data-tab="status" data-t="tabStatus"></button>
+      <button type="button" data-tab="settings" data-t="tabSettings"></button>
+    </nav>
+
+    <div id="tab-status">
+      <div class="card">
+        <div class="status"><span class="dot" id="dot"></span><span id="phase"></span></div>
+        <p class="msg err" id="lastError"></p>
+        <dl>
+          <dt data-t="server"></dt><dd id="i_server"></dd>
+          <dt data-t="agentId"></dt><dd id="i_agent"></dd>
+          <dt data-t="site"></dt><dd id="i_site"></dd>
+          <dt data-t="lastRegister"></dt><dd id="i_register"></dd>
+          <dt data-t="lastHeartbeat"></dt><dd id="i_heartbeat"></dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h2 data-t="printers"></h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th data-t="model"></th><th data-t="printerId"></th><th data-t="port"></th><th data-t="state"></th></tr></thead>
+            <tbody id="printers"></tbody>
+          </table>
+        </div>
+        <p class="empty hidden" id="noPrinters" data-t="noPrinters"></p>
+      </div>
+      <div class="card">
+        <h2 data-t="log"></h2>
+        <pre id="log"></pre>
+      </div>
+    </div>
+
+    <div id="tab-settings" class="hidden">
+      <div class="card">
+        <h2 data-t="connection"></h2>
+        <p class="hint" data-t="settingsHint"></p>
+        <form id="settingsForm" class="grid" autocomplete="off">
+          <div class="wide"><label for="c_server" data-t="server"></label><input id="c_server" name="server_url" required></div>
+          <div><label for="c_site" data-t="site"></label><input id="c_site" name="site"></div>
+          <div><label for="c_agent" data-t="agentId"></label><input id="c_agent" name="agent_id" required></div>
+          <div><label for="c_host" data-t="host"></label><input id="c_host" name="host"></div>
+          <div><label for="c_port" data-t="basePort"></label><input id="c_port" name="base_port" type="number" min="1024" max="65000"></div>
+          <div><label for="c_poll" data-t="poll"></label><input id="c_poll" name="poll_seconds" type="number" min="5" max="3600"></div>
+          <div class="wide"><label for="c_token" data-t="newToken"></label>
+            <input id="c_token" name="token" class="mono" spellcheck="false"></div>
+        </form>
+        <div class="actions">
+          <button class="primary" form="settingsForm" type="submit" data-t="save"></button>
+          <span class="msg" id="settingsMsg"></span>
+        </div>
+      </div>
+      <div class="card">
+        <dl><dt data-t="configFile"></dt><dd class="mono" id="i_path"></dd></dl>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const I18N = {
+  en: {
+    title: 'Cloud Print agent',
+    setupTitle: 'Connect this PC to the print server',
+    setupHint: 'Ask your administrator for the server address and a one-time enrollment token (cpsctl agent enroll, or the admin console).',
+    server: 'Server address', token: 'Enrollment token', site: 'Site', agentId: 'Agent ID',
+    connect: 'Connect', connecting: 'Connecting…', saving: 'Saving…',
+    tabStatus: 'Status', tabSettings: 'Settings',
+    lastRegister: 'Last registered', lastHeartbeat: 'Last heartbeat',
+    printers: 'Printers', model: 'Model', printerId: 'Printer ID', port: 'Port', state: 'State',
+    noPrinters: 'No printer found. Plug in the printer and switch it on; the agent looks again every 30 seconds.',
+    log: 'Recent log',
+    connection: 'Connection',
+    settingsHint: 'Changing the server address or the agent ID needs a new enrollment token. The agent restarts when you save.',
+    host: 'Address the server reaches this PC on', basePort: 'First local port', poll: 'Heartbeat interval (s)',
+    newToken: 'New enrollment token (only to re-enroll)', save: 'Save', saved: 'Saved; the agent is restarting.',
+    configFile: 'Config file',
+    phases: {
+      needs_setup: 'Not set up', starting: 'Starting…', connected: 'Connected',
+      no_printers: 'No printer found', error: 'Cannot reach the server', blocked: 'Not running',
+    },
+    never: '—', ago: (s) => s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s/60)} min ago` : `${Math.floor(s/3600)} h ago`,
+  },
+  zh: {
+    title: '云打印代理',
+    setupTitle: '将本机连接到打印服务器',
+    setupHint: '请向管理员索取服务器地址和一次性注册令牌(cpsctl agent enroll 或管理后台)。',
+    server: '服务器地址', token: '注册令牌', site: '站点', agentId: '代理 ID',
+    connect: '连接', connecting: '正在连接…', saving: '正在保存…',
+    tabStatus: '状态', tabSettings: '设置',
+    lastRegister: '最近注册', lastHeartbeat: '最近心跳',
+    printers: '打印机', model: '型号', printerId: '打印机 ID', port: '端口', state: '状态',
+    noPrinters: '未发现打印机。请连接并打开打印机;代理每 30 秒重新查找一次。',
+    log: '最近日志',
+    connection: '连接',
+    settingsHint: '修改服务器地址或代理 ID 需要新的注册令牌。保存后代理会重新启动。',
+    host: '服务器访问本机的地址', basePort: '起始本地端口', poll: '心跳间隔(秒)',
+    newToken: '新注册令牌(仅重新注册时填写)', save: '保存', saved: '已保存,代理正在重新启动。',
+    configFile: '配置文件',
+    phases: {
+      needs_setup: '未设置', starting: '正在启动…', connected: '已连接',
+      no_printers: '未发现打印机', error: '无法连接服务器', blocked: '未运行',
+    },
+    never: '—', ago: (s) => s < 60 ? `${s} 秒前` : s < 3600 ? `${Math.floor(s/60)} 分钟前` : `${Math.floor(s/3600)} 小时前`,
+  },
+};
+const L = I18N[(navigator.language || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en'];
+document.documentElement.lang = L === I18N.zh ? 'zh' : 'en';
+document.title = L.title;
+document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = L[el.dataset.t]; });
+
+const $ = (id) => document.getElementById(id);
+let tab = 'status';
+let formFilled = false;
+let state = null;
+
+function showTab(name) {
+  tab = name;
+  document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+  $('tab-status').classList.toggle('hidden', name !== 'status');
+  $('tab-settings').classList.toggle('hidden', name !== 'settings');
+}
+document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+showTab('status');
+
+function ago(t) {
+  if (!t) return L.never;
+  const s = Math.max(0, Math.round((Date.now() - new Date(t).getTime()) / 1000));
+  return `${L.ago(s)} (${new Date(t).toLocaleTimeString()})`;
+}
+
+function fill(prefix, cfg) {
+  const set = (id, v) => { const el = $(prefix + id); if (el) el.value = v ?? ''; };
+  set('server', cfg.server_url); set('site', cfg.site); set('agent', cfg.agent_id);
+  set('host', cfg.host); set('port', cfg.base_port); set('poll', cfg.poll_seconds);
+}
+
+function render(st) {
+  state = st;
+  $('ver').textContent = st.version;
+  $('setup').classList.toggle('hidden', st.enrolled);
+  $('app').classList.toggle('hidden', !st.enrolled);
+  if (!formFilled) {
+    fill(st.enrolled ? 'c_' : 's_', st.config);
+    formFilled = true;
+  }
+  if (!st.enrolled) return;
+
+  const s = st.status, a = s.agent;
+  $('dot').className = 'dot ' + s.phase;
+  $('phase').textContent = L.phases[s.phase] || s.phase;
+  $('lastError').textContent = s.note || a.last_error || '';
+  $('i_server').textContent = st.config.server_url;
+  $('i_agent').textContent = st.config.agent_id;
+  $('i_site').textContent = st.config.site || L.never;
+  $('i_register').textContent = ago(a.last_register);
+  $('i_heartbeat').textContent = ago(a.last_heartbeat);
+  $('i_path').textContent = st.config_path;
+
+  const body = $('printers');
+  body.replaceChildren(...a.printers.map((p) => {
+    const tr = document.createElement('tr');
+    for (const [v, mono] of [[p.model, false], [p.id, true], [p.port, true], [p.state || L.never, false]]) {
+      const td = document.createElement('td');
+      td.textContent = v;
+      if (mono) td.className = 'mono';
+      if (!mono && p.detail && v === p.state) td.title = p.detail;
+      tr.append(td);
+    }
+    return tr;
+  }));
+  $('noPrinters').classList.toggle('hidden', a.printers.length > 0);
+
+  const log = $('log');
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  log.textContent = st.logs.join('\n');
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/state');
+    if (r.ok) render(await r.json());
+  } catch (_) { /* the agent is restarting; try again on the next tick */ }
+}
+
+function formBody(form) {
+  const out = {};
+  for (const [k, v] of new FormData(form)) {
+    out[k] = (k === 'base_port' || k === 'poll_seconds') ? (Number(v) || 0) : String(v).trim();
+  }
+  return out;
+}
+
+function submit(formId, msgId, url, busyText, doneText) {
+  const form = $(formId), msg = $(msgId), btn = document.querySelector(`[form="${formId}"]`);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    msg.className = 'msg'; msg.textContent = busyText;
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formBody(form)) });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || r.statusText);
+      msg.className = 'msg ok'; msg.textContent = doneText;
+      form.querySelector('[name=token]').value = '';
+      if (!state || !state.enrolled) { formFilled = false; showTab('status'); } // fill Settings next
+      render(body);
+    } catch (err) {
+      msg.className = 'msg err'; msg.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+submit('setupForm', 'setupMsg', '/api/enroll', L.connecting, '');
+submit('settingsForm', 'settingsMsg', '/api/config', L.saving, L.saved);
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

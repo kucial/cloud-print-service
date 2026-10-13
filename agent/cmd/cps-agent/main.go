@@ -14,6 +14,10 @@
 //	cpsctl agent enroll --site wh1 --id pc7-pack01        # → one-time token
 //	cps-agent -config agent.json -enroll <token>
 //
+// The desktop build (-tags gui, shipped as cps-agent-gui.exe) needs no command line:
+// double-click it, and a tray icon opens a local page that asks for the server and the
+// token, then shows the agent's status.
+//
 // On Windows, enroll and install as a service in one step (elevated prompt):
 //
 //	cps-agent.exe -enroll <token> -site wh1 -install
@@ -38,6 +42,10 @@ import (
 // machines that were never upgraded.
 var version = "dev"
 
+// guiMain is set by the desktop build (-tags gui): started without an action flag
+// (double-clicked), the agent runs as a tray app with a local settings page instead.
+var guiMain func(configPath string) int
+
 func main() {
 	var (
 		configPath = flag.String("config", defaultConfigPath(), "agent config file")
@@ -55,6 +63,9 @@ func main() {
 	if *showVer {
 		fmt.Println("cps-agent", version, runtime.GOOS, runtime.GOARCH)
 		return
+	}
+	if guiMain != nil && *enroll == "" && !*install && !*uninstall && !*service {
+		os.Exit(guiMain(*configPath))
 	}
 
 	var logOut io.Writer = os.Stdout

@@ -48,9 +48,25 @@ jobs:
             GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build -trimpath \
               -ldflags="-s -w -X main.version=${version}" \
               -o "dist/$name/cps-agent${ext}" ./agent/cmd/cps-agent
+            gui=()
+            if [[ "$goos" == windows ]]; then
+              # Desktop build: tray icon and a local page for the server address and token.
+              GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build -trimpath -tags gui \
+                -ldflags="-H=windowsgui -s -w -X main.version=${version}" \
+                -o "dist/$name/cps-agent-gui.exe" ./agent/cmd/cps-agent
+              gui=(
+                "Desktop (no command line): double-click cps-agent-gui.exe, enter the server" \
+                "address and a one-time token in the page that opens. A tray icon shows the" \
+                "status; right-click it for Start at login. Use either this or the service below," \
+                "not both." \
+                "" \
+                "Service:"
+              )
+            fi
             printf '%s\n' \
               "cps-agent ${version} (${goos}/${goarch})" \
               "" \
+              ${gui[@]+"${gui[@]}"} \
               "1. On the server:  cpsctl agent enroll --site <site> --id <pc-name>   -> one-time token" \
               "2. On this PC, from an elevated prompt:" \
               "     set CPS_AGENT_SERVER=http://<server>:8080" \

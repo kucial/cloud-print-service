@@ -73,7 +73,7 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | `cps` | done | server: fleet registry, dispatch queue, status poller, REST API, embedded panel, ZPL preview, discovery, agent surface |
 | `cpsctl` | done | admin CLI: tokens, printers, **agents**, **discover** |
 | `vprint` | done | virtual network printer: real ZPL, `^HS`/`~HI`/`~JA`, renders every label, gallery, fault injection, `-mdns` advertise |
-| `cps-agent` | done (TCP share + USB) | edge agent: discover, forward, register, heartbeat, status push |
+| `cps-agent` | done (TCP share + USB) | edge agent: discover, forward, register, heartbeat, status push; `-tags gui` builds `cps-agent-gui.exe` (tray icon + local setup/status/settings page) |
 | `demo-web` | done | reference WMS integration (open source, meant to be read) |
 | `zplpng` | done | dev tool: file/stdin → PNG/SVG/PDF |
 
@@ -88,7 +88,8 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | Postgres store | single servers use SQLite (default: jobs, tokens, agent credentials and panel edits survive restarts); Postgres only matters for several servers | implement `store.Postgres` if a site ever needs more than one server |
 | mDNS live sweep | see §6 | one machine on the warehouse LAN |
 | Agent auto-update / fleet rollout | Windows service (`-enroll <token> -install`: SCM, recovery restarts, firewall rule, ACL'd config, `agent.log`) is built and exercised by the `agent-windows` CI job; binaries come from `release-agent.yml` (`agent-v*` tags), unsigned | code-sign the `.exe`; self-update or MSI/Intune rollout |
-| Agent finds printers only at start | no hot-plug rescan; with none found the process exits and the service manager restarts it (30s) | periodic rescan inside `Run` |
+| Agent finds printers only at start | no hot-plug rescan; with none found the process exits and the service manager (or, in the desktop app, its supervisor) restarts it after 30s | periodic rescan inside `Run` |
+| Desktop agent not yet run on Windows | `cps-agent-gui.exe` is cross-built and its panel and supervisor are unit-tested; end-to-end run only on macOS (setup, settings change, print through `vprint`). Tray, Start at login and the firewall prompt are untested on Windows | run the release zip on the packing PC |
 | Job callback to ERP | events are on the bus | expose a webhook |
 
 ---
