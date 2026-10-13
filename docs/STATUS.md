@@ -99,6 +99,7 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | **No real receipt or office printer tried** | ESC/POS, IPP and PJL are implemented to the specs and tested against `vprint`; the USB device-id table uses representative ids, not captures | print to one Epson/Xprinter and one office printer; capture their device ids, `DLE EOT` and IPP attributes as test data |
 | Copies of a ZPL label sent as is | `copies` is stored but a label carries its own `^PQ`; CPS does not add one (a client that already sets `^PQ` would print twice) | decide whether `copies` should set `^PQ` for ZPL |
 | An IPP job holds the printer's queue while followed | the per-printer worker waits for the job's outcome (up to `track_timeout`, 10 min) before the next job | send while following, if office printers prove slow |
+| Document preview has no panel button | `POST /api/v1/admin/printers/{id}/preview` returns the converted first page as a PNG; the panel's Preview tab is still ZPL-only | add a document upload to the Preview tab |
 | PDF to an IPP printer without PDF | only single-page PDFs go as JPEG; URF/PWG raster is not produced | add a PWG raster encoder if such printers turn up |
 | Job callback to ERP | events are on the bus | expose a webhook |
 

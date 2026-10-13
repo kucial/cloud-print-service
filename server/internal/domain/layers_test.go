@@ -30,7 +30,7 @@ var layers = map[string][]string{
 	"server/internal/httpapi": {
 		"server/internal/domain", "server/internal/driver", "server/internal/fleet", "server/internal/job",
 		"server/internal/store", "server/internal/token", "server/internal/observ", "server/internal/config",
-		"server/internal/discovery", "server/web", "pkg/render", "pkg/agentapi", "pkg/printer", "pkg/escpos",
+		"server/internal/discovery", "server/web", "pkg/render", "pkg/agentapi", "pkg/printer", "pkg/escpos", "server/internal/convert",
 	},
 	"server/web":     {},
 	"pkg/render":     {},

@@ -22,3 +22,8 @@ export function sizeTag(p: Printer): string | undefined {
       return p.paper_size || undefined;
   }
 }
+
+// kindKey is the translation key for a kind name as the API or a candidate reports it.
+export function kindKey(kind?: string): 'kind_label' | 'kind_receipt' | 'kind_document' {
+  return kind === 'receipt' ? 'kind_receipt' : kind === 'document' ? 'kind_document' : 'kind_label';
+}

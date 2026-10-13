@@ -103,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("POST /api/v1/admin/tokens/{token_id}/rotate", RequireAdmin(s.rotateToken))
 	apiMux.HandleFunc("DELETE /api/v1/admin/tokens/{token_id}/purge", RequireAdmin(s.deleteToken))
 	apiMux.HandleFunc("POST /api/v1/admin/preview", RequireAdmin(s.previewZPL))
+	apiMux.HandleFunc("POST /api/v1/admin/printers/{printer_id}/preview", RequireAdmin(s.previewDocument))
 
 	// --- agent (edge) surface: scope-limited, never dispatches ----------------------
 	apiMux.HandleFunc("POST /api/v1/agents/register", RequireAgent(s.agentRegister))

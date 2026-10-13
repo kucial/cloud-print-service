@@ -181,6 +181,9 @@ func (s *Service) replayQueued(ctx context.Context) {
 
 func (s *Service) Store() store.Store { return s.st }
 
+// Converter is what the service converts documents with (for previews).
+func (s *Service) Converter() convert.Converter { return s.cfg.Convert }
+
 // Submit validates, deduplicates and enqueues a job. The bool result reports a replay:
 // the caller got an existing job back instead of a new label.
 func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, bool, error) {

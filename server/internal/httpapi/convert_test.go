@@ -118,3 +118,35 @@ func TestConversionRefusals(t *testing.T) {
 		}
 	}
 }
+
+// The preview shows the dots a receipt printer would print, without printing.
+func TestPreviewDocument(t *testing.T) {
+	rcpt, rspec := receiptPrinter(t, "r1")
+	ts := newTestServerWithPayloadLimit(t, 1<<20, rspec)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/admin/printers/r1/preview", bytes.NewReader(logoPNG(t)))
+	req.Header.Set("Authorization", "Bearer "+opsKey)
+	req.Header.Set("Content-Type", "image/png")
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "image/png" || res.Header.Get("X-Document-Pages") != "1" {
+		t.Fatalf("preview: %d %s %s", res.StatusCode, res.Header, raw[:min(200, len(raw))])
+	}
+	img, err := png.Decode(bytes.NewReader(raw))
+	if err != nil || img.Bounds().Dx() != 384 { // a 58 mm roll
+		t.Fatalf("preview image: %v %v", img.Bounds(), err)
+	}
+	if rcpt.LabelCount() != 0 {
+		t.Fatal("a preview printed")
+	}
+	// Not admin: no preview.
+	req2, _ := http.NewRequest("POST", ts.URL+"/api/v1/admin/printers/r1/preview", bytes.NewReader(logoPNG(t)))
+	req2.Header.Set("Authorization", "Bearer "+erpKey)
+	req2.Header.Set("Content-Type", "image/png")
+	if res2, _ := ts.Client().Do(req2); res2.StatusCode != http.StatusForbidden {
+		t.Fatalf("client key previewed: %d", res2.StatusCode)
+	}
+}

@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n/context';
 import { api } from '../api';
 import { Candidate } from '../types';
+import { kindKey } from '../printerKind';
 import { useToast } from '../components/Toast';
 import { PlusCircle, EyeOff, RotateCw, CheckCircle2, X } from 'lucide-react';
 
@@ -78,7 +79,16 @@ export const DiscoveryView: React.FC = () => {
                     <td>
                       <span className="badge-pill">{c.source}</span>
                     </td>
-                    <td className="font-mono font-medium">{c.model || '—'}</td>
+                    <td className="font-mono font-medium">
+                      <div className="flex items-center gap-1.5">
+                        <span>{c.model || '—'}</span>
+                        {c.detail?.kind && c.detail.kind !== 'label' && (
+                          <span className="badge-pill badge-neutral text-xs">
+                            {t(kindKey(c.detail.kind))}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="font-mono text-sm text-muted">{c.serial || '—'}</td>
                     <td className="font-mono text-sm">
                       {c.host ? `${c.host}:${c.port || 9100}` : '—'}
@@ -154,10 +164,14 @@ const AdoptModal: React.FC<AdoptModalProps> = ({ candidate: c, onClose, onSucces
   const { toast } = useToast();
 
   const [printerId, setPrinterId] = useState(
-    c.serial ? `wh1-${c.serial.toLowerCase()}` : `wh1-printer-01`
+    c.serial ? `wh1-${c.serial.toLowerCase()}` : `wh1-printer-01`,
   );
   const [site, setSite] = useState(c.site || 'wh1');
-  const [name, setName] = useState(c.model ? `${c.model} (Packing)` : 'Packing Station Printer');
+  // What the device said it is; label printers (and unidentified ones) ask for the roll.
+  const isLabel = !c.detail?.kind || c.detail.kind === 'label';
+  const [name, setName] = useState(
+    c.model ? (isLabel ? `${c.model} (Packing)` : c.model) : 'Packing Station Printer',
+  );
   const [customLabel, setCustomLabel] = useState('');
   const [remark, setRemark] = useState('');
   const [paperSize, setPaperSize] = useState('4x6');
@@ -180,9 +194,13 @@ const AdoptModal: React.FC<AdoptModalProps> = ({ candidate: c, onClose, onSucces
         name: name.trim(),
         custom_label: customLabel.trim(),
         remark: remark.trim(),
-        paper_size: paperSize.trim(),
-        media_width_mm: mediaWidthMm,
-        media_height_mm: mediaHeightMm,
+        ...(isLabel
+          ? {
+              paper_size: paperSize.trim(),
+              media_width_mm: mediaWidthMm,
+              media_height_mm: mediaHeightMm,
+            }
+          : {}),
       });
       toast(t('adopt_success', { id: printerId }), 'success');
       onSuccess();
@@ -244,37 +262,45 @@ const AdoptModal: React.FC<AdoptModalProps> = ({ candidate: c, onClose, onSucces
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div className="form-group mb-0">
-                <label>{t('paper_size')}</label>
-                <input
-                  type="text"
-                  value={paperSize}
-                  onChange={(e) => setPaperSize(e.target.value)}
-                  placeholder="e.g. 4x6, 4x2"
-                />
+            {!isLabel && (
+              <p className="text-muted text-xs mb-4">
+                {t(kindKey(c.detail?.kind))} · {c.detail?.driver} · {t('formats')}:{' '}
+                {c.detail?.formats || '—'}
+              </p>
+            )}
+            {isLabel && (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="form-group mb-0">
+                  <label>{t('paper_size')}</label>
+                  <input
+                    type="text"
+                    value={paperSize}
+                    onChange={(e) => setPaperSize(e.target.value)}
+                    placeholder="e.g. 4x6, 4x2"
+                  />
+                </div>
+                <div className="form-group mb-0">
+                  <label>W (mm)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={mediaWidthMm ?? ''}
+                    onChange={(e) => setMediaWidthMm(parseFloat(e.target.value) || undefined)}
+                    placeholder="101.6"
+                  />
+                </div>
+                <div className="form-group mb-0">
+                  <label>H (mm)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={mediaHeightMm ?? ''}
+                    onChange={(e) => setMediaHeightMm(parseFloat(e.target.value) || undefined)}
+                    placeholder="152.4"
+                  />
+                </div>
               </div>
-              <div className="form-group mb-0">
-                <label>W (mm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={mediaWidthMm ?? ''}
-                  onChange={(e) => setMediaWidthMm(parseFloat(e.target.value) || undefined)}
-                  placeholder="101.6"
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>H (mm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={mediaHeightMm ?? ''}
-                  onChange={(e) => setMediaHeightMm(parseFloat(e.target.value) || undefined)}
-                  placeholder="152.4"
-                />
-              </div>
-            </div>
+            )}
 
             <div className="form-group">
               <label>{t('custom_label')}</label>

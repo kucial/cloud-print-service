@@ -122,3 +122,16 @@ func (b *bitmap) trimBottom() {
 		b.rows = b.rows[:b.h]
 	}
 }
+
+// image draws the dots back as a black-and-white picture.
+func (b *bitmap) image() *image.Gray {
+	img := image.NewGray(image.Rect(0, 0, b.w, b.h))
+	for y := 0; y < b.h; y++ {
+		for x := 0; x < b.w; x++ {
+			if b.rows[y][x/8]&(0x80>>(x%8)) == 0 {
+				img.SetGray(x, y, color.Gray{Y: 255})
+			}
+		}
+	}
+	return img
+}

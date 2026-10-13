@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	_ "image/png" // decoder for image.Decode (jpeg is imported for encoding)
+	"image/png"
 	"slices"
 	"strings"
 
@@ -297,4 +297,46 @@ func imagesToPDF(pages []image.Image) ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// Preview renders the first page of a document the way the printer would print it:
+// the dots a receipt or label printer gets, or the page an office printer gets. It
+// returns a PNG and the number of pages.
+func (c Converter) Preview(ctx context.Context, data []byte, src printer.Format, p domain.Printer) ([]byte, int, error) {
+	if !src.IsImage() && src != printer.FormatPDF {
+		return nil, 0, fmt.Errorf("%w: only PDF and images can be previewed", ErrNoConversion)
+	}
+	target := printer.FormatPDF
+	switch p.Kind {
+	case printer.KindReceipt:
+		target = printer.FormatESCPOS
+	case printer.KindLabel:
+		target = printer.FormatZPL
+	}
+	pages, err := c.pages(ctx, data, src, rasterDPI(target, p))
+	if err != nil {
+		return nil, 0, err
+	}
+	var img image.Image
+	switch p.Kind {
+	case printer.KindReceipt:
+		bm := dither(fitWidth(pages[0], receiptDots(p)))
+		bm.trimBottom()
+		img = bm.image()
+	case printer.KindLabel:
+		var g *image.Gray
+		if l := labelLengthDots(p); l > 0 {
+			g = fitBox(pages[0], labelDots(p), l)
+		} else {
+			g = fitWidth(pages[0], labelDots(p))
+		}
+		img = dither(g).image()
+	default:
+		img = pages[0] // office printers print greys
+	}
+	var out bytes.Buffer
+	if err := png.Encode(&out, img); err != nil {
+		return nil, 0, err
+	}
+	return out.Bytes(), len(pages), nil
 }

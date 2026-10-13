@@ -1171,6 +1171,48 @@ paths:
           description: Candidate dismissed
 
   # ---------------------------------------------------------------- Template Preview
+  /admin/printers/{printer_id}/preview:
+    post:
+      tags:
+        - Template Preview
+      summary: Preview a Document on a Printer
+      description: |
+        Shows how a PDF or image would come out of this printer, first page only, as a
+        PNG: the dots a receipt or label printer gets after conversion, or the page an
+        office printer gets. Nothing is printed. The format comes from `?format=` or
+        the Content-Type. Admin only.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: printer_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [pdf, png, jpeg]
+      requestBody:
+        required: true
+        content:
+          application/pdf:
+            schema: { type: string, format: binary }
+          image/png:
+            schema: { type: string, format: binary }
+          image/jpeg:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: The first page as the printer would print it; `X-Document-Pages` gives the page count
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '404':
+          description: Unknown printer
+        '422':
+          description: "`document_unreadable`, `pdf_conversion_unavailable` or `format_not_supported`"
   /admin/preview:
     post:
       tags:
