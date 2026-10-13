@@ -171,15 +171,17 @@ func NewManagerWithRegistry(reg *Registry, log *observ.Log, b *observ.Bus, o Man
 }
 
 func (m *Manager) build(spec domain.Printer) (*Printer, error) {
-	var drv driver.Driver
-	var err error
-	if spec.Driver == "zebra9100" {
-		drv = driver.NewZebra(spec, driver.ZebraOpts{DialTimeout: m.dialTimeout, WriteTimeout: m.writeTimeout, ReadTimeout: m.readTimeout})
-	} else {
-		drv, err = driver.New(spec)
-		if err != nil {
-			return nil, err
-		}
+	// Kind and formats always have a value in the fleet, whichever way the printer came
+	// in (config, agent, discovery), so nothing downstream guesses from the driver.
+	if spec.Kind == "" {
+		spec.Kind = printer.KindForDriver(spec.Driver)
+	}
+	if len(spec.Formats) == 0 {
+		spec.Formats = printer.DefaultFormats(spec.Driver)
+	}
+	drv, err := driver.New(spec, driver.Options{DialTimeout: m.dialTimeout, WriteTimeout: m.writeTimeout, ReadTimeout: m.readTimeout})
+	if err != nil {
+		return nil, err
 	}
 	p := &Printer{spec: spec, drv: drv, mgr: m}
 	p.status = domain.Status{State: domain.StateUnknown, Detail: "not polled yet"}
@@ -308,19 +310,41 @@ func (p *Printer) Identify(ctx context.Context) (map[string]string, error) {
 	return p.driver().Identify(ctx)
 }
 
+// Capabilities names what this printer can do beyond printing (driver.Capabilities).
+func (p *Printer) Capabilities() []string { return driver.Capabilities(p.driver()) }
+
+func (p *Printer) labelTools() (driver.LabelTools, error) {
+	if lt, ok := p.driver().(driver.LabelTools); ok {
+		return lt, nil
+	}
+	return nil, driver.ErrNotSupported
+}
+
 // HostConfig reads the printer's configuration dump (^HH).
 func (p *Printer) HostConfig(ctx context.Context) (string, error) {
-	return p.driver().HostConfig(ctx)
+	lt, err := p.labelTools()
+	if err != nil {
+		return "", err
+	}
+	return lt.HostConfig(ctx)
 }
 
 // HostDirectory lists the printer's stored objects (^HW).
 func (p *Printer) HostDirectory(ctx context.Context) (string, error) {
-	return p.driver().HostDirectory(ctx)
+	lt, err := p.labelTools()
+	if err != nil {
+		return "", err
+	}
+	return lt.HostDirectory(ctx)
 }
 
 // Control sends a maintenance command to the printer.
 func (p *Printer) Control(ctx context.Context, cmd string) error {
-	return p.driver().Control(ctx, cmd)
+	lt, err := p.labelTools()
+	if err != nil {
+		return err
+	}
+	return lt.Control(ctx, cmd)
 }
 
 func (p *Printer) Close() { _ = p.driver().Close() }
@@ -336,6 +360,7 @@ func (p *Printer) NoteJob(jobID string, state domain.JobState) {
 // View renders the cached status plus usability into the API representation.
 func (p *Printer) View() domain.Printer {
 	v := p.spec
+	v.Capabilities = p.Capabilities()
 	v.Status = p.Cached()
 	v.QueueDepth = p.QueueDepth()
 	if !v.Enabled {
@@ -469,6 +494,9 @@ const fontRetry = 10 * time.Minute
 func (m *Manager) learnFonts(ctx context.Context, p *Printer) {
 	if p.Spec().AvailableFonts != nil {
 		return
+	}
+	if _, err := p.labelTools(); err != nil {
+		return // only label printers store fonts
 	}
 	if st := p.View().Status.State; st == domain.StateOffline || st == domain.StateUnknown || st == "" {
 		return

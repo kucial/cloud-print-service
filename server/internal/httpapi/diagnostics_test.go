@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/kucial/cloud-print-service/pkg/printer"
 
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 )
@@ -101,5 +104,32 @@ func TestDiagnosticsRecordVerifiedFacts(t *testing.T) {
 	_, body = do(t, ts, "GET", "/api/v1/printers/p1/diagnostics", opsKey, "")
 	if rec := body["recorded"].([]any); len(rec) != 0 {
 		t.Fatalf("already verified facts must not be re-recorded: %v", rec)
+	}
+}
+
+// Label tools on a receipt printer would send ZPL to an ESC/POS device: the API says no
+// instead, and the printer lists only what it can do.
+func TestLabelToolsNeedALabelPrinter(t *testing.T) {
+	receipt := mockSpec("r1", &domain.MockCfg{})
+	receipt.Kind = printer.KindReceipt
+	ts := newTestServer(t, receipt, mockSpec("l1", &domain.MockCfg{}))
+
+	for _, c := range []struct{ method, path, body string }{
+		{"GET", "/api/v1/printers/r1/diagnostics", ""},
+		{"POST", "/api/v1/printers/r1/maintenance", `{"action":"calibrate"}`},
+	} {
+		res, body := do(t, ts, c.method, c.path, opsKey, c.body)
+		if res.StatusCode != http.StatusConflict || body["error"].(map[string]any)["code"] != "not_supported_by_printer" {
+			t.Fatalf("%s %s: %d %v", c.method, c.path, res.StatusCode, body)
+		}
+	}
+	_, body := do(t, ts, "GET", "/api/v1/printers/r1", opsKey, "")
+	if body["kind"] != "receipt" || fmt.Sprint(body["capabilities"]) != "[test_print]" {
+		t.Fatalf("receipt printer view: kind=%v capabilities=%v", body["kind"], body["capabilities"])
+	}
+	_, body = do(t, ts, "GET", "/api/v1/printers/l1", opsKey, "")
+	if body["kind"] != "label" || fmt.Sprint(body["formats"]) != "[zpl]" ||
+		fmt.Sprint(body["capabilities"]) != "[test_print diagnostics maintenance fonts]" {
+		t.Fatalf("label printer view: %v %v %v", body["kind"], body["formats"], body["capabilities"])
 	}
 }

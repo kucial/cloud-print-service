@@ -11,7 +11,14 @@ import (
 )
 
 func init() {
-	Register("mock", func(p domain.Printer) (Driver, error) { return NewMock(p), nil })
+	Register(printer.DriverMock, func(p domain.Printer, _ Options) (Driver, error) {
+		m := NewMock(p)
+		if p.Kind != "" && p.Kind != printer.KindLabel {
+			// A mock receipt or office printer must not offer label tools.
+			return plainMock{m}, nil
+		}
+		return m, nil
+	})
 }
 
 // Mock is a fake printer: no sockets, deterministic behaviour for tests and demos.
@@ -114,3 +121,14 @@ func (m *Mock) Controls() []string {
 }
 
 func (m *Mock) Close() error { return nil }
+
+// plainMock is a Mock without the label tools, standing in for other kinds.
+type plainMock struct{ m *Mock }
+
+func (p plainMock) Send(ctx context.Context, data []byte) (int, error) { return p.m.Send(ctx, data) }
+func (p plainMock) Status(ctx context.Context) (domain.Status, error)  { return p.m.Status(ctx) }
+func (p plainMock) Cancel(ctx context.Context) error                   { return p.m.Cancel(ctx) }
+func (p plainMock) Identify(ctx context.Context) (map[string]string, error) {
+	return p.m.Identify(ctx)
+}
+func (p plainMock) Close() error { return nil }

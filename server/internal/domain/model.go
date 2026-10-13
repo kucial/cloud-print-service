@@ -68,6 +68,12 @@ type Printer struct {
 	Remark      string `json:"remark,omitempty"`
 	CustomLabel string `json:"custom_label,omitempty"`
 
+	// Kind is label, receipt or document; it defaults from the driver. Formats lists
+	// what the printer takes as is (learned from the printer, or declared); anything
+	// else a client sends is converted to one of them, or refused.
+	Kind    printer.Kind     `json:"kind"`
+	Formats []printer.Format `json:"formats"`
+
 	// Installed media/roll specifications
 	PaperSize     string  `json:"paper_size,omitempty"`      // standard size tag, e.g. "4x6", "100x150mm", "4x2", "2x1"
 	MediaWidthMM  float64 `json:"media_width_mm,omitempty"`  // roll width in mm (e.g. 100, 101.6)
@@ -94,9 +100,12 @@ type Printer struct {
 	AvailableFonts []printer.StoredFile `json:"available_fonts"`
 
 	// Live fields, filled by the printer manager.
-	Usable     bool   `json:"usable"`
-	QueueDepth int    `json:"queue_depth"`
-	Status     Status `json:"status"`
+	// Capabilities names what the printer can do beyond printing: diagnostics,
+	// maintenance and fonts (label printers), test_print. The panel shows tools by it.
+	Capabilities []string `json:"capabilities,omitempty"`
+	Usable       bool     `json:"usable"`
+	QueueDepth   int      `json:"queue_depth"`
+	Status       Status   `json:"status"`
 
 	Mock *MockCfg `json:"mock,omitempty"`
 }
@@ -205,44 +214,48 @@ func (p *Printer) MatchesPaperSize(filter string) bool {
 	return false
 }
 
-// Normalize fills derived defaults for resolution, paper dimensions, orientation, and CJK fonts.
+// DefaultPort is where a printer of this driver listens when the config does not say.
+func DefaultPort(driver string) int {
+	if driver == printer.DriverIPP {
+		return 631
+	}
+	return 9100
+}
+
+// CheckKindAndFormats rejects a kind or format name the service does not know, so a
+// typo in the config stops the server instead of silently refusing every job later.
+func (p *Printer) CheckKindAndFormats() error {
+	switch p.Kind {
+	case printer.KindLabel, printer.KindReceipt, printer.KindDocument:
+	default:
+		return fmt.Errorf("kind %q must be label, receipt or document", p.Kind)
+	}
+	for i, f := range p.Formats {
+		canon, ok := printer.ParseFormat(string(f))
+		if !ok {
+			return fmt.Errorf("unknown format %q", f)
+		}
+		p.Formats[i] = canon
+	}
+	return nil
+}
+
+// Normalize fills derived defaults for kind, formats, resolution, paper dimensions,
+// orientation, and CJK fonts.
 func (p *Printer) Normalize() {
-	// 1. Resolution (DPI <-> DPMM)
-	if p.DPI > 0 && p.DPMM == 0 {
-		switch p.DPI {
-		case 203:
-			p.DPMM = 8
-		case 300:
-			p.DPMM = 12
-		case 600:
-			p.DPMM = 24
-		default:
-			p.DPMM = math.Round((float64(p.DPI)/25.4)*10) / 10
-		}
-	} else if p.DPMM > 0 && p.DPI == 0 {
-		switch int(p.DPMM) {
-		case 8:
-			p.DPI = 203
-		case 12:
-			p.DPI = 300
-		case 24:
-			p.DPI = 600
-		default:
-			p.DPI = int(p.DPMM*25.4 + 0.5)
-		}
+	if p.Kind == "" {
+		p.Kind = printer.KindForDriver(p.Driver)
 	}
-	if p.ResolutionSource == "" {
-		if p.DPIResolvedFromHI {
-			p.ResolutionSource = "hi"
-		} else if p.DPI > 0 || p.DPMM > 0 {
-			p.ResolutionSource = "config"
-		} else {
-			p.ResolutionSource = "default"
-		}
+	if len(p.Formats) == 0 {
+		p.Formats = printer.DefaultFormats(p.Driver)
 	}
-	if p.DPIResolvedFromHI {
-		p.ResolutionSource = "hi"
+	if p.Kind != printer.KindLabel {
+		// Rolls, label orientation and printer fonts are label-printer facts; a receipt
+		// or office printer keeps only what it declared (e.g. paper width).
+		p.normalizeResolution()
+		return
 	}
+	p.normalizeResolution()
 
 	// 2. Paper Size & Physical Dimensions (mm unit support)
 	if p.PaperSize != "" {
@@ -388,4 +401,44 @@ type Attempt struct {
 	Result     string     `json:"result"` // ok|connect_error|write_error|partial_write|unconfirmed
 	BytesSent  int        `json:"bytes_sent"`
 	Error      string     `json:"error,omitempty"`
+}
+
+// normalizeResolution keeps DPI and DPMM consistent and records where they came from.
+func (p *Printer) normalizeResolution() {
+	if p.DPI > 0 && p.DPMM == 0 {
+		switch p.DPI {
+		case 203:
+			p.DPMM = 8
+		case 300:
+			p.DPMM = 12
+		case 600:
+			p.DPMM = 24
+		default:
+			p.DPMM = math.Round((float64(p.DPI)/25.4)*10) / 10
+		}
+	} else if p.DPMM > 0 && p.DPI == 0 {
+		switch int(p.DPMM) {
+		case 8:
+			p.DPI = 203
+		case 12:
+			p.DPI = 300
+		case 24:
+			p.DPI = 600
+		default:
+			p.DPI = int(p.DPMM*25.4 + 0.5)
+		}
+	}
+	if p.ResolutionSource == "" {
+		if p.DPIResolvedFromHI {
+			p.ResolutionSource = "hi"
+		} else if p.DPI > 0 || p.DPMM > 0 {
+			p.ResolutionSource = "config"
+		} else {
+			p.ResolutionSource = "default"
+		}
+	}
+	if p.DPIResolvedFromHI {
+		p.ResolutionSource = "hi"
+	}
+
 }

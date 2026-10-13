@@ -30,7 +30,9 @@ func fillAll(t *testing.T, v reflect.Value) {
 		case reflect.Bool:
 			f.SetBool(true)
 		case reflect.Slice:
-			f.Set(reflect.ValueOf([]string{v.Type().Field(i).Name}))
+			// []string or a slice of a named string type ([]printer.Format).
+			elem := reflect.ValueOf(v.Type().Field(i).Name).Convert(f.Type().Elem())
+			f.Set(reflect.Append(reflect.MakeSlice(f.Type(), 0, 1), elem))
 		default:
 			t.Fatalf("fillAll: unhandled field %s of kind %s", v.Type().Field(i).Name, f.Kind())
 		}

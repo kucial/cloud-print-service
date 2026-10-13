@@ -39,6 +39,11 @@ type Printer struct {
 	Remark      string `json:"remark,omitempty"`
 	CustomLabel string `json:"custom_label,omitempty"`
 
+	// Kind and the formats the printer takes as is; empty means "derive from Driver"
+	// (agents before receipt and office printers only served Zebra label printers).
+	Kind    printer.Kind     `json:"kind,omitempty"`
+	Formats []printer.Format `json:"formats,omitempty"`
+
 	PaperSize     string  `json:"paper_size,omitempty"`
 	MediaWidthMM  float64 `json:"media_width_mm,omitempty"`
 	MediaHeightMM float64 `json:"media_height_mm,omitempty"`

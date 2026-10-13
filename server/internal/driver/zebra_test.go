@@ -59,10 +59,10 @@ func TestPrinterStatePredicates(t *testing.T) {
 }
 
 func TestDriverRegistry(t *testing.T) {
-	if _, err := New(domain.Printer{PrinterID: "x", Driver: "nope"}); err == nil {
+	if _, err := New(domain.Printer{PrinterID: "x", Driver: "nope"}, Options{}); err == nil {
 		t.Fatal("expected error for unknown driver")
 	}
-	d, err := New(domain.Printer{PrinterID: "x", Driver: "mock"})
+	d, err := New(domain.Printer{PrinterID: "x", Driver: "mock"}, Options{})
 	if err != nil || d == nil {
 		t.Fatalf("mock driver: %v", err)
 	}

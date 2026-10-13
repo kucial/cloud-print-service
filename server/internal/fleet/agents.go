@@ -212,6 +212,7 @@ func PrinterFromAgent(p agentapi.Printer) domain.Printer {
 	return domain.Printer{
 		PrinterID: p.PrinterID, Name: p.Name, Site: p.Site, Model: p.Model, Driver: p.Driver,
 		Host: p.Host, Port: p.Port, Enabled: p.Enabled, Remark: p.Remark, CustomLabel: p.CustomLabel,
+		Kind: p.Kind, Formats: p.Formats,
 
 		PaperSize: p.PaperSize, MediaWidthMM: p.MediaWidthMM, MediaHeightMM: p.MediaHeightMM,
 

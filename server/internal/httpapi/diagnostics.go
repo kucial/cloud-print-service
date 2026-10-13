@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -55,6 +56,9 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.mgr.Get(r.PathValue("printer_id"))
 	if !ok {
 		writeErr(w, http.StatusNotFound, "printer_not_found", "unknown printer "+r.PathValue("printer_id"))
+		return
+	}
+	if !requireCapability(w, p, "diagnostics") {
 		return
 	}
 	ctx, cancel := contextWithTimeout(r, 15*time.Second)
@@ -240,6 +244,9 @@ func (s *Server) maintenance(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "printer_not_found", "unknown printer "+r.PathValue("printer_id"))
 		return
 	}
+	if !requireCapability(w, p, "maintenance") {
+		return
+	}
 	var req maintenanceRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
@@ -278,4 +285,15 @@ func (s *Server) maintenance(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("printer maintenance", "event", "printer.maintenance", "printer_id", p.ID(),
 		"action", req.Action, "command", cmd, "client_id", ClientFrom(r.Context()).ID)
 	writeJSON(w, http.StatusOK, map[string]any{"printer_id": p.ID(), "action": req.Action, "sent": cmd, "note": note})
+}
+
+// requireCapability answers 409 when the printer's kind has no such tool (a receipt
+// printer has no label roll to calibrate), and reports whether to go on.
+func requireCapability(w http.ResponseWriter, p *fleet.Printer, capability string) bool {
+	if slices.Contains(p.Capabilities(), capability) {
+		return true
+	}
+	writeErr(w, http.StatusConflict, "not_supported_by_printer",
+		fmt.Sprintf("%s is not available for %s printers (driver %s)", capability, p.Spec().Kind, p.Spec().Driver))
+	return false
 }

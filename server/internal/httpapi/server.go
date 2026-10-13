@@ -287,6 +287,11 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "printer_not_found", "unknown printer "+r.PathValue("printer_id"))
 		return
 	}
+	if p.Spec().Kind != printer.KindLabel {
+		writeErr(w, http.StatusConflict, "not_supported_by_printer",
+			fmt.Sprintf("no test page for %s printers yet", p.Spec().Kind))
+		return
+	}
 	external := r.URL.Query().Get("external_id")
 	if external == "" {
 		external = fmt.Sprintf("test-%s-%d", p.ID(), time.Now().Unix())

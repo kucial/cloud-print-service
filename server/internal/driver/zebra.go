@@ -17,9 +17,7 @@ import (
 )
 
 func init() {
-	Register("zebra9100", func(p domain.Printer) (Driver, error) {
-		return NewZebra(p, ZebraOpts{DialTimeout: 3 * time.Second, WriteTimeout: 5 * time.Second, ReadTimeout: 3 * time.Second}), nil
-	})
+	Register(printer.DriverZebra, func(p domain.Printer, o Options) (Driver, error) { return NewZebra(p, o), nil })
 }
 
 // Zebra speaks raw ZPL over TCP 9100.
@@ -44,22 +42,11 @@ type Zebra struct {
 	statusCon net.Conn
 }
 
-type ZebraOpts struct {
-	DialTimeout  time.Duration
-	WriteTimeout time.Duration
-	ReadTimeout  time.Duration
-}
+// ZebraOpts is the former name of Options.
+type ZebraOpts = Options
 
-func NewZebra(p domain.Printer, o ZebraOpts) *Zebra {
-	if o.DialTimeout <= 0 {
-		o.DialTimeout = 3 * time.Second
-	}
-	if o.WriteTimeout <= 0 {
-		o.WriteTimeout = 5 * time.Second
-	}
-	if o.ReadTimeout <= 0 {
-		o.ReadTimeout = 3 * time.Second
-	}
+func NewZebra(p domain.Printer, o Options) *Zebra {
+	o = o.withDefaults()
 	port := p.Port
 	if port == 0 {
 		port = 9100

@@ -19,12 +19,19 @@ const (
 	StateError     State = "error"
 	StateOffline   State = "offline"
 	StateDisabled  State = "disabled"
+
+	// Receipt and office printers.
+	StateDoorOpen State = "door_open"
+	StatePaperJam State = "paper_jam"
+	StateTonerLow State = "toner_low"
+	StateTonerOut State = "toner_out"
 )
 
 // BlocksUse reports whether the state represents an active problem that blocks use.
 func (s State) BlocksUse() bool {
 	switch s {
-	case StateMediaOut, StateRibbonOut, StateHeadError, StateError, StateOffline, StateDisabled:
+	case StateMediaOut, StateRibbonOut, StateHeadError, StateError, StateOffline, StateDisabled,
+		StateDoorOpen, StatePaperJam, StateTonerOut:
 		return true
 	}
 	return false
