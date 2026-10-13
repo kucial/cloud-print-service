@@ -73,7 +73,11 @@ type Config struct {
 	BaseBackoff    time.Duration
 	// SettleFor is how long a printer that never shows "printing" has before idle is
 	// accepted as confirmation. Default 1s.
-	SettleFor      time.Duration
+	SettleFor time.Duration
+	// TrackTimeout is how long CPS follows a job on a printer that keeps its own jobs
+	// (IPP) before calling it sent_unknown. Office printers queue and warm up, so it
+	// is far longer than ConfirmTimeout. Default 10m.
+	TrackTimeout   time.Duration
 	MaxPayloadSize int64
 	MaxCopies      int
 	// RejectWhenNotUsable refuses dispatch to a printer whose cached status shows a
@@ -113,6 +117,9 @@ func NewService(cfg Config, st store.Store, mgr *fleet.Manager, b *observ.Bus, l
 	}
 	if cfg.BaseBackoff <= 0 {
 		cfg.BaseBackoff = 500 * time.Millisecond
+	}
+	if cfg.TrackTimeout <= 0 {
+		cfg.TrackTimeout = 10 * time.Minute
 	}
 	if cfg.SettleFor <= 0 {
 		cfg.SettleFor = time.Second
@@ -459,7 +466,7 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	}
 
 	j.State = domain.JobSending
-	j.StateDetail = "Worker opened socket and is transmitting ZPL bytes to printer"
+	j.StateDetail = "Worker is transmitting the document to the printer"
 	j.StatusMessage = "Transmitting to printer"
 	j.Attempts = 0
 	// Persist before touching the printer: the boot reaper resolves anything left in
@@ -470,8 +477,13 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	s.transition(j, domain.JobSending, "")
 
 	payload := []byte(j.Payload)
+	doc := driver.Doc{Data: payload, Format: j.Format, Copies: 1, Name: j.ID}
+	if p.TakesCopies() {
+		doc.Copies = j.Copies // otherwise the copies are already in the payload (or ^PQ)
+	}
 	var lastErr string
 	var bytesSent int
+	var sent driver.Sent
 	sendOK := false
 
 	for attempt := 1; attempt <= s.cfg.MaxAttempts; attempt++ {
@@ -480,8 +492,9 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 		}
 		at := &domain.Attempt{JobID: j.ID, AttemptNo: attempt, StartedAt: time.Now().UTC()}
 		sendCtx, sendCancel := context.WithTimeout(ctx, s.cfg.ConfirmTimeout)
-		n, sendErr := p.Send(sendCtx, payload)
+		res, sendErr := p.Dispatch(sendCtx, doc)
 		sendCancel()
+		n := res.Bytes
 		j.Attempts = attempt
 		fin := time.Now().UTC()
 		at.FinishedAt = &fin
@@ -492,7 +505,18 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 			at.Result = "ok"
 			_ = s.st.AddAttempt(ctx, at)
 			sendOK = true
+			sent = res
 			lastErr = ""
+
+		case errors.Is(sendErr, driver.ErrRejected):
+			// The printer answered "no" (e.g. a format it cannot print): nothing
+			// printed, and the same document will be refused again.
+			at.Result = "rejected"
+			at.Error = sendErr.Error()
+			_ = s.st.AddAttempt(ctx, at)
+			s.met.Inc("cps_dispatch_failures_total", "reason", "rejected", "printer_id", printerID)
+			s.fail(ctx, j, sendErr.Error())
+			return
 
 		case n > 0:
 			// Ambiguous: part of a label reached the driver. Never auto-retry.
@@ -540,13 +564,30 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 
 	// Bytes are on the wire. From here on CPS must not create a second label.
 	confirmStart := time.Now()
-	confirmed := s.confirm(ctx, p)
+	confirmed, failure, tracked := s.track(ctx, j, p, sent)
+	if !tracked {
+		confirmed = s.confirm(ctx, p)
+	}
 	s.met.Observe("cps_confirm_seconds", time.Since(confirmStart).Seconds(), "printer_id", printerID)
 	if confirmed {
-		s.finish(ctx, j, domain.JobPrinted)
+		detail := ""
+		if tracked {
+			detail = "Confirmed by the printer's own job record: " + strings.TrimPrefix(j.StateDetail, "Printer reports ")
+		}
+		s.finishWith(ctx, j, domain.JobPrinted, detail)
+		return
+	}
+	if failure != "" {
+		// The printer itself says the job ended without printing (cancelled at the
+		// panel, aborted on an error): a definite failure, not an unknown.
+		j.LastError = failure
+		s.finish(ctx, j, domain.JobFailed)
 		return
 	}
 	j.LastError = "bytes sent but no confirmation observed within " + s.cfg.ConfirmTimeout.String()
+	if tracked {
+		j.LastError = "the printer still had the job after " + s.cfg.TrackTimeout.String()
+	}
 	_ = s.st.AddAttempt(ctx, &domain.Attempt{
 		JobID: j.ID, AttemptNo: j.Attempts, StartedAt: now, FinishedAt: &now,
 		Result: "unconfirmed", BytesSent: bytesSent,
@@ -554,6 +595,44 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	s.met.Inc("cps_sent_unknown_total", "printer_id", printerID)
 	s.log.Error("job sent but unconfirmed — needs human check", "job_id", j.ID, "printer_id", printerID, "bytes", bytesSent)
 	s.finish(ctx, j, domain.JobSentUnknown)
+}
+
+// track follows the job on a printer that keeps its own job list. tracked is false
+// when the printer has none (raw-socket printers): confirm then reads status instead.
+// failure is set when the printer reports the job ended without printing.
+func (s *Service) track(ctx context.Context, j *domain.Job, p *fleet.Printer, sent driver.Sent) (printed bool, failure string, tracked bool) {
+	if sent.Ref == "" {
+		return false, "", false // the printer gave no job of its own to follow
+	}
+	deadline := time.Now().Add(s.cfg.TrackTimeout)
+	lastDetail := ""
+	for {
+		qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		t, ok, err := p.Track(qctx, sent)
+		cancel()
+		if !ok {
+			return false, "", false
+		}
+		if err == nil {
+			if t.Detail != lastDetail {
+				lastDetail = t.Detail
+				j.StateDetail = "Printer reports " + t.Detail
+				_ = s.st.UpdateJob(context.WithoutCancel(ctx), j)
+			}
+			if t.Done {
+				if t.Printed {
+					return true, "", true
+				}
+				return false, "printer ended the job without printing: " + t.Detail, true
+			}
+		}
+		if time.Now().After(deadline) {
+			return false, "", true
+		}
+		if !sleepCtx(ctx, 500*time.Millisecond) {
+			return false, "", true
+		}
+	}
 }
 
 // confirm decides whether the label printed. It is evidence, not proof: absence of a
@@ -638,6 +717,12 @@ func (s *Service) fail(ctx context.Context, j *domain.Job, msg string) {
 }
 
 func (s *Service) finish(ctx context.Context, j *domain.Job, state domain.JobState) {
+	s.finishWith(ctx, j, state, "")
+}
+
+// finishWith is finish with the state detail said by the caller, when it knows more
+// than the state does (e.g. the printer itself confirmed the job).
+func (s *Service) finishWith(ctx context.Context, j *domain.Job, state domain.JobState, detail string) {
 	j.State = state
 	if state.Terminal() {
 		now := time.Now().UTC()
@@ -658,6 +743,9 @@ func (s *Service) finish(ctx context.Context, j *domain.Job, state domain.JobSta
 			j.StateDetail = "Job failed before completion: " + j.LastError
 			j.StatusMessage = "Failed"
 		}
+	}
+	if detail != "" {
+		j.StateDetail = detail
 	}
 	if err := s.st.UpdateJob(ctx, j); err != nil {
 		s.log.Error("failed to persist job", "job_id", j.ID, "err", err)

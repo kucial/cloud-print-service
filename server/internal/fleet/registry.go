@@ -167,6 +167,8 @@ type MetadataPatch struct {
 
 	// AvailableFonts is reported by the printer, never sent by clients.
 	AvailableFonts *[]printer.StoredFile `json:"-"`
+	// Formats is what an IPP printer reports it takes; learned again after a restart.
+	Formats *[]printer.Format `json:"-"`
 }
 
 // UpdateMetadata updates user-editable metadata (name, site, remark, custom_label, paper_size, dimensions, resolution, CJK font, enabled)
@@ -513,6 +515,9 @@ func (patch MetadataPatch) applyTo(p *domain.Printer) {
 	}
 	if patch.Enabled != nil {
 		p.Enabled = *patch.Enabled
+	}
+	if patch.Formats != nil {
+		p.Formats = *patch.Formats
 	}
 	if patch.AvailableFonts != nil {
 		p.AvailableFonts = *patch.AvailableFonts

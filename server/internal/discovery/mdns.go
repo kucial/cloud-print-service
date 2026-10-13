@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,9 @@ import (
 	"time"
 
 	"github.com/brutella/dnssd"
+
+	"github.com/kucial/cloud-print-service/pkg/ipp"
+	"github.com/kucial/cloud-print-service/pkg/printer"
 )
 
 // MDNS browses DNS-SD service types and (optionally) verifies each hit by asking the
@@ -102,13 +106,20 @@ func (p MDNS) Scan(ctx context.Context) ([]Found, error) {
 				f.DeviceKey = fmt.Sprintf("mdns:%s:%d", host, f.Port)
 			}
 
-			if p.Identify && f.Host != "" {
+			if p.Identify && f.Host != "" && isIPPService(normType) {
+				// An IPP port speaks HTTP: ask it the IPP way, never with ~HI.
+				probeCtx, pcancel := context.WithTimeout(ctx, identifyTimeout)
+				identifyIPP(probeCtx, &f, e.Text["rp"], p.Logf)
+				pcancel()
+			} else if p.Identify && f.Host != "" {
 				probeCtx, pcancel := context.WithTimeout(ctx, identifyTimeout)
 				id, ierr := identify(prCtx{ctx: probeCtx, host: f.Host, port: f.Port}, p.Logf)
 				pcancel()
 				if ierr == nil {
 					f.Model, f.Serial, f.Vendor = id.Model, id.Serial, id.Vendor
 					f.Detail["identified"] = "true"
+					f.Detail["driver"] = printer.DriverZebra
+					f.Detail["kind"] = string(printer.KindLabel)
 					if id.DPI > 0 {
 						f.Detail["dpi"] = strconv.Itoa(id.DPI)
 						f.Detail["dpmm"] = fmt.Sprintf("%g", id.DPMM)
@@ -361,6 +372,41 @@ func identify(p prCtx, logf func(string, ...any)) (identity, error) {
 		logf("mdns: %s:%d identified as %s (serial %s)", p.host, p.port, id.Model, id.Serial)
 	}
 	return id, nil
+}
+
+func isIPPService(t string) bool {
+	return strings.HasPrefix(t, "_ipp._tcp.")
+}
+
+// identifyIPP asks an IPP printer for its attributes (Get-Printer-Attributes) at the
+// resource path it advertised in TXT "rp".
+func identifyIPP(ctx context.Context, f *Found, rp string, logf func(string, ...any)) {
+	c := ipp.NewClient(f.Host, f.Port, rp, &http.Client{Transport: &http.Transport{Proxy: nil}})
+	info, err := c.GetPrinterAttributes(ctx)
+	if err != nil {
+		f.Detail["identified"] = "false"
+		f.Detail["identify_error"] = err.Error()
+		if logf != nil {
+			logf("mdns: %s:%d did not answer IPP: %v", f.Host, f.Port, err)
+		}
+		return
+	}
+	f.Model, f.Serial = info.MakeModel, info.Serial
+	f.Detail["identified"] = "true"
+	f.Detail["driver"] = printer.DriverIPP
+	f.Detail["kind"] = string(printer.KindDocument)
+	f.Detail["path"] = strings.TrimPrefix(rp, "/")
+	if f.Detail["path"] == "" {
+		f.Detail["path"] = "ipp/print" // what NewClient used
+	}
+	var fs []string
+	for _, x := range ipp.Formats(info.Formats) {
+		fs = append(fs, string(x))
+	}
+	f.Detail["formats"] = strings.Join(fs, ",")
+	if logf != nil {
+		logf("mdns: %s:%d identified as IPP printer %s (%s)", f.Host, f.Port, info.MakeModel, f.Detail["formats"])
+	}
 }
 
 type prCtx struct {

@@ -67,6 +67,29 @@ type DocumentSender interface {
 	SendDocument(ctx context.Context, doc Doc) (Sent, error)
 }
 
+// JobTracker is a printer that keeps its own job list (IPP) and can say what became
+// of a document: confirmation then asks the printer instead of inferring it from
+// status changes.
+type JobTracker interface {
+	Track(ctx context.Context, sent Sent) (Tracked, error)
+}
+
+// Tracked is a printer's account of one job.
+type Tracked struct {
+	Done    bool   // the printer finished with the job, one way or the other
+	Printed bool   // it finished by printing it
+	Detail  string // the printer's own words: job-state and reasons
+}
+
+// FormatReporter is a printer that can say which formats it takes (IPP).
+type FormatReporter interface {
+	Formats(ctx context.Context) ([]printer.Format, error)
+}
+
+// ErrRejected marks a document the printer refused outright (an unsupported format,
+// a bad attribute): nothing printed, and sending it again cannot succeed.
+var ErrRejected = errors.New("printer rejected the document")
+
 // ErrNotSupported is returned for an operation the printer's kind does not have.
 var ErrNotSupported = errors.New("not supported by this printer")
 

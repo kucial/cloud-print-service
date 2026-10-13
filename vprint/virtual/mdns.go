@@ -39,6 +39,12 @@ func (p *Printer) Advertise(ctx context.Context, log *slog.Logger, name string) 
 			"sn":      p.Serial,
 		},
 	}
+	if p.opts.Language == ippLanguage {
+		// Office printers advertise IPP with the resource path in "rp" (IPP Everywhere).
+		cfg.Type = "_ipp._tcp"
+		cfg.Text = map[string]string{"txtvers": "1", "ty": p.Model, "rp": "ipp/print",
+			"pdl": "application/pdf,image/urf,image/jpeg"}
+	}
 	svc, err := dnssd.NewService(cfg)
 	if err != nil {
 		return func() {}, err
@@ -56,7 +62,7 @@ func (p *Printer) Advertise(ctx context.Context, log *slog.Logger, name string) 
 		rp.Respond(ctx)
 	}()
 	if log != nil {
-		log.Info("advertising over mDNS", "name", name, "type", mdnsServiceType, "port", port)
+		log.Info("advertising over mDNS", "name", name, "type", cfg.Type, "port", port)
 	}
 	return func() { <-done }, nil
 }

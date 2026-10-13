@@ -57,13 +57,15 @@ type MockCfg struct {
 
 // Printer is both the declared spec and the live view of a printer.
 type Printer struct {
-	PrinterID   string `json:"printer_id"`
-	Name        string `json:"name"`
-	Site        string `json:"site"`
-	Model       string `json:"model"`
-	Driver      string `json:"driver"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
+	PrinterID string `json:"printer_id"`
+	Name      string `json:"name"`
+	Site      string `json:"site"`
+	Model     string `json:"model"`
+	Driver    string `json:"driver"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	// Path is the IPP resource path (e.g. "ipp/print"); other drivers ignore it.
+	Path        string `json:"path,omitempty"`
 	Enabled     bool   `json:"enabled"`
 	Remark      string `json:"remark,omitempty"`
 	CustomLabel string `json:"custom_label,omitempty"`

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,7 +39,13 @@ type Printer struct {
 	media        int // 0 ok, 1 low, 2 out
 	ribbon       int
 	head         int
-	door         bool // cover open (ESC/POS)
+	door         bool // cover open (ESC/POS, IPP)
+	jam          bool // paper jam (IPP)
+	toner        int  // 0 ok, 1 low, 2 empty (IPP)
+	abortJobs    bool // IPP jobs end aborted instead of completed
+	ippJobs      []*ippJob
+	ippSrv       *http.Server
+	nextIPPJob   int
 	printing     bool
 	offline      bool
 	sticky       bool // ^always_printing: never returns to idle
@@ -78,6 +85,11 @@ type Label struct {
 	Language string `json:"language,omitempty"`
 	Text     string `json:"text,omitempty"`
 	Images   int    `json:"images,omitempty"`
+
+	// IPP documents: the format (MIME type), copies asked for, and the document.
+	Format string `json:"format,omitempty"`
+	Copies int    `json:"copies,omitempty"`
+	Data   []byte `json:"-"`
 }
 
 // Preview describes the rendered image of a label.
@@ -131,8 +143,10 @@ type Opts struct {
 	Orientation    string
 	PrintDirection string
 	CJKFont        string
-	// Language is what the printer speaks: zpl (default) or escpos.
+	// Language is what the printer speaks: zpl (default), escpos or ipp.
 	Language string
+	// IPPFormats is document-format-supported in IPP mode (default DefaultIPPFormats).
+	IPPFormats []string
 }
 
 func New(id string, o Opts) *Printer {
@@ -189,6 +203,13 @@ func (p *Printer) listen() error {
 	p.listener = ln
 	p.addr = ln.Addr().String()
 	p.wg.Add(1)
+	if p.opts.Language == ippLanguage {
+		go func() {
+			defer p.wg.Done()
+			p.serveIPP(ln)
+		}()
+		return nil
+	}
 	go func() {
 		defer p.wg.Done()
 		for {
@@ -235,6 +256,7 @@ func (p *Printer) Close() error {
 	for _, c := range conns {
 		_ = c.Close()
 	}
+	p.dropIPP()
 	p.wg.Wait()
 	return nil
 }
@@ -273,8 +295,17 @@ func (p *Printer) Control(c Control) {
 	case "":
 	case "idle":
 		p.device, p.media, p.ribbon, p.head, p.printing, p.sticky, p.door = 0, 0, 0, 0, false, false, false
+		p.jam, p.toner, p.abortJobs = false, 0, false
 	case "door_open":
 		p.door = true
+	case "paper_jam":
+		p.jam = true
+	case "toner_low":
+		p.toner = 1
+	case "toner_out":
+		p.toner = 2
+	case "abort_jobs": // IPP: jobs end aborted
+		p.abortJobs = true
 	case "printing":
 		p.device, p.printing = 1, true
 	case "busy":
@@ -333,6 +364,7 @@ func (p *Printer) Control(c Control) {
 	if ln != nil {
 		_ = ln.Close()
 	}
+	p.dropIPP()
 }
 
 // Control is the fault-injection payload.

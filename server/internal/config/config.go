@@ -104,6 +104,9 @@ type Config struct {
 	QueueSizePerPrinter int      `json:"queue_size_per_printer"`
 	MaxAttempts         int      `json:"max_attempts"`
 	ConfirmTimeout      Duration `json:"confirm_timeout"`
+	// TrackTimeout bounds how long a job is followed on a printer that keeps its own
+	// jobs (IPP office printers) before it is reported sent_unknown.
+	TrackTimeout        Duration `json:"track_timeout"`
 	JobQueueTTL         Duration `json:"job_queue_ttl"`
 	BaseBackoff         Duration `json:"base_backoff"`
 	MaxPayloadBytes     int64    `json:"max_payload_bytes"` // max job payload bytes, 0 for unlimited (default 32MB to allow CJK TrueType font uploads)
@@ -140,6 +143,7 @@ func defaults() Config {
 		QueueSizePerPrinter: 50,
 		MaxAttempts:         3,
 		ConfirmTimeout:      Duration(10 * time.Second),
+		TrackTimeout:        Duration(10 * time.Minute),
 		JobQueueTTL:         Duration(5 * time.Minute),
 		BaseBackoff:         Duration(500 * time.Millisecond),
 		MaxPayloadBytes:     32 * 1024 * 1024, // 32 MB default (supports large CJK TrueType font files)

@@ -40,7 +40,7 @@ func newTestServer(t *testing.T, specs ...domain.Printer) *httptest.Server {
 	t.Cleanup(mgr.Close)
 	store := store.NewMemoryStore()
 	met := observ.NewMetrics()
-	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 2, ConfirmTimeout: 200 * time.Millisecond,
+	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 2, ConfirmTimeout: 200 * time.Millisecond, TrackTimeout: 2 * time.Second,
 		BaseBackoff: time.Millisecond, MaxPayloadSize: 4096}, store, mgr, b, log, met)
 	t.Cleanup(svc.Stop)
 	if err := svc.Start(context.Background()); err != nil {
@@ -74,7 +74,7 @@ func newTestServerWith(t *testing.T, web WebConfig, specs ...domain.Printer) *ht
 	}
 	t.Cleanup(mgr.Close)
 	store := store.NewMemoryStore()
-	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 1, ConfirmTimeout: 100 * time.Millisecond,
+	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 1, ConfirmTimeout: 100 * time.Millisecond, TrackTimeout: 2 * time.Second,
 		MaxPayloadSize: 4096}, store, mgr, b, log, observ.NewMetrics())
 	t.Cleanup(svc.Stop)
 	tok := token.NewService(token.NewMemoryStore(), time.Hour)
@@ -99,7 +99,7 @@ func newTestServerWithPayloadLimit(t *testing.T, maxPayload int64, specs ...doma
 	}
 	t.Cleanup(mgr.Close)
 	store := store.NewMemoryStore()
-	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 1, ConfirmTimeout: 100 * time.Millisecond,
+	svc := job.NewService(job.Config{QueueSize: 10, MaxAttempts: 1, ConfirmTimeout: 100 * time.Millisecond, TrackTimeout: 2 * time.Second,
 		MaxPayloadSize: maxPayload}, store, mgr, b, log, observ.NewMetrics())
 	t.Cleanup(svc.Stop)
 	tok := token.NewService(token.NewMemoryStore(), time.Hour)

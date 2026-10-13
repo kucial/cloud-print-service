@@ -36,17 +36,18 @@ import (
 
 func main() {
 	var (
-		listen    = flag.String("listen", "", "printer listen address, e.g. :19100 (default one port per printer)")
-		admin     = flag.String("admin", "", "control/gallery address, e.g. :19101")
-		id        = flag.String("id", "vprint-01", "virtual printer id")
-		count     = flag.Int("count", 1, "how many virtual printers to run")
-		basePort  = flag.Int("base-port", 19100, "first printer port when -listen is not given")
-		baseAdmin = flag.Int("base-admin-port", 19200, "first gallery port when -admin is not given")
-		language  = flag.String("language", "zpl", "printer language: zpl (label printer) or escpos (receipt printer)")
-		model     = flag.String("model", "", "model reported by ~HI / GS I (default ZT411, or TM-T82 for escpos)")
-		serial    = flag.String("serial", "", "serial reported by ~HI (default derived from id)")
-		state     = flag.String("state", "idle", "initial state: idle|printing|media_low|media_out|door_open|error")
-		dur       = flag.Duration("print-duration", 150*time.Millisecond, "how long one label takes to print")
+		listen     = flag.String("listen", "", "printer listen address, e.g. :19100 (default one port per printer)")
+		admin      = flag.String("admin", "", "control/gallery address, e.g. :19101")
+		id         = flag.String("id", "vprint-01", "virtual printer id")
+		count      = flag.Int("count", 1, "how many virtual printers to run")
+		basePort   = flag.Int("base-port", 19100, "first printer port when -listen is not given")
+		baseAdmin  = flag.Int("base-admin-port", 19200, "first gallery port when -admin is not given")
+		language   = flag.String("language", "zpl", "printer language: zpl (label printer), escpos (receipt printer) or ipp (office printer)")
+		ippFormats = flag.String("ipp-formats", "", "ipp: comma-separated document-format-supported (default pdf, urf, jpeg, octet-stream)")
+		model      = flag.String("model", "", "model reported by ~HI / GS I (default ZT411, or TM-T82 for escpos)")
+		serial     = flag.String("serial", "", "serial reported by ~HI (default derived from id)")
+		state      = flag.String("state", "idle", "initial state: idle|printing|media_low|media_out|door_open|error")
+		dur        = flag.Duration("print-duration", 150*time.Millisecond, "how long one label takes to print")
 
 		renderOn       = flag.Bool("render", false, "render each received label to PNG for debugging")
 		renderDir      = flag.String("render-dir", "", "also write rendered labels to this directory")
@@ -131,15 +132,18 @@ func main() {
 		*paperSize = fmt.Sprintf("%gx%gmm", *renderW, *renderH)
 	}
 
-	if *language != "zpl" && *language != "escpos" {
-		log.Error("-language must be zpl or escpos", "got", *language)
+	switch *language {
+	case "zpl", "escpos", "ipp":
+	default:
+		log.Error("-language must be zpl, escpos or ipp", "got", *language)
 		os.Exit(2)
 	}
 	if *model == "" {
-		*model = "ZT411"
-		if *language == "escpos" {
-			*model = "TM-T82"
-		}
+		*model = map[string]string{"zpl": "ZT411", "escpos": "TM-T82", "ipp": "VPRINT LaserJet"}[*language]
+	}
+	var formats []string
+	if *ippFormats != "" {
+		formats = strings.Split(*ippFormats, ",")
 	}
 
 	var printers []*virtual.Printer
@@ -167,7 +171,7 @@ func main() {
 			Addr: addr, Model: *model, Serial: sn, PrintDuration: *dur,
 			DPI: *renderDPI, DPMM: *renderDPMM, PaperSize: *paperSize,
 			Orientation: *orientation, PrintDirection: *printDirection,
-			CJKFont: *cjkFont, Language: *language,
+			CJKFont: *cjkFont, Language: *language, IPPFormats: formats,
 		})
 		if err := p.Start(ctx); err != nil {
 			log.Error("cannot start virtual printer", "id", pid, "err", err)

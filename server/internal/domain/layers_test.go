@@ -18,14 +18,14 @@ const module = "github.com/kucial/cloud-print-service/"
 // layers maps a package (module-relative path) to what it may import from this module.
 var layers = map[string][]string{
 	"server/internal/domain":    {"pkg/printer"},
-	"server/internal/driver":    {"server/internal/domain", "pkg/printer"},
+	"server/internal/driver":    {"server/internal/domain", "pkg/printer", "pkg/ipp"},
 	"server/internal/store":     {"server/internal/domain"},
 	"server/internal/observ":    {},
 	"server/internal/config":    {"server/internal/domain"},
 	"server/internal/token":     {"server/internal/domain"},
 	"server/internal/fleet":     {"server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/observ", "pkg/agentapi", "pkg/printer"},
 	"server/internal/job":       {"pkg/printer", "server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/fleet", "server/internal/observ"},
-	"server/internal/discovery": {"server/internal/domain", "server/internal/fleet"},
+	"server/internal/discovery": {"server/internal/domain", "server/internal/fleet", "pkg/ipp", "pkg/printer"},
 	"server/internal/httpapi": {
 		"server/internal/domain", "server/internal/driver", "server/internal/fleet", "server/internal/job",
 		"server/internal/store", "server/internal/token", "server/internal/observ", "server/internal/config",
@@ -35,8 +35,9 @@ var layers = map[string][]string{
 	"pkg/render":     {},
 	"pkg/printer":    {},
 	"pkg/escpos":     {},
+	"pkg/ipp":        {"pkg/printer"},
 	"pkg/agentapi":   {"pkg/printer"},
-	"vprint/virtual": {"pkg/render", "pkg/printer"},
+	"vprint/virtual": {"pkg/render", "pkg/printer", "pkg/ipp"},
 }
 
 func moduleRoot(t *testing.T) string {

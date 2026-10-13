@@ -4,6 +4,7 @@ import (
 	"context"
 	"hash/fnv"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,6 +31,11 @@ type Manager struct {
 	mu       sync.RWMutex
 	printers map[string]*Printer
 	reg      *Registry
+
+	// polls is the pollers' lifetime: the manager's, not the caller's. A printer added
+	// while serving a request (adopted, edited) must outlive that request.
+	polls     context.Context
+	stopPolls context.CancelFunc
 }
 
 // Registry exposes the fleet data model (sources, provenance, candidates).
@@ -37,7 +43,8 @@ func (m *Manager) Registry() *Registry { return m.reg }
 
 // Sync reconciles live drivers with the registry: adds new printers, refreshes changed
 // specs, and closes drivers for printers that no longer exist. Safe to call at any time;
-// this is how an agent's USB printers appear without a server restart.
+// this is how an agent's USB printers appear without a server restart. New printers
+// are polled for the manager's lifetime, whatever ctx is.
 func (m *Manager) Sync(ctx context.Context) error {
 	wanted := m.reg.List(Filter{})
 	seen := make(map[string]bool, len(wanted))
@@ -50,7 +57,8 @@ func (m *Manager) Sync(ctx context.Context) error {
 			existing.mu.Lock()
 			// A moved endpoint or a changed driver needs a fresh driver; the old one
 			// would keep writing to the previous address.
-			if existing.spec.Host != spec.Host || existing.spec.Port != spec.Port || existing.spec.Driver != spec.Driver {
+			if existing.spec.Host != spec.Host || existing.spec.Port != spec.Port || existing.spec.Driver != spec.Driver ||
+				existing.spec.Path != spec.Path {
 				existing.drv.Close()
 				d, err := m.build(spec)
 				if err == nil {
@@ -71,7 +79,7 @@ func (m *Manager) Sync(ctx context.Context) error {
 			return err
 		}
 		m.printers[spec.PrinterID] = p
-		go m.pollOne(ctx, p)
+		go m.pollOne(m.polls, p)
 	}
 	for id, p := range m.printers {
 		if !seen[id] {
@@ -122,7 +130,8 @@ type Printer struct {
 	status  domain.Status
 	polling atomic.Bool // exactly one poller per printer, ever
 
-	fontsTriedAt atomic.Int64 // unix nanos of the last font-list attempt
+	fontsTriedAt   atomic.Int64 // unix nanos of the last font-list attempt
+	formatsLearned atomic.Bool  // the printer's own format list has been recorded
 }
 
 type ManagerOpts struct {
@@ -156,7 +165,10 @@ func NewManagerWithRegistry(reg *Registry, log *observ.Log, b *observ.Bus, o Man
 	if o.StaleAfter <= 0 {
 		o.StaleAfter = 3 * o.PollInterval
 	}
+	polls, stop := context.WithCancel(context.Background())
 	m := &Manager{
+		polls:        polls,
+		stopPolls:    stop,
 		log:          log,
 		bus:          b,
 		pollInterval: o.PollInterval,
@@ -300,6 +312,28 @@ func (p *Printer) driver() driver.Driver {
 
 func (p *Printer) Send(ctx context.Context, data []byte) (int, error) {
 	return p.driver().Send(ctx, data)
+}
+
+// Dispatch sends one document: whole, with its format and copies, to a printer that
+// takes documents (IPP); as bytes to any other. Bytes follows the Send contract.
+func (p *Printer) Dispatch(ctx context.Context, doc driver.Doc) (driver.Sent, error) {
+	d := p.driver()
+	if ds, ok := d.(driver.DocumentSender); ok {
+		return ds.SendDocument(ctx, doc)
+	}
+	n, err := d.Send(ctx, doc.Data)
+	return driver.Sent{Bytes: n}, err
+}
+
+// Track asks the printer what became of a sent document. ok is false when the
+// printer keeps no jobs of its own (raw-socket printers).
+func (p *Printer) Track(ctx context.Context, sent driver.Sent) (t driver.Tracked, ok bool, err error) {
+	jt, isTracker := p.driver().(driver.JobTracker)
+	if !isTracker || sent.Ref == "" {
+		return driver.Tracked{}, false, nil
+	}
+	t, err = jt.Track(ctx, sent)
+	return t, true, err
 }
 
 func (p *Printer) Status(ctx context.Context) (domain.Status, error) { return p.driver().Status(ctx) }
@@ -448,39 +482,14 @@ func (p *Printer) probe(ctx context.Context) {
 	p.publishStatus(st)
 }
 
-// StartPolling probes every printer on an interval, staggered to avoid a thundering herd.
+// StartPolling makes sure every printer is polled, and stops all polling when ctx
+// ends. Printers already polled (Sync starts pollers) keep their one poller.
 func (m *Manager) StartPolling(ctx context.Context) {
+	context.AfterFunc(ctx, m.stopPolls)
 	m.mu.RLock()
-	ids := make([]string, 0, len(m.printers))
-	for id := range m.printers {
-		ids = append(ids, id)
-	}
-	m.mu.RUnlock()
-
-	for _, id := range ids {
-		p, ok := m.Get(id)
-		if !ok {
-			continue
-		}
-		go func(p *Printer) {
-			// Probe immediately so the first API call already has data.
-			p.probe(ctx)
-			h := fnv.New32a()
-			_, _ = h.Write([]byte(p.ID()))
-			stagger := time.Duration(h.Sum32() % uint32(m.pollInterval))
-			t := time.NewTimer(stagger)
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-				}
-				p.probe(ctx)
-				m.learnFonts(ctx, p)
-				t.Reset(m.pollInterval)
-			}
-		}(p)
+	defer m.mu.RUnlock()
+	for _, p := range m.printers {
+		go m.pollOne(m.polls, p)
 	}
 }
 
@@ -489,8 +498,7 @@ func (m *Manager) StartPolling(ctx context.Context) {
 //
 // Exactly one poller per printer is permitted: two pollers sharing a driver's status
 // socket interleave queries and read each other's replies, which shows up as a fleet
-// that is "offline" for no reason. Sync starts pollers for new printers, so callers must
-// not also call StartPolling.
+// that is "offline" for no reason. The polling flag makes every extra start a no-op.
 // fontRetry is how long to wait before asking a printer for its fonts again after a
 // failed attempt.
 const fontRetry = 10 * time.Minute
@@ -548,8 +556,40 @@ func (m *Manager) pollOne(ctx context.Context, p *Printer) {
 		}
 		p.probe(ctx)
 		m.learnFonts(ctx, p)
+		m.learnFormats(ctx, p)
 		t.Reset(m.pollInterval)
 	}
+}
+
+// learnFormats records the formats an IPP printer says it takes, once it is reachable,
+// so jobs are checked against the printer rather than a guess. A list declared in the
+// config is left alone: an operator may keep a printer to fewer formats on purpose.
+func (m *Manager) learnFormats(ctx context.Context, p *Printer) {
+	fr, ok := p.driver().(driver.FormatReporter)
+	if !ok || p.formatsLearned.Load() {
+		return
+	}
+	if !slices.Equal(p.Spec().Formats, printer.DefaultFormats(p.Spec().Driver)) {
+		p.formatsLearned.Store(true)
+		return
+	}
+	if st := p.View().Status.State; st == domain.StateOffline || st == domain.StateUnknown || st == "" {
+		return
+	}
+	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	formats, err := fr.Formats(qctx)
+	cancel()
+	if err != nil || len(formats) == 0 {
+		return
+	}
+	p.formatsLearned.Store(true)
+	if _, err := m.reg.UpdateMetadata(p.ID(), MetadataPatch{Formats: &formats}); err != nil {
+		return
+	}
+	if err := m.Sync(ctx); err != nil {
+		m.log.Warn("formats recorded but sync failed", "printer_id", p.ID(), "err", err)
+	}
+	m.log.Info("printer formats recorded", "printer_id", p.ID(), "formats", formats)
 }
 
 // sourceOf reports which source owns a printer's claim (config wins over agent).
@@ -578,6 +618,7 @@ func (m *Manager) ProbeAll(ctx context.Context) {
 }
 
 func (m *Manager) Close() {
+	m.stopPolls()
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, p := range m.printers {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -306,6 +307,23 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 		page = map[string]any{"kind": "label", "width_mm": geo.WidthMM, "height_mm": geo.HeightMM,
 			"dpi": printer.DPIFromDPMM(geo.DPMM), "size_source": geo.Source,
 			"cjk_font": cjk.Font, "cjk_note": cjk.Note}
+	case printer.KindDocument:
+		if !slices.Contains(p.Spec().Formats, printer.FormatPDF) {
+			writeErr(w, http.StatusConflict, "not_supported_by_printer",
+				fmt.Sprintf("the test page is a PDF and this printer takes %v", p.Spec().Formats))
+			return
+		}
+		var formats []string
+		for _, f := range p.Spec().Formats {
+			formats = append(formats, string(f))
+		}
+		data, err := testPagePDF(p.Spec().Name, p.ID(), formats, time.Now())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		req.Payload, req.Format = data, string(printer.FormatPDF)
+		page = map[string]any{"kind": "document", "paper": "A4"}
 	default:
 		writeErr(w, http.StatusConflict, "not_supported_by_printer",
 			fmt.Sprintf("no test page for %s printers yet", p.Spec().Kind))

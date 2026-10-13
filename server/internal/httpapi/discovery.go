@@ -3,8 +3,10 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/discovery"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 	"github.com/kucial/cloud-print-service/server/internal/fleet"
@@ -94,7 +96,7 @@ func (s *Server) adoptCandidate(w http.ResponseWriter, r *http.Request) {
 	}
 	p := domain.Printer{
 		PrinterID: body.PrinterID, Site: body.Site, Name: body.Name, Model: body.Model,
-		Driver: "zebra9100", Port: body.Port, Enabled: true,
+		Driver: printer.DriverZebra, Port: body.Port, Enabled: true,
 		Host: body.Host, Remark: body.Remark, CustomLabel: body.CustomLabel,
 		PaperSize: body.PaperSize, MediaWidthMM: body.MediaWidthMM, MediaHeightMM: body.MediaHeightMM,
 		DPI: body.DPI, DPMM: body.DPMM,
@@ -104,6 +106,17 @@ func (s *Server) adoptCandidate(w http.ResponseWriter, r *http.Request) {
 	}
 	cand, hasCand := s.mgr.Registry().Candidate(r.PathValue("device_key"))
 	if hasCand && cand.Detail != nil {
+		// What the device said it is decides how CPS talks to it.
+		if d := cand.Detail["driver"]; d != "" {
+			p.Driver = d
+			p.Kind = printer.Kind(cand.Detail["kind"])
+			p.Path = cand.Detail["path"]
+			for _, f := range strings.Split(cand.Detail["formats"], ",") {
+				if pf, ok := printer.ParseFormat(f); ok {
+					p.Formats = append(p.Formats, pf)
+				}
+			}
+		}
 		if p.DPI == 0 && cand.Detail["dpi"] != "" {
 			p.DPI, _ = strconv.Atoi(cand.Detail["dpi"])
 		}

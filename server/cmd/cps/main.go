@@ -89,6 +89,7 @@ func main() {
 		QueueSize:           cfg.QueueSizePerPrinter,
 		MaxAttempts:         cfg.MaxAttempts,
 		ConfirmTimeout:      cfg.ConfirmTimeout.D(),
+		TrackTimeout:        cfg.TrackTimeout.D(),
 		QueueTTL:            cfg.JobQueueTTL.D(),
 		BaseBackoff:         cfg.BaseBackoff.D(),
 		MaxPayloadSize:      cfg.MaxPayloadBytes,
