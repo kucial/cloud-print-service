@@ -99,3 +99,36 @@ func tick(v float64) float64 {
 	}
 	return 2
 }
+
+// testPagePCL is the test page for an office printer that takes PCL but not PDF: plain
+// text in the printer's own font, with a frame of rules to show the printable area.
+func testPagePCL(name, printerID string, now time.Time) []byte {
+	var b bytes.Buffer
+	b.WriteString("\x1bE")                // reset
+	b.WriteString("\x1b&l26A")            // A4
+	b.WriteString("\x1b&l0O")             // portrait
+	b.WriteString("\x1b(s0p12h10v0s0b3T") // Courier 12 cpi
+	// A frame: horizontal and vertical rules (PCL rectangle fill), in decipoints.
+	rule := func(x, y, w, h int) {
+		fmt.Fprintf(&b, "\x1b&a%dh%dV\x1b*c%dh%dV\x1b*c0P", x, y, w, h)
+	}
+	rule(0, 0, 5400, 10) // top, 7.5 in
+	rule(0, 0, 10, 7600)
+	rule(5390, 0, 10, 7600)
+	rule(0, 7590, 5400, 10)
+	b.WriteString("\x1b&a720h720V")
+	for _, l := range []string{
+		"CPS TEST PAGE",
+		"",
+		"Printer:  " + name,
+		"ID:       " + printerID,
+		"Language: PCL",
+		"Printed:  " + now.Format("2006-01-02 15:04:05 MST"),
+		"",
+		"The frame marks the area the printer printed.",
+	} {
+		b.WriteString(l + "\r\n")
+	}
+	b.WriteString("\f\x1bE")
+	return b.Bytes()
+}

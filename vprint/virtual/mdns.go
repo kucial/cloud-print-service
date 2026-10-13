@@ -39,6 +39,11 @@ func (p *Printer) Advertise(ctx context.Context, log *slog.Logger, name string) 
 			"sn":      p.Serial,
 		},
 	}
+	if p.opts.Language == pdlLanguage {
+		// HP-style JetDirect advertisement: the page languages are in "pdl".
+		cfg.Text = map[string]string{"txtvers": "1", "ty": p.Model,
+			"pdl": "application/vnd.hp-PCL,application/postscript"}
+	}
 	if p.opts.Language == ippLanguage {
 		// Office printers advertise IPP with the resource path in "rp" (IPP Everywhere).
 		cfg.Type = "_ipp._tcp"

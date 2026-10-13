@@ -42,7 +42,7 @@ func main() {
 		count      = flag.Int("count", 1, "how many virtual printers to run")
 		basePort   = flag.Int("base-port", 19100, "first printer port when -listen is not given")
 		baseAdmin  = flag.Int("base-admin-port", 19200, "first gallery port when -admin is not given")
-		language   = flag.String("language", "zpl", "printer language: zpl (label printer), escpos (receipt printer) or ipp (office printer)")
+		language   = flag.String("language", "zpl", "printer language: zpl (label printer), escpos (receipt printer), ipp or pdl (office printer over IPP, or raw 9100 with PJL)")
 		ippFormats = flag.String("ipp-formats", "", "ipp: comma-separated document-format-supported (default pdf, urf, jpeg, octet-stream)")
 		model      = flag.String("model", "", "model reported by ~HI / GS I (default ZT411, or TM-T82 for escpos)")
 		serial     = flag.String("serial", "", "serial reported by ~HI (default derived from id)")
@@ -133,13 +133,13 @@ func main() {
 	}
 
 	switch *language {
-	case "zpl", "escpos", "ipp":
+	case "zpl", "escpos", "ipp", "pdl":
 	default:
-		log.Error("-language must be zpl, escpos or ipp", "got", *language)
+		log.Error("-language must be zpl, escpos, ipp or pdl", "got", *language)
 		os.Exit(2)
 	}
 	if *model == "" {
-		*model = map[string]string{"zpl": "ZT411", "escpos": "TM-T82", "ipp": "VPRINT LaserJet"}[*language]
+		*model = map[string]string{"zpl": "ZT411", "escpos": "TM-T82", "ipp": "VPRINT LaserJet", "pdl": "HP LaserJet 4250"}[*language]
 	}
 	var formats []string
 	if *ippFormats != "" {

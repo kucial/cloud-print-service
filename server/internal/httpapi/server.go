@@ -309,9 +309,14 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 			"cjk_font": cjk.Font, "cjk_note": cjk.Note}
 	case printer.KindDocument:
 		if !slices.Contains(p.Spec().Formats, printer.FormatPDF) {
-			writeErr(w, http.StatusConflict, "not_supported_by_printer",
-				fmt.Sprintf("the test page is a PDF and this printer takes %v", p.Spec().Formats))
-			return
+			if !slices.Contains(p.Spec().Formats, printer.FormatPCL) {
+				writeErr(w, http.StatusConflict, "not_supported_by_printer",
+					fmt.Sprintf("the test page is PDF or PCL and this printer takes %v", p.Spec().Formats))
+				return
+			}
+			req.Payload, req.Format = testPagePCL(p.Spec().Name, p.ID(), time.Now()), string(printer.FormatPCL)
+			page = map[string]any{"kind": "document", "paper": "A4", "language": "pcl"}
+			break
 		}
 		var formats []string
 		for _, f := range p.Spec().Formats {

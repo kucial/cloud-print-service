@@ -111,6 +111,18 @@ func (p MDNS) Scan(ctx context.Context) ([]Found, error) {
 				probeCtx, pcancel := context.WithTimeout(ctx, identifyTimeout)
 				identifyIPP(probeCtx, &f, e.Text["rp"], p.Logf)
 				pcancel()
+			} else if p.Identify && f.Host != "" && len(e.Text) == 0 {
+				// The TXT record has not resolved yet, so it is unknown whether this is a
+				// label printer or an office printer that would print ~HI as a page. Wait
+				// for the next scan rather than guess.
+				f.Detail["identified"] = "false"
+				f.Detail["identify_error"] = "TXT record not resolved yet; identified on a later scan"
+			} else if p.Identify && f.Host != "" && advertisesOfficePDL(e.Text) {
+				// An office printer on raw 9100 (it lists PCL/PostScript/PDF): ~HI would
+				// come out of it as a printed page, so ask with PJL.
+				probeCtx, pcancel := context.WithTimeout(ctx, identifyTimeout)
+				identifyPJL(prCtx{ctx: probeCtx, host: f.Host, port: f.Port}, &f, p.Logf)
+				pcancel()
 			} else if p.Identify && f.Host != "" {
 				probeCtx, pcancel := context.WithTimeout(ctx, identifyTimeout)
 				id, ierr := identify(prCtx{ctx: probeCtx, host: f.Host, port: f.Port}, p.Logf)
@@ -372,6 +384,58 @@ func identify(p prCtx, logf func(string, ...any)) (identity, error) {
 		logf("mdns: %s:%d identified as %s (serial %s)", p.host, p.port, id.Model, id.Serial)
 	}
 	return id, nil
+}
+
+// advertisesOfficePDL reports whether a printer's TXT "pdl" key lists an office
+// page-description language (IPP Everywhere/Bonjour printers publish it).
+func advertisesOfficePDL(txt map[string]string) bool {
+	pdl := strings.ToLower(txt["pdl"])
+	return strings.Contains(pdl, "pcl") || strings.Contains(pdl, "postscript") || strings.Contains(pdl, "pdf")
+}
+
+// identifyPJL asks an office printer on a raw port who it is (@PJL INFO ID).
+func identifyPJL(p prCtx, f *Found, logf func(string, ...any)) {
+	fail := func(err error) {
+		f.Detail["identified"] = "false"
+		f.Detail["identify_error"] = err.Error()
+	}
+	d := net.Dialer{Timeout: time.Second}
+	conn, err := d.DialContext(p.ctx, "tcp", net.JoinHostPort(p.host, strconv.Itoa(p.port)))
+	if err != nil {
+		fail(err)
+		return
+	}
+	defer conn.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	if dl, ok := p.ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl
+	}
+	_ = conn.SetDeadline(deadline)
+	if _, err := conn.Write(printer.CmdPJLID); err != nil {
+		fail(err)
+		return
+	}
+	var reply []byte
+	buf := make([]byte, 512)
+	for !printer.PJLReplyComplete(reply) {
+		n, err := conn.Read(buf)
+		reply = append(reply, buf[:n]...)
+		if err != nil {
+			break
+		}
+	}
+	model, ok := printer.ParsePJLID(reply)
+	if !ok {
+		fail(fmt.Errorf("no PJL INFO ID answer"))
+		return
+	}
+	f.Model = model
+	f.Detail["identified"] = "true"
+	f.Detail["driver"] = printer.DriverPDL
+	f.Detail["kind"] = string(printer.KindDocument)
+	if logf != nil {
+		logf("mdns: %s:%d identified over PJL as %s", p.host, p.port, model)
+	}
 }
 
 func isIPPService(t string) bool {

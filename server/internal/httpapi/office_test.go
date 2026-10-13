@@ -124,3 +124,24 @@ func TestOfficeTestPageIsAnA4PDF(t *testing.T) {
 		t.Fatalf("test page as received: %+v", got)
 	}
 }
+
+// An office printer on raw 9100 that takes PCL only gets a PCL test page.
+func TestPCLPrinterTestPage(t *testing.T) {
+	vp := virtual.New("lj", virtual.Opts{Addr: "127.0.0.1:0", Language: "pdl", PrintDuration: 20 * time.Millisecond})
+	if err := vp.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = vp.Close() })
+	host, port := vp.Addr()
+	n, _ := strconv.Atoi(port)
+	ts := newTestServer(t, domain.Printer{PrinterID: "lj", Name: "LaserJet", Driver: "pdl9100", Host: host, Port: n, Enabled: true})
+	res, body := do(t, ts, "POST", "/api/v1/printers/lj/test", opsKey, "")
+	if res.StatusCode != http.StatusAccepted || body["label"].(map[string]any)["language"] != "pcl" {
+		t.Fatalf("test page: %d %v", res.StatusCode, body)
+	}
+	waitJobState(t, ts, opsKey, body["job_id"].(string), "printed")
+	if got := vp.Labels(); len(got) != 1 || got[0].Format != "application/vnd.hp-pcl" ||
+		!bytes.Contains(got[0].Data, []byte("CPS TEST PAGE")) {
+		t.Fatalf("received: %+v", got)
+	}
+}

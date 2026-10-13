@@ -143,7 +143,8 @@ type Opts struct {
 	Orientation    string
 	PrintDirection string
 	CJKFont        string
-	// Language is what the printer speaks: zpl (default), escpos or ipp.
+	// Language is what the printer speaks: zpl (default), escpos, ipp, or pdl (an
+	// office printer on raw 9100 answering PJL).
 	Language string
 	// IPPFormats is document-format-supported in IPP mode (default DefaultIPPFormats).
 	IPPFormats []string
@@ -472,6 +473,10 @@ func (p *Printer) serve(c net.Conn) {
 
 	if p.opts.Language == escposLanguage {
 		p.serveESCPOS(c)
+		return
+	}
+	if p.opts.Language == pdlLanguage {
+		p.servePDL(c)
 		return
 	}
 
