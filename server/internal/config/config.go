@@ -106,7 +106,11 @@ type Config struct {
 	ConfirmTimeout      Duration `json:"confirm_timeout"`
 	// TrackTimeout bounds how long a job is followed on a printer that keeps its own
 	// jobs (IPP office printers) before it is reported sent_unknown.
-	TrackTimeout        Duration `json:"track_timeout"`
+	TrackTimeout Duration `json:"track_timeout"`
+	// PDFToolsDir is where poppler's pdftoppm and pdftops are; empty means PATH.
+	// Without them, PDFs still print on printers that take PDF, but are not converted
+	// for receipt, label or PCL printers.
+	PDFToolsDir         string   `json:"pdf_tools_dir"`
 	JobQueueTTL         Duration `json:"job_queue_ttl"`
 	BaseBackoff         Duration `json:"base_backoff"`
 	MaxPayloadBytes     int64    `json:"max_payload_bytes"` // max job payload bytes, 0 for unlimited (default 32MB to allow CJK TrueType font uploads)

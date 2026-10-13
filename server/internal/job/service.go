@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kucial/cloud-print-service/pkg/printer"
+	"github.com/kucial/cloud-print-service/server/internal/convert"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 	"github.com/kucial/cloud-print-service/server/internal/driver"
 	"github.com/kucial/cloud-print-service/server/internal/fleet"
@@ -43,6 +44,8 @@ var (
 	ErrInvalidPriority   = errors.New("priority must be normal|high")
 	ErrInvalidFormat     = errors.New("unknown format")
 	ErrFormatUnsupported = errors.New("printer does not accept this format")
+	ErrUnreadable        = errors.New("document cannot be read")
+	ErrPDFToolsMissing   = errors.New("this server cannot convert PDF (poppler-utils is not installed)")
 )
 
 // SubmitRequest is the API-level request to dispatch one label.
@@ -80,6 +83,9 @@ type Config struct {
 	TrackTimeout   time.Duration
 	MaxPayloadSize int64
 	MaxCopies      int
+	// Convert turns PDF and images into what a printer takes. Its zero value converts
+	// images only (no poppler).
+	Convert convert.Converter
 	// RejectWhenNotUsable refuses dispatch to a printer whose cached status shows a
 	// consumable/error condition. Off by default: the caller usually prefers to try and
 	// see, and can filter on `usable` itself. Turn it on when a failed print is worse
@@ -206,11 +212,11 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 			return nil, false, fmt.Errorf("%w: %w", ErrInvalidRequest, ErrMissingExternalID)
 		}
 	}
-	format, err := resolveFormat(req.Format, p.Spec().Formats)
+	src, format, err := s.resolveFormat(req.Format, p.Spec())
 	if err != nil {
 		return nil, false, err
 	}
-	if len(req.PageCopies) > 0 && format != printer.FormatZPL {
+	if len(req.PageCopies) > 0 && src != printer.FormatZPL {
 		return nil, false, fmt.Errorf("%w: %w: page_copies works on ZPL pages only", ErrInvalidRequest, ErrInvalidPageCopies)
 	}
 	copies := req.Copies
@@ -258,6 +264,25 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 	}
 	sum := h.Sum(nil)
 
+	// Converted once, here: the stored payload is exactly what the printer gets, and the
+	// idempotency hash above stays on what the client sent.
+	if format != src {
+		res, err := s.cfg.Convert.Convert(ctx, payload, src, format, p.Spec(), copies)
+		switch {
+		case errors.Is(err, convert.ErrNoPDFTools):
+			return nil, false, fmt.Errorf("%w: %w", ErrInvalidRequest, ErrPDFToolsMissing)
+		case errors.Is(err, convert.ErrBadDocument):
+			return nil, false, fmt.Errorf("%w: %w: %v", ErrInvalidRequest, ErrUnreadable, err)
+		case err != nil:
+			return nil, false, fmt.Errorf("%w: %w: %v", ErrInvalidRequest, ErrFormatUnsupported, err)
+		}
+		payload = res.Data
+		if s.cfg.MaxPayloadSize > 0 && int64(len(payload)) > s.cfg.MaxPayloadSize {
+			return nil, false, fmt.Errorf("%w: %w (%s as %s is %d bytes, max allowed is %d bytes)",
+				ErrInvalidRequest, ErrPayloadTooLarge, src, format, len(payload), s.cfg.MaxPayloadSize)
+		}
+	}
+
 	// A ZPL label carries its own quantity (^PQ), and a driver that takes copies as a
 	// job attribute (IPP) gets the number; for anything else — an ESC/POS receipt —
 	// copies means sending the document that many times.
@@ -290,6 +315,7 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 		Bytes:          len(payload),
 		PayloadSHA:     hex.EncodeToString(sum),
 		Format:         format,
+		SourceFormat:   sourceIfConverted(src, format),
 		Copies:         copies,
 		PageCopies:     req.PageCopies,
 		Priority:       priority,
@@ -316,20 +342,39 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 	return job, false, nil
 }
 
-// resolveFormat names the payload's format and checks the printer takes it as is.
-func resolveFormat(name string, accepted []printer.Format) (printer.Format, error) {
-	format := printer.FormatZPL
+// resolveFormat names the payload's format (src) and the format it goes to the
+// printer in: the same when the printer takes it, else what it can be converted to.
+func (s *Service) resolveFormat(name string, spec domain.Printer) (src, target printer.Format, err error) {
+	src = printer.FormatZPL
 	if strings.TrimSpace(name) != "" {
 		f, ok := printer.ParseFormat(name)
 		if !ok {
-			return "", fmt.Errorf("%w: %w %q", ErrInvalidRequest, ErrInvalidFormat, name)
+			return "", "", fmt.Errorf("%w: %w %q", ErrInvalidRequest, ErrInvalidFormat, name)
 		}
-		format = f
+		src = f
 	}
-	if !slices.Contains(accepted, format) {
-		return "", fmt.Errorf("%w: %w: %s (it takes %v)", ErrInvalidRequest, ErrFormatUnsupported, format, accepted)
+	if slices.Contains(spec.Formats, src) {
+		return src, src, nil
 	}
-	return format, nil
+	if t, ok := s.cfg.Convert.Target(src, spec); ok {
+		return src, t, nil
+	}
+	if src == printer.FormatPDF && s.cfg.Convert.PDFToPPM == "" {
+		// Say why when the only thing missing is poppler on this server, not a printer
+		// that could never print a PDF.
+		withTools := convert.Converter{PDFToPPM: "pdftoppm", PDFToPS: "pdftops"}
+		if _, ok := withTools.Target(src, spec); ok {
+			return "", "", fmt.Errorf("%w: %w", ErrInvalidRequest, ErrPDFToolsMissing)
+		}
+	}
+	return "", "", fmt.Errorf("%w: %w: %s (it takes %v)", ErrInvalidRequest, ErrFormatUnsupported, src, spec.Formats)
+}
+
+func sourceIfConverted(src, sent printer.Format) printer.Format {
+	if src == sent {
+		return ""
+	}
+	return src
 }
 
 func resolvePayload(req SubmitRequest, max int64) ([]byte, error) {

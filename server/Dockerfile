@@ -15,8 +15,12 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/cps    ./server/cm
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/cpsctl ./server/cmd/cpsctl
 
 FROM ${RUNTIME_IMAGE}
-# busybox wget is used by the container healthcheck; ca-certificates for labelize over TLS.
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 cps && \
+# busybox wget is used by the container healthcheck; ca-certificates for labelize over TLS;
+# poppler-utils (pdftoppm, pdftops) converts PDFs for receipt, label and PCL printers.
+# Fonts for PDFs that do not embed theirs: Liberation stands in for Helvetica, Times and
+# Courier; WenQuanYi Zen Hei for Chinese. Without them that text silently disappears.
+RUN apk add --no-cache ca-certificates tzdata poppler-utils fontconfig font-liberation font-wqy-zenhei && \
+    adduser -D -u 10001 cps && \
     install -d -o cps -g cps -m 750 /var/lib/cps
 COPY --from=build /out/ /usr/local/bin/
 COPY server/config.example.json /etc/cps/config.json

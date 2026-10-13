@@ -15,6 +15,7 @@ import (
 
 	"github.com/kucial/cloud-print-service/pkg/render"
 	"github.com/kucial/cloud-print-service/server/internal/config"
+	"github.com/kucial/cloud-print-service/server/internal/convert"
 	"github.com/kucial/cloud-print-service/server/internal/discovery"
 	"github.com/kucial/cloud-print-service/server/internal/driver"
 	"github.com/kucial/cloud-print-service/server/internal/fleet"
@@ -85,11 +86,19 @@ func main() {
 	}
 	defer mgr.Close()
 
+	conv := convert.FindTools(cfg.PDFToolsDir)
+	if conv.PDFToPPM == "" {
+		log.Warn("pdftoppm not found: PDFs will not be converted for receipt, label or PCL printers",
+			"hint", "install poppler-utils, or set pdf_tools_dir")
+	} else {
+		log.Info("PDF conversion available", "pdftoppm", conv.PDFToPPM, "pdftops", conv.PDFToPS)
+	}
 	js := job.NewService(job.Config{
 		QueueSize:           cfg.QueueSizePerPrinter,
 		MaxAttempts:         cfg.MaxAttempts,
 		ConfirmTimeout:      cfg.ConfirmTimeout.D(),
 		TrackTimeout:        cfg.TrackTimeout.D(),
+		Convert:             conv,
 		QueueTTL:            cfg.JobQueueTTL.D(),
 		BaseBackoff:         cfg.BaseBackoff.D(),
 		MaxPayloadSize:      cfg.MaxPayloadBytes,

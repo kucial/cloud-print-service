@@ -7,6 +7,7 @@ require (
 	github.com/brutella/dnssd v1.2.14
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/swiftpush/zebrash v1.38.1-0.20260823142831-a1263efd12b7
+	golang.org/x/image v0.35.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 	modernc.org/sqlite v1.60.1
@@ -25,7 +26,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
 	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
-	golang.org/x/image v0.35.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect

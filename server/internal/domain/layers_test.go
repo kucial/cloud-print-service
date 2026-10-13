@@ -24,7 +24,8 @@ var layers = map[string][]string{
 	"server/internal/config":    {"server/internal/domain"},
 	"server/internal/token":     {"server/internal/domain"},
 	"server/internal/fleet":     {"server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/observ", "pkg/agentapi", "pkg/printer"},
-	"server/internal/job":       {"pkg/printer", "server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/fleet", "server/internal/observ"},
+	"server/internal/convert":   {"pkg/printer", "pkg/escpos", "server/internal/domain"},
+	"server/internal/job":       {"pkg/printer", "server/internal/convert", "server/internal/domain", "server/internal/driver", "server/internal/store", "server/internal/fleet", "server/internal/observ"},
 	"server/internal/discovery": {"server/internal/domain", "server/internal/fleet", "pkg/ipp", "pkg/printer"},
 	"server/internal/httpapi": {
 		"server/internal/domain", "server/internal/driver", "server/internal/fleet", "server/internal/job",
