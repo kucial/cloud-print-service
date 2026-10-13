@@ -41,6 +41,8 @@ var (
 	ErrMissingExternalID = errors.New("external_id (or Idempotency-Key) is required for safe retries")
 	ErrInvalidCopies     = errors.New("copies out of allowed range")
 	ErrInvalidPageCopies = errors.New("invalid page_copies")
+	ErrCopiesConflict    = errors.New("copies conflicts with the label's own quantity (^PQ)")
+	ErrCopiesUnreadable  = errors.New("copies cannot be applied to this ZPL")
 	ErrInvalidPriority   = errors.New("priority must be normal|high")
 	ErrInvalidFormat     = errors.New("unknown format")
 	ErrFormatUnsupported = errors.New("printer does not accept this format")
@@ -267,6 +269,20 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 	}
 	sum := h.Sum(nil)
 
+	// A ZPL label sent as is gets its copies as ^PQ — after reading what it already
+	// says: a label that sets its own quantity, or ZPL CPS cannot read reliably, is
+	// refused rather than printed a guessed number of times.
+	if src == printer.FormatZPL && format == printer.FormatZPL && len(req.PageCopies) == 0 && copies > 1 {
+		applied, _, err := driver.ApplyCopiesZPL(string(payload), copies)
+		switch {
+		case errors.Is(err, driver.ErrCopiesConflict):
+			return nil, false, fmt.Errorf("%w: %w: %v", ErrInvalidRequest, ErrCopiesConflict, err)
+		case err != nil:
+			return nil, false, fmt.Errorf("%w: %w: %v", ErrInvalidRequest, ErrCopiesUnreadable, err)
+		}
+		payload = []byte(applied)
+	}
+
 	// Converted once, here: the stored payload is exactly what the printer gets, and the
 	// idempotency hash above stays on what the client sent.
 	if format != src {
@@ -301,6 +317,11 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Job, b
 	if existing, err := s.st.GetByExternal(ctx, req.ClientID, externalID); err == nil {
 		if existing.PayloadSHA != hex.EncodeToString(sum) {
 			return nil, false, fmt.Errorf("%w: external_id %q was already used with a different payload", store.ErrConflict, externalID)
+		}
+		if existing.Copies != copies {
+			// Same document, different number: replaying the old job would silently
+			// print the wrong count.
+			return nil, false, fmt.Errorf("%w: external_id %q was already used with copies=%d", store.ErrConflict, externalID, existing.Copies)
 		}
 		return existing, true, nil
 	} else if !errors.Is(err, store.ErrNotFound) {

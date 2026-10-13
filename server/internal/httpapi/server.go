@@ -855,6 +855,10 @@ func jobInvalidReason(err error) string {
 		return "invalid_format"
 	case errors.Is(err, job.ErrFormatUnsupported):
 		return "format_not_supported"
+	case errors.Is(err, job.ErrCopiesConflict):
+		return "copies_conflict"
+	case errors.Is(err, job.ErrCopiesUnreadable):
+		return "copies_not_applicable"
 	case errors.Is(err, job.ErrUnreadable):
 		return "document_unreadable"
 	case errors.Is(err, job.ErrPDFToolsMissing):

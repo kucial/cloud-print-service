@@ -510,6 +510,8 @@ paths:
             - `invalid_copies`: copies must be between 1 and max_copies (default 1000, admin configurable)
             - `invalid_page_copies`: page copies array count doesn't match multi-page ZPL format count
             - `invalid_priority`: priority must be `normal` or `high`
+            - `copies_conflict`: `copies` > 1 for a ZPL label that already sets `^PQ` above 1 (send copies=1, or drop `^PQ`)
+            - `copies_not_applicable`: `copies` > 1 for ZPL with no printable label, or one that changes the command prefix (`^CC`)
             - `invalid_format`: `format` is not a format CPS knows
             - `format_not_supported`: the printer does not take this format and it cannot be converted for it (e.g. ZPL to a receipt printer)
             - `document_unreadable`: the PDF or image does not decode
@@ -1523,9 +1525,13 @@ components:
           default: 1
           description: |
             Copies to print (1..max_copies, default limit 1000, configurable by admin).
-            IPP printers get it as a job attribute; a converted label as ^PQ; an ESC/POS
-            receipt or PCL/PostScript document is sent that many times. A ZPL label
-            sent as is carries its own quantity (^PQ).
+            IPP printers get it as a job attribute; an ESC/POS receipt or PCL/PostScript
+            document is sent that many times. ZPL gets it as `^PQ` on every label
+            (`^XA…^XZ` block that draws something; setup blocks are left alone), after
+            CPS has read the labels: a label with no `^PQ` or `^PQ1` is set to `copies`
+            (other `^PQ` parameters kept); a label that already asks for more than one
+            is refused with `copies_conflict` rather than printed a guessed number of
+            times. Resending an `external_id` with a different `copies` is a 409.
         page_copies:
           type: array
           items:

@@ -8,7 +8,8 @@ import (
 )
 
 var (
-	rePQ = regexp.MustCompile(`(?i)\^[pP][qQ][0-9,]*`)
+	// A command's parameters run to the next command prefix: ^PQ5,0,1,Y is one command.
+	rePQ = regexp.MustCompile(`(?i)\^PQ[^\^~]*`)
 	reXZ = regexp.MustCompile(`(?i)\^[xX][zZ]`)
 )
 
@@ -76,38 +77,40 @@ func ApplyPageCopies(zpl string, pageCopies []int) (string, int, error) {
 		return zpl, 1, nil
 	}
 
-	pages := SplitZPLPages(zpl)
-	if len(pageCopies) > len(pages) {
-		return "", 0, fmt.Errorf("more page copy rules (%d) than pages in ZPL (%d)", len(pageCopies), len(pages))
+	// Blocks are edited in place: whatever sits between or around them (graphic
+	// downloads, setup commands) reaches the printer unchanged.
+	spans := zplBlocks(zpl)
+	if len(spans) == 0 {
+		spans = [][2]int{{0, len(zpl)}} // non-standard framing: the whole payload is one page
+	}
+	if len(pageCopies) > len(spans) {
+		return "", 0, fmt.Errorf("more page copy rules (%d) than pages in ZPL (%d)", len(pageCopies), len(spans))
 	}
 
-	var out []string
-	totalLabels := 0
-
-	for i, page := range pages {
+	var out strings.Builder
+	totalLabels, prev := 0, 0
+	for i, span := range spans {
 		copies := 1
 		if i < len(pageCopies) {
 			copies = pageCopies[i]
 		}
-
 		if copies < 0 {
 			return "", 0, fmt.Errorf("page %d copy count cannot be negative (%d)", i+1, copies)
 		}
 		if copies > 99999999 {
 			return "", 0, fmt.Errorf("page %d copy count exceeds maximum allowable (%d)", i+1, copies)
 		}
-
+		out.WriteString(zpl[prev:span[0]])
+		prev = span[1]
 		// Count of 0: omit this page entirely (e.g. suppress tail box label when remainder is 0)
 		if copies == 0 {
 			continue
 		}
-
 		totalLabels += copies
-		transformed := InjectPQ(page, copies)
-		out = append(out, transformed)
+		out.WriteString(InjectPQ(zpl[span[0]:span[1]], copies))
 	}
-
-	return strings.Join(out, ""), totalLabels, nil
+	out.WriteString(zpl[prev:])
+	return out.String(), totalLabels, nil
 }
 
 // InjectPQ injects or replaces `^PQ<count>` immediately preceding `^XZ` in a format block.
