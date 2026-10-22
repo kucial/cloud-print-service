@@ -58,12 +58,50 @@ func openUSBPort(path string) (usbPort, error) {
 }
 
 func (l *lpPort) Write(p []byte, timeout time.Duration) (int, error) {
-	_ = l.f.SetWriteDeadline(time.Now().Add(timeout))
+	deadline := time.Now().Add(timeout)
+	_ = l.f.SetWriteDeadline(deadline)
 	n, err := l.f.Write(p)
 	if errors.Is(err, os.ErrDeadlineExceeded) {
 		return n, errUSBTimeout
 	}
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	// A non-blocking usblp write returns once its last transfer is submitted, and
+	// closing the device cancels a transfer still in flight: the label would be dropped
+	// without an error. Wait until the printer has taken it.
+	return n, l.waitWritten(deadline)
+}
+
+// waitWritten blocks until usblp reports the last write complete, which it signals as
+// POLLOUT.
+func (l *lpPort) waitWritten(deadline time.Time) error {
+	raw, err := l.f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	for {
+		ms := int(time.Until(deadline) / time.Millisecond)
+		if ms <= 0 {
+			return errUSBTimeout
+		}
+		var ready int
+		var perr error
+		if err := raw.Control(func(fd uintptr) {
+			fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}}
+			ready, perr = unix.Poll(fds, ms)
+		}); err != nil {
+			return err
+		}
+		switch {
+		case perr == unix.EINTR:
+			continue
+		case perr != nil:
+			return perr
+		case ready > 0:
+			return nil
+		}
+	}
 }
 
 func (l *lpPort) Read(p []byte, timeout time.Duration) (int, error) {
