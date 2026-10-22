@@ -388,6 +388,28 @@ printer is found it retries every 30 seconds, so a printer plugged in later is p
 | re-enroll | enter a new token and Apply; if it fails, the previous enrollment is kept |
 | remove | uninstall it in the software center; this also deletes the credential |
 
+### ASUS router or AiMesh node without koolshare
+
+An AiMesh node has no software center (and no admin page of its own), and a router may
+run stock or Merlin firmware without koolshare. There, use `cps-agent-asuswrt.tar.gz`
+(from the release, or `packaging/asuswrt/build.sh`) over SSH:
+
+```sh
+# copy the file to the device's /tmp first (scp)
+tar -xzf /tmp/cps-agent-asuswrt.tar.gz -C /jffs
+/jffs/cps-agent/cps-agent.sh enroll http://<server>:8080 <token> <site> <agent-id>
+/jffs/cps-agent/cps-agent.sh status
+```
+
+`cps-agent.sh` also takes `start`, `stop`, `restart`, `log` and `uninstall`. On
+Asuswrt-Merlin, `cps-agent.sh autostart on` starts the agent on boot from
+`/jffs/scripts/services-start` (and turns on JFFS custom scripts). Stock firmware runs
+nothing from `/jffs` on boot: start it by hand after a reboot.
+
+A node gets its address from the main router: reserve a fixed IP for it there, since the
+server dials that address. To advertise another address or port, put `HOST=...` or
+`BASE_PORT=...` in `/jffs/cps-agent/settings`. The log is `/tmp/cps-agent.log`.
+
 ### macOS
 
 Only for development: macOS has no kernel USB printer device, so build the agent with

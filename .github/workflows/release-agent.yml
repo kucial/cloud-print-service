@@ -86,6 +86,9 @@ jobs:
           # module name from the file name up to the first "-", so the version can follow.
           packaging/koolshare/build.sh "$version"
           mv dist/cpsagent.tar.gz "dist/cpsagent-${version}.tar.gz"
+          # The same agent for ASUS routers and AiMesh nodes without koolshare.
+          packaging/asuswrt/build.sh "$version"
+          mv dist/cps-agent-asuswrt.tar.gz "dist/cps-agent-${version}-asuswrt.tar.gz"
           (cd dist && sha256sum * > SHA256SUMS)
           ls -l dist
 
