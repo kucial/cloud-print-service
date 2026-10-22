@@ -107,6 +107,9 @@ start() {
 		return 1
 	fi
 	say "starting"
+	# Asus firmware loads the USB printer driver only for its own printer server; once
+	# loaded, a printer plugged in later is picked up too.
+	lsmod | grep -q '^usblp' || modprobe usblp 2>/dev/null || log "could not load usblp: USB printers won't be found"
 	"$SELF" _supervise < /dev/null > /dev/null 2>&1 &
 }
 
