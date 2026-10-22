@@ -355,6 +355,39 @@ WantedBy=multi-user.target
 sudo systemctl enable --now cps-agent
 ```
 
+### ASUS router with koolshare firmware
+
+On an ASUS router running koolshare firmware (official-mod or Merlin-mod) on the
+hnd/axhnd/axhnd.675x platform, such as the TUF-AX3000 or RT-AX86U, the agent installs
+from the software center and is configured on its own page. It serves the USB printer
+plugged into the router.
+
+1. Get `cpsagent-<version>.tar.gz` from the release, or build it yourself:
+   `packaging/koolshare/build.sh` writes `dist/cpsagent.tar.gz`. Don't rename the file,
+   except to change the part after the first `-`: the software center takes the plugin
+   name from it.
+2. Software Center → Offline install: upload the file and install.
+3. Open **Cloud Print Agent** in the software center. Fill in the server URL and the
+   enrollment token, plus the agent ID (default: the router's host name) and the site,
+   switch it on and press **Apply**. The server takes the agent ID from this page,
+   not from `cpsctl agent enroll --id`.
+4. The page shows the enrollment, the USB printers found and the log. The printer appears
+   in the panel within about 30 seconds.
+
+Turn off the router's own printer server (USB Application → Network Printer Server):
+it keeps the USB printer open, and the page warns while it is running.
+
+The agent advertises the router's LAN address unless the page sets another one. When no
+printer is found it retries every 30 seconds, so a printer plugged in later is picked up.
+
+| | |
+|---|---|
+| config and credential | `/koolshare/configs/cpsagent/agent.json` (on the jffs partition, survives reboots) |
+| log | in RAM, `/tmp/upload/cpsagent_log.txt` (shown on the page, kept under 256 KB) |
+| started by | the software center on boot (`/koolshare/init.d/S99cpsagent.sh`) |
+| re-enroll | enter a new token and Apply; if it fails, the previous enrollment is kept |
+| remove | uninstall it in the software center; this also deletes the credential |
+
 ### macOS
 
 Only for development: macOS has no kernel USB printer device, so build the agent with

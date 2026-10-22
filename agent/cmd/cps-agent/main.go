@@ -53,6 +53,7 @@ func main() {
 		site       = flag.String("site", "", "override the site from config")
 		id         = flag.String("id", "", "override the agent id (default: hostname)")
 		listenBase = flag.Int("listen-base", 0, "override the first local port (default: config/base_port)")
+		host       = flag.String("host", "", "override the address the server dials (default: config/host)")
 		showVer    = flag.Bool("version", false, "print version and exit")
 		install    = flag.Bool("install", false, "Windows: install as a service (requires admin)")
 		uninstall  = flag.Bool("uninstall", false, "Windows: remove the service")
@@ -106,6 +107,9 @@ func main() {
 	}
 	if *listenBase > 0 {
 		cfg.BasePort = *listenBase
+	}
+	if *host != "" {
+		cfg.Host = *host
 	}
 	if *enroll != "" {
 		if err := cfg.enrollWith(context.Background(), *enroll, log); err != nil {

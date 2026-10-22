@@ -82,6 +82,10 @@ jobs:
             fi
             rm -rf "dist/$name"
           done
+          # Koolshare software center package for ASUS routers. The installer takes the
+          # module name from the file name up to the first "-", so the version can follow.
+          packaging/koolshare/build.sh "$version"
+          mv dist/cpsagent.tar.gz "dist/cpsagent-${version}.tar.gz"
           (cd dist && sha256sum * > SHA256SUMS)
           ls -l dist
 
@@ -100,7 +104,7 @@ jobs:
           set -euo pipefail
           auth=(-H "Authorization: token $TOKEN")
           body=$(jq -n --arg tag "$GITHUB_REF_NAME" --arg name "cps-agent $VERSION" \
-            --arg body "cps-agent $VERSION for Windows and Linux. Install steps are in each archive's README.txt; verify with SHA256SUMS." \
+            --arg body "cps-agent $VERSION for Windows and Linux, and cpsagent-*.tar.gz for koolshare ASUS routers. Install steps are in each archive's README.txt and docs/INSTALL.md; verify with SHA256SUMS." \
             '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
           id=$(curl -fsS "${auth[@]}" -H 'Content-Type: application/json' \
             -X POST "$API/releases" -d "$body" | jq -r .id)
