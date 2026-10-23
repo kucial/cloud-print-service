@@ -88,7 +88,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!token) return;
     try {
       const res = await api.getFleet();
-      setPrinters(res.items || []);
+      // The server lists printers in map order, which changes on every call: sort so tiles
+      // and rows keep their place across refreshes.
+      setPrinters(
+        (res.items || []).sort(
+          (a, b) =>
+            (a.name || a.printer_id).localeCompare(b.name || b.printer_id) ||
+            a.printer_id.localeCompare(b.printer_id),
+        ),
+      );
       setLastUpdated(new Date());
     } catch (e: any) {
       if (e.status === 401) logout();
