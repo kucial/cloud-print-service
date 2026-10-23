@@ -217,3 +217,24 @@ func isBlack(c color.Color) bool {
 	r, g, b, _ := c.RGBA()
 	return r < 0x1000 && g < 0x1000 && b < 0x1000
 }
+
+// With poppler installed, a PDF goes to an inkjet as one ESC/P-R page per PDF page,
+// and a black-and-white document prints with black ink only.
+func TestPDFToInkjetWithPoppler(t *testing.T) {
+	c := FindTools("")
+	if c.PDFToPPM == "" {
+		t.Skip("pdftoppm not installed")
+	}
+	pdf, err := Converter{}.Convert(context.Background(), testImage(t), printer.FormatPNG, printer.FormatPDF, ippPDF, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.Convert(context.Background(), pdf.Data, printer.FormatPDF, printer.FormatESCPR, inkjet, 1)
+	if err != nil || r.Pages != 1 || bytes.Count(r.Data, []byte("sttp")) != 1 {
+		t.Fatalf("pdf to inkjet: %v pages=%d", err, r.Pages)
+	}
+	i := bytes.Index(r.Data, []byte("setq"))
+	if i < 0 || r.Data[i+4+2] != 1 {
+		t.Fatal("a black-and-white PDF does not print black ink only")
+	}
+}
