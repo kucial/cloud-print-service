@@ -88,6 +88,26 @@ func TestSubmitDispatchesAndConfirms(t *testing.T) {
 	}
 }
 
+// A printer that reports no state at all is still taken as printed after the settle
+// window, but the job says it could not be confirmed instead of claiming it was.
+func TestPrinterWithoutStatusIsNotCalledConfirmed(t *testing.T) {
+	h := newHarness(t, mockPrinter("blind", &domain.MockCfg{State: "unknown"}), mockPrinter("seen", &domain.MockCfg{State: "idle"}))
+	for _, c := range []struct{ printer, want string }{
+		{"blind", "Sent; the printer cannot confirm printing"},
+		{"seen", "Printed and physically confirmed"},
+	} {
+		j, _, err := h.svc.Submit(context.Background(), SubmitRequest{
+			ClientID: "erp", PrinterID: c.printer, ExternalID: "msg-" + c.printer, ZPL: "^XA^FDhi^FS^XZ",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := waitState(t, h.svc, j.ID, domain.JobPrinted); got.StatusMessage != c.want {
+			t.Errorf("%s: status message %q, want %q", c.printer, got.StatusMessage, c.want)
+		}
+	}
+}
+
 func TestIdempotencyPreventsDuplicateLabels(t *testing.T) {
 	h := newHarness(t, mockPrinter("p1", &domain.MockCfg{State: "idle"}))
 	ctx := context.Background()

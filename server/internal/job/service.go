@@ -634,16 +634,24 @@ func (s *Service) execute(ctx context.Context, printerID, jobID string) {
 	// Bytes are on the wire. From here on CPS must not create a second label.
 	confirmStart := time.Now()
 	confirmed, failure, tracked := s.track(ctx, j, p, sent)
+	blind := false
 	if !tracked {
-		confirmed = s.confirm(ctx, p)
+		confirmed, blind = s.confirm(ctx, p)
 	}
 	s.met.Observe("cps_confirm_seconds", time.Since(confirmStart).Seconds(), "printer_id", printerID)
 	if confirmed {
-		detail := ""
+		detail, message := "", ""
 		if tracked {
 			detail = "Confirmed by the printer's own job record: " + strings.TrimPrefix(j.StateDetail, "Printer reports ")
 		}
-		s.finishWith(ctx, j, domain.JobPrinted, detail)
+		if blind {
+			// Nothing to go on but a printer that kept its port open: say so, rather
+			// than claim a confirmation that never happened.
+			detail = "All bytes delivered; the printer reports no status, so printing could not be confirmed (" +
+				"it stayed reachable for the settle window)"
+			message = "Sent; the printer cannot confirm printing"
+		}
+		s.finishWith(ctx, j, domain.JobPrinted, detail, message)
 		return
 	}
 	if failure != "" {
@@ -712,7 +720,10 @@ func (s *Service) track(ctx context.Context, j *domain.Job, p *fleet.Printer, se
 // label that never began, confirmation waits briefly for the printer to show busy before
 // accepting idle as "finished". A printer that never shows busy within the settle window
 // gets idle-as-printed only after the settle time has passed.
-func (s *Service) confirm(ctx context.Context, p *fleet.Printer) bool {
+//
+// blind reports a confirmation with no evidence in it: the printer never gave a state
+// at all (only that it was reachable), as an inkjet or a printer without PJL does.
+func (s *Service) confirm(ctx context.Context, p *fleet.Printer) (confirmed, blind bool) {
 	deadline := time.Now().Add(s.cfg.ConfirmTimeout)
 	// The settle window must land strictly inside the deadline, or the "accept idle after
 	// settle" branch can never fire before the loop gives up.
@@ -720,7 +731,7 @@ func (s *Service) confirm(ctx context.Context, p *fleet.Printer) bool {
 	if limit := time.Now().Add(s.cfg.ConfirmTimeout / 3); settle.After(limit) {
 		settle = limit
 	}
-	sawBusy := false
+	sawBusy, sawState := false, false
 	// Poll faster than the settle window, or a short confirm timeout can never observe
 	// a fast printer before it elapses.
 	pollEvery := 100 * time.Millisecond
@@ -733,24 +744,25 @@ func (s *Service) confirm(ctx context.Context, p *fleet.Printer) bool {
 	for {
 		st, err := p.Status(ctx)
 		if err == nil {
+			sawState = sawState || st.State != domain.StateUnknown
 			switch {
 			case st.State.Busy():
 				sawBusy = true
 			case st.State.BlocksUse():
-				return false // consumable-out or an error is never a confirmation
+				return false, false // consumable-out or an error is never a confirmation
 			default:
 				// idle/unknown: confident once the printer has been seen busy, or after
 				// the settle window for printers that report no busy state.
 				if sawBusy || time.Now().After(settle) {
-					return true
+					return true, !sawState
 				}
 			}
 		}
 		if time.Now().After(deadline) {
-			return false
+			return false, false
 		}
 		if !sleepCtx(ctx, pollEvery) {
-			return false
+			return false, false
 		}
 	}
 }
@@ -786,12 +798,13 @@ func (s *Service) fail(ctx context.Context, j *domain.Job, msg string) {
 }
 
 func (s *Service) finish(ctx context.Context, j *domain.Job, state domain.JobState) {
-	s.finishWith(ctx, j, state, "")
+	s.finishWith(ctx, j, state, "", "")
 }
 
-// finishWith is finish with the state detail said by the caller, when it knows more
-// than the state does (e.g. the printer itself confirmed the job).
-func (s *Service) finishWith(ctx context.Context, j *domain.Job, state domain.JobState, detail string) {
+// finishWith is finish with the state detail and message said by the caller, when it
+// knows more than the state does (e.g. the printer itself confirmed the job, or could
+// not).
+func (s *Service) finishWith(ctx context.Context, j *domain.Job, state domain.JobState, detail, message string) {
 	j.State = state
 	if state.Terminal() {
 		now := time.Now().UTC()
@@ -815,6 +828,9 @@ func (s *Service) finishWith(ctx context.Context, j *domain.Job, state domain.Jo
 	}
 	if detail != "" {
 		j.StateDetail = detail
+	}
+	if message != "" {
+		j.StatusMessage = message
 	}
 	if err := s.st.UpdateJob(ctx, j); err != nil {
 		s.log.Error("failed to persist job", "job_id", j.ID, "err", err)
