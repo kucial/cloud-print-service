@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kucial/cloud-print-service/pkg/escpr"
 	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 )
@@ -43,6 +44,7 @@ var (
 	label60   = domain.Printer{Kind: printer.KindLabel, Formats: []printer.Format{printer.FormatZPL}, MediaWidthMM: 60, DPMM: 8}
 	ippPDF    = domain.Printer{Kind: printer.KindDocument, Formats: []printer.Format{printer.FormatPDF, printer.FormatURF}}
 	pclOnly   = domain.Printer{Kind: printer.KindDocument, Formats: []printer.Format{printer.FormatPCL}}
+	inkjet    = domain.Printer{Kind: printer.KindDocument, Formats: []printer.Format{printer.FormatESCPR}}
 )
 
 func TestTargets(t *testing.T) {
@@ -65,6 +67,9 @@ func TestTargets(t *testing.T) {
 		{withPoppler, printer.FormatPDF, pclOnly, printer.FormatPCL},
 		{withPoppler, printer.FormatPDF, domain.Printer{Kind: printer.KindDocument,
 			Formats: []printer.Format{printer.FormatPCL, printer.FormatPostScript}}, printer.FormatPostScript},
+		{images, printer.FormatPNG, inkjet, printer.FormatESCPR},
+		{images, printer.FormatPDF, inkjet, ""}, // needs poppler
+		{withPoppler, printer.FormatPDF, inkjet, printer.FormatESCPR},
 		{withPoppler, printer.FormatZPL, receipt58, ""}, // languages do not convert
 		{withPoppler, printer.FormatESCPOS, label60, ""},
 	}
@@ -164,4 +169,51 @@ func TestPDFToReceiptWithPoppler(t *testing.T) {
 	if err != nil || r.Pages != 1 || !bytes.Contains(r.Data, []byte{0x1d, 'v', '0'}) {
 		t.Fatalf("pdf to receipt: %v pages=%d", err, r.Pages)
 	}
+}
+
+func TestImageToESCPR(t *testing.T) {
+	r, err := Converter{}.Convert(context.Background(), testImage(t), printer.FormatPNG, printer.FormatESCPR, inkjet, 1)
+	if err != nil || r.Pages != 1 || r.Format != printer.FormatESCPR {
+		t.Fatalf("escpr: %v pages=%d format=%s", err, r.Pages, r.Format)
+	}
+	if !bytes.Contains(r.Data, []byte("ESCPR")) || !bytes.Contains(r.Data, []byte("dsnd")) {
+		t.Fatal("job carries no ESC/P-R raster")
+	}
+}
+
+// A picture fills the printable width; a whole page keeps its own margins, so the
+// sheet's margin is cut from it rather than added to it.
+func TestOnPaper(t *testing.T) {
+	pw, ph := escpr.A4.Printable()
+	// 2:1 picture, black: scaled to the printable width, half as tall.
+	pic := image.NewGray(image.Rect(0, 0, 200, 100))
+	out := onPaper(pic, escpr.A4, false)
+	if b := out.Bounds(); b.Dx() != pw || b.Dy() != ph {
+		t.Fatalf("canvas %v, want printable %dx%d", b, pw, ph)
+	}
+	if !isBlack(out.At(0, 0)) || !isBlack(out.At(pw-1, pw/2-2)) || isBlack(out.At(pw/2, pw/2+2)) {
+		t.Error("picture does not fill the printable width at its aspect ratio")
+	}
+	// A whole A4 page at 360 dpi with ink only from 100 dots in: printed 100 dots from
+	// the paper edge, which is 100 - margin into the printable area.
+	page := image.NewRGBA(image.Rect(0, 0, escpr.A4.Width, escpr.A4.Height))
+	for y := range escpr.A4.Height {
+		for x := range escpr.A4.Width {
+			if x < 100 || y < 100 {
+				page.Set(x, y, color.White)
+			} else {
+				page.Set(x, y, color.Black)
+			}
+		}
+	}
+	out = onPaper(page, escpr.A4, true)
+	m := escpr.A4.Margin
+	if isBlack(out.At(100-m-1, 100-m)) || !isBlack(out.At(100-m, 100-m)) {
+		t.Error("a whole page shifted: its ink does not start at its own place on the sheet")
+	}
+}
+
+func isBlack(c color.Color) bool {
+	r, g, b, _ := c.RGBA()
+	return r < 0x1000 && g < 0x1000 && b < 0x1000
 }

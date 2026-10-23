@@ -1,6 +1,7 @@
 // Package convert turns what a business system sends (PDF, PNG, JPEG) into what a
 // printer takes: an ESC/POS raster for a receipt printer, a ZPL graphic for a label
-// printer, PDF/JPEG/PostScript/PCL for an office printer. Conversion happens once, when
+// printer, PDF/JPEG/PostScript/PCL for an office printer, ESC/P-R colour raster for an
+// Epson inkjet. Conversion happens once, when
 // the job is accepted, so the stored payload is exactly what the printer gets and a
 // retry resends the same bytes.
 package convert
@@ -20,6 +21,7 @@ import (
 	"github.com/go-pdf/fpdf"
 
 	"github.com/kucial/cloud-print-service/pkg/escpos"
+	"github.com/kucial/cloud-print-service/pkg/escpr"
 	"github.com/kucial/cloud-print-service/pkg/printer"
 	"github.com/kucial/cloud-print-service/server/internal/domain"
 )
@@ -71,6 +73,9 @@ func (c Converter) Target(src printer.Format, p domain.Printer) (printer.Format,
 			return printer.FormatZPL, true
 		}
 	case printer.KindDocument:
+		if takes(printer.FormatESCPR) && pdfOK {
+			return printer.FormatESCPR, true // the only thing such a printer takes
+		}
 		if src.IsImage() {
 			for _, f := range []printer.Format{printer.FormatPDF, printer.FormatJPEG, printer.FormatPCL} {
 				if takes(f) {
@@ -100,6 +105,9 @@ func (c Converter) Convert(ctx context.Context, data []byte, src, target printer
 	if src == printer.FormatPDF && target == printer.FormatPostScript {
 		ps, err := c.pdfToPS(ctx, data)
 		return Result{Data: ps, Format: target, Pages: 1}, err
+	}
+	if target == printer.FormatESCPR {
+		return c.toESCPR(ctx, data, src)
 	}
 	pages, err := c.pages(ctx, data, src, rasterDPI(target, p))
 	if err != nil {
@@ -313,7 +321,20 @@ func (c Converter) Preview(ctx context.Context, data []byte, src printer.Format,
 	case printer.KindLabel:
 		target = printer.FormatZPL
 	}
-	pages, err := c.pages(ctx, data, src, rasterDPI(target, p))
+	var (
+		pages []image.Image
+		err   error
+	)
+	inkjet := p.Kind == printer.KindDocument && slices.Contains(p.Formats, printer.FormatESCPR)
+	if inkjet && src == printer.FormatPDF {
+		// An inkjet prints colour: preview the page in colour.
+		err = c.eachPDFPage(ctx, data, rasterDPI(target, p), false, func(img image.Image) error {
+			pages = append(pages, img)
+			return nil
+		})
+	} else {
+		pages, err = c.pages(ctx, data, src, rasterDPI(target, p))
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -339,4 +360,29 @@ func (c Converter) Preview(ctx context.Context, data []byte, src printer.Format,
 		return nil, 0, err
 	}
 	return out.Bytes(), len(pages), nil
+}
+
+// toESCPR renders a document for an Epson inkjet, in colour at the printer's 360 dpi,
+// one page at a time.
+func (c Converter) toESCPR(ctx context.Context, data []byte, src printer.Format) (Result, error) {
+	w := escpr.NewWriter(escpr.Options{Quality: escpr.Normal})
+	n := 0
+	if src.IsImage() {
+		img, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrBadDocument, err)
+		}
+		w.Page(onPaper(img, escpr.A4, false))
+		n = 1
+	} else {
+		err := c.eachPDFPage(ctx, data, escpr.DPI, false, func(img image.Image) error {
+			w.Page(onPaper(img, escpr.A4, true))
+			n++
+			return nil
+		})
+		if err != nil {
+			return Result{}, err
+		}
+	}
+	return Result{Data: w.Bytes(), Format: printer.FormatESCPR, Pages: n}, nil
 }

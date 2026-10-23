@@ -143,7 +143,9 @@ func (s *usbSink) Close() error { return nil }
 
 // usbBackends finds USB printers and works out what each is from its 1284 device id:
 // a Zebra is confirmed with ~HI, a receipt or office printer is asked its model in its
-// own language. A device the id does not place is tried as a Zebra, as before.
+// own language, an Epson inkjet is taken at its id's word. A device the id does not
+// place is tried as a Zebra, unless the id rules that out: ~HI to another maker's
+// printer can come out as a printed page.
 func usbBackends(ctx context.Context, log *slog.Logger) []Backend {
 	devs, err := listUSB()
 	if err != nil {
@@ -152,10 +154,16 @@ func usbBackends(ctx context.Context, log *slog.Logger) []Backend {
 	}
 	var out []Backend
 	for _, d := range devs {
-		u := &usbPrinter{dev: d, key: usbKey(d.Key), profile: printer.ParseDeviceID(d.ID1284).Profile()}
+		id1284 := printer.ParseDeviceID(d.ID1284)
+		u := &usbPrinter{dev: d, key: usbKey(d.Key), profile: id1284.Profile()}
+		if u.profile.Driver == "" && !id1284.MayBeZebra() {
+			log.Warn("USB printer speaks no language the agent serves; skipping",
+				"model", model1284(d.ID1284), "device", d.ID1284, "path", d.Path)
+			continue
+		}
 		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		switch u.profile.Driver {
-		case printer.DriverESCPOS, printer.DriverPDL:
+		case printer.DriverESCPOS, printer.DriverPDL, printer.DriverESCPR:
 			u.model = identifyModel(qctx, u.profile, model1284(d.ID1284), u.query)
 			cancel()
 			log.Info("found USB printer", "model", u.model, "kind", u.profile.Kind, "driver", u.profile.Driver,

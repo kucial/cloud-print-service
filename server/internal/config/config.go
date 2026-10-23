@@ -255,7 +255,7 @@ func (c Config) Validate() error {
 			p.Name = p.PrinterID
 		}
 		if p.Driver == "" {
-			return fmt.Errorf("printers[%d] (%s): driver is required (zebra9100|escpos9100|ipp|pdl9100|mock)", i, p.PrinterID)
+			return fmt.Errorf("printers[%d] (%s): driver is required (zebra9100|escpos9100|ipp|pdl9100|escpr9100|mock)", i, p.PrinterID)
 		}
 		if p.Port == 0 {
 			p.Port = domain.DefaultPort(p.Driver)

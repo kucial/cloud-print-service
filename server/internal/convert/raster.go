@@ -6,6 +6,7 @@ import (
 	"image/draw"
 	"math"
 
+	"github.com/kucial/cloud-print-service/pkg/escpr"
 	xdraw "golang.org/x/image/draw"
 )
 
@@ -134,4 +135,39 @@ func (b *bitmap) image() *image.Gray {
 		}
 	}
 	return img
+}
+
+// onPaper lays img out on paper's printable area, at the paper's resolution, centred
+// across the sheet and from its top. A whole page (from a PDF) is scaled to the sheet
+// and its margins cut off, so what the PDF puts 20 mm from the edge prints 20 mm from
+// the edge; a picture is scaled to fill the space inside the margins.
+func onPaper(img image.Image, paper escpr.Paper, wholePage bool) *image.RGBA {
+	pw, ph := paper.Printable()
+	boxW, boxH, off := pw, ph, 0
+	if wholePage {
+		boxW, boxH, off = paper.Width, paper.Height, paper.Margin
+	}
+	src := img.Bounds()
+	w, h := boxW, int(math.Round(float64(src.Dy())*float64(boxW)/float64(src.Dx())))
+	if h > boxH {
+		w, h = int(math.Round(float64(src.Dx())*float64(boxH)/float64(src.Dy()))), boxH
+	}
+	x, y := (boxW-w)/2-off, -off
+
+	out := image.NewRGBA(image.Rect(0, 0, pw, ph))
+	draw.Draw(out, out.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	if abs(w-src.Dx()) <= 2 && abs(h-src.Dy()) <= 2 {
+		// Already at size (a PDF page rendered at the printer's dpi): no resampling.
+		draw.Draw(out, image.Rect(x, y, x+src.Dx(), y+src.Dy()), img, src.Min, draw.Over)
+	} else {
+		xdraw.CatmullRom.Scale(out, image.Rect(x, y, x+w, y+h), img, src, xdraw.Over, nil)
+	}
+	return out
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

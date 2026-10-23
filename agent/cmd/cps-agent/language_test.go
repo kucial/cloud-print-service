@@ -107,6 +107,33 @@ func TestUSBOfficePrinter(t *testing.T) {
 	}
 }
 
+// The user's Epson L355 is served as an ESC/P-R inkjet and the Canon LBP7010C (CAPT,
+// host-based) is skipped, and neither is sent a single byte while being looked at:
+// ~HI or a status query would come out of them as a page.
+func TestUSBInkjetAndUnservableArePrintedNothing(t *testing.T) {
+	dp := &docPrinter{}
+	withUSBDevices(t, dp,
+		usbDevice{Path: "a", Key: "L355", ID1284: "MFG:EPSON;CMD:ESCPL2,BDC,D4,D4PX,ESCPR1;MDL:L355 Series;CLS:PRINTER;DES:EPSON L355 Series;"},
+		usbDevice{Path: "b", Key: "LBP", ID1284: "MFG:Canon;MDL:LBP7010C/7018C;CMD:CAPT;VER:3.0;CLS:PRINTER;DES:Canon LBP7010C/7018C;"})
+	bs := usbBackends(context.Background(), quiet)
+	if len(bs) != 1 {
+		t.Fatalf("backends: %d, want only the Epson", len(bs))
+	}
+	u := bs[0].(*usbPrinter)
+	if u.Model() != "L355 Series" || u.profile.Driver != printer.DriverESCPR || u.profile.Kind != printer.KindDocument {
+		t.Fatalf("inkjet: %q %+v", u.Model(), u.profile)
+	}
+	if st, err := (&usbSink{u: u}).Status(context.Background()); err != nil || st.State != printer.StateUnknown {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+	if isServerQuery(u.profile, []byte("~HS")) {
+		t.Error("bytes for an inkjet were taken for a query")
+	}
+	if dp.doc.Len() != 0 {
+		t.Fatalf("looking at the printers printed %q", dp.doc.String())
+	}
+}
+
 // A printer that prints but never answers is served, with an unknown state.
 func TestUSBSilentPrinterIsUnknownNotOffline(t *testing.T) {
 	for _, id := range []string{"MFG:Printer;MDL:POS58 Printer USB;", "MFG:Brother;CMD:PCL,PCLXL;MDL:HL-1110;"} {

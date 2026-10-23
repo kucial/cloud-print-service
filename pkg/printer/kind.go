@@ -10,7 +10,7 @@ type Kind string
 const (
 	KindLabel    Kind = "label"    // thermal label printers (Zebra and ZPL-compatible)
 	KindReceipt  Kind = "receipt"  // 58/80 mm thermal receipt printers (ESC/POS)
-	KindDocument Kind = "document" // A4/Letter office printers (IPP, PCL, PostScript)
+	KindDocument Kind = "document" // A4/Letter office printers (IPP, PCL, PostScript, ESC/P-R)
 )
 
 // Format is a document format: either a printer language sent as is, or a portable
@@ -27,6 +27,7 @@ const (
 	FormatURF        Format = "urf" // Apple raster (AirPrint)
 	FormatPNG        Format = "png"
 	FormatJPEG       Format = "jpeg"
+	FormatESCPR      Format = "escpr" // Epson inkjet raster (ESC/P-R)
 )
 
 // Driver names, shared by the server's drivers and the agent's registrations.
@@ -35,6 +36,7 @@ const (
 	DriverESCPOS = "escpos9100"
 	DriverIPP    = "ipp"
 	DriverPDL    = "pdl9100"
+	DriverESCPR  = "escpr9100"
 	DriverMock   = "mock"
 )
 
@@ -43,7 +45,7 @@ func KindForDriver(driver string) Kind {
 	switch driver {
 	case DriverESCPOS:
 		return KindReceipt
-	case DriverIPP, DriverPDL:
+	case DriverIPP, DriverPDL, DriverESCPR:
 		return KindDocument
 	default:
 		return KindLabel
@@ -59,6 +61,8 @@ func DefaultFormats(driver string) []Format {
 		return []Format{FormatPDF}
 	case DriverPDL:
 		return []Format{FormatPCL}
+	case DriverESCPR:
+		return []Format{FormatESCPR}
 	default:
 		return []Format{FormatZPL}
 	}
@@ -85,6 +89,8 @@ func ParseFormat(s string) (Format, bool) {
 		return FormatPNG, true
 	case "jpeg", "jpg", "image/jpeg":
 		return FormatJPEG, true
+	case "escpr", "esc/p-r", "esc-p-r", "application/vnd.epson.escpr":
+		return FormatESCPR, true
 	}
 	return "", false
 }

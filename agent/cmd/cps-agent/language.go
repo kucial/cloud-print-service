@@ -12,8 +12,8 @@ import (
 	"github.com/kucial/cloud-print-service/pkg/printer"
 )
 
-// The agent serves label (ZPL), receipt (ESC/POS) and office (PCL/PostScript with PJL)
-// printers. Each speaks its own status protocol; this file is the one place that knows
+// The agent serves label (ZPL), receipt (ESC/POS), office (PCL/PostScript with PJL)
+// and Epson inkjet (ESC/P-R) printers. Each speaks its own status protocol; this file is the one place that knows
 // which, for both the USB and the local-share backends.
 
 // errWriteOnly is returned for a query to a printer that has no way to answer (a USB
@@ -51,6 +51,8 @@ func isServerQuery(p printer.Profile, chunk []byte) bool {
 	case printer.DriverPDL:
 		return bytes.Equal(chunk, printer.CmdPJLStatus) || bytes.Equal(chunk, printer.CmdPJLID) ||
 			bytes.Equal(chunk, printer.CmdPJLConfig)
+	case printer.DriverESCPR:
+		return false // the server never asks an inkjet anything: every byte is the job
 	}
 	return printer.IsHostQuery(strings.TrimLeft(string(chunk), " \r\n\t"))
 }
@@ -88,6 +90,10 @@ func statusFor(ctx context.Context, p printer.Profile, query func(context.Contex
 			return unknown(fmt.Sprintf("unrecognised ESC/POS status % x", b))
 		}
 		return agentapi.Status{State: st.State(), Raw: fmt.Sprintf("% x", b), Detail: st.Detail(), ObservedAt: now}, nil
+
+	case printer.DriverESCPR:
+		// Nothing to ask that the printer would not risk printing.
+		return unknown("ESC/P-R printers report no status")
 
 	case printer.DriverPDL:
 		if !p.PJL {

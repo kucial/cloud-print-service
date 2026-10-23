@@ -22,6 +22,11 @@ func TestDeviceIDProfile(t *testing.T) {
 		{"HP LaserJet", "MFG:Hewlett-Packard;CMD:PJL,PML,PCLXL,POSTSCRIPT,PCL;MDL:HP LaserJet 400 M401dn;CLS:PRINTER;",
 			DriverPDL, []Format{FormatPCL, FormatPostScript}, true},
 		{"Brother", "MFG:Brother;CMD:PJL,PCL,PCLXL,URF;MDL:HL-L2350DW series;CLS:PRINTER;", DriverPDL, []Format{FormatPCL}, true},
+		// Captured from real printers.
+		{"Epson L355 (ESC/P-R inkjet)", "MFG:EPSON;CMD:ESCPL2,BDC,D4,D4PX,ESCPR1;MDL:L355 Series;CLS:PRINTER;DES:EPSON L355 Series;CID:EpsonRGB;FID:FXN,DPN,WFA,ETN,AFN,DAN;RID:00;",
+			DriverESCPR, []Format{FormatESCPR}, false},
+		{"Canon LBP7010C (CAPT, host-based)", "MFG:Canon;MDL:LBP7010C/7018C;CMD:CAPT;VER:3.0;CLS:PRINTER;DES:Canon LBP7010C/7018C",
+			"", nil, false},
 		{"host-based inkjet", "MFG:HP;CMD:PCL3GUI,PJL,Automatic;MDL:DeskJet 2130 series;", "", nil, false},
 		{"unknown", "MFG:Acme;MDL:Thing;", "", nil, false},
 		{"empty", "", "", nil, false},
@@ -34,5 +39,26 @@ func TestDeviceIDProfile(t *testing.T) {
 	}
 	if m := ParseDeviceID("MFG:EPSON;MDL:TM-T82;").Model; m != "TM-T82" {
 		t.Fatalf("model %q", m)
+	}
+}
+
+func TestMayBeZebra(t *testing.T) {
+	cases := []struct {
+		id   string
+		want bool
+	}{
+		{"MANUFACTURER:Zebra Technologies;COMMAND SET:EPL;MODEL:ZTC GK888t (EPL);", true},
+		{"MFG:Acme Labels;CMD:ZPL;MDL:LP-1;", true}, // a ZPL clone that says so
+		{"", true}, // says nothing: worth asking
+		{"MFG:Acme;MDL:Thing;", true},
+		{"MFG:Canon;MDL:LBP7010C/7018C;CMD:CAPT;VER:3.0;CLS:PRINTER;", false},
+		{"MFG:EPSON;CMD:ESCPL2,BDC,D4,D4PX,ESCPR1;MDL:L355 Series;", false},
+		{"MFG:Hewlett-Packard;MDL:LaserJet;", false}, // office maker, no command set
+		{"MFG:Brother Industries;MDL:HL-1110;", false},
+	}
+	for _, c := range cases {
+		if got := ParseDeviceID(c.id).MayBeZebra(); got != c.want {
+			t.Errorf("%q: MayBeZebra = %v, want %v", c.id, got, c.want)
+		}
 	}
 }

@@ -635,7 +635,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [zpl, escpos, pdf, png, jpeg, pcl, postscript, pwg, urf]
+            enum: [zpl, escpos, pdf, png, jpeg, pcl, postscript, pwg, urf, escpr]
         - name: copies
           in: query
           schema:
@@ -1363,7 +1363,7 @@ components:
           type: string
         driver:
           type: string
-          enum: [zebra9100, escpos9100, ipp, pdl9100, mock]
+          enum: [zebra9100, escpos9100, ipp, pdl9100, escpr9100, mock]
         kind:
           type: string
           enum: [label, receipt, document]
@@ -1515,7 +1515,7 @@ components:
           description: The document, base64-encoded, in `format`.
         format:
           type: string
-          enum: [zpl, escpos, pdf, png, jpeg, pcl, postscript, pwg, urf]
+          enum: [zpl, escpos, pdf, png, jpeg, pcl, postscript, pwg, urf, escpr]
           default: zpl
           description: |
             What the payload is. `zpl` when omitted, so existing clients are unaffected.

@@ -66,39 +66,54 @@ func run(ctx context.Context, tool string, data []byte, args func(in, outDir str
 
 // rasterisePDF renders every page at dpi, greyscale.
 func (c Converter) rasterisePDF(ctx context.Context, data []byte, dpi int) ([]image.Image, error) {
+	var pages []image.Image
+	err := c.eachPDFPage(ctx, data, dpi, true, func(img image.Image) error {
+		pages = append(pages, img)
+		return nil
+	})
+	return pages, err
+}
+
+// eachPDFPage renders every page at dpi, greyscale or in colour, and hands them to fn
+// one at a time: a colour page at inkjet resolution is tens of megabytes as an image.
+func (c Converter) eachPDFPage(ctx context.Context, data []byte, dpi int, grey bool, fn func(image.Image) error) error {
 	if c.PDFToPPM == "" {
-		return nil, ErrNoPDFTools
+		return ErrNoPDFTools
 	}
 	dir, err := run(ctx, c.PDFToPPM, data, func(in, out string) []string {
-		return []string{"-r", strconv.Itoa(dpi), "-gray", "-png", "-l", strconv.Itoa(MaxPages + 1),
-			in, filepath.Join(out, "page")}
+		args := []string{"-r", strconv.Itoa(dpi), "-png", "-l", strconv.Itoa(MaxPages + 1)}
+		if grey {
+			args = append(args, "-gray")
+		}
+		return append(args, in, filepath.Join(out, "page"))
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer os.RemoveAll(dir)
 	files, _ := filepath.Glob(filepath.Join(dir, "page*.png"))
 	// page-1.png … page-10.png: order by the number, not the text.
 	sort.Slice(files, func(i, j int) bool { return pageNo(files[i]) < pageNo(files[j]) })
 	if len(files) == 0 {
-		return nil, fmt.Errorf("%w: the PDF has no pages", ErrBadDocument)
+		return fmt.Errorf("%w: the PDF has no pages", ErrBadDocument)
 	}
 	if len(files) > MaxPages {
-		return nil, fmt.Errorf("%w: more than %d pages to rasterise", ErrNoConversion, MaxPages)
+		return fmt.Errorf("%w: more than %d pages to rasterise", ErrNoConversion, MaxPages)
 	}
-	pages := make([]image.Image, 0, len(files))
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		img, err := png.Decode(bytes.NewReader(b))
 		if err != nil {
-			return nil, err
+			return err
 		}
-		pages = append(pages, img)
+		if err := fn(img); err != nil {
+			return err
+		}
 	}
-	return pages, nil
+	return nil
 }
 
 func pageNo(path string) int {

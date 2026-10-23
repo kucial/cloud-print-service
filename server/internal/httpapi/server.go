@@ -309,7 +309,10 @@ func (s *Server) testPrint(w http.ResponseWriter, r *http.Request) {
 			"dpi": printer.DPIFromDPMM(geo.DPMM), "size_source": geo.Source,
 			"cjk_font": cjk.Font, "cjk_note": cjk.Note}
 	case printer.KindDocument:
-		if !slices.Contains(p.Spec().Formats, printer.FormatPDF) {
+		// An inkjet that takes only ESC/P-R gets the PDF page, rendered for it by the
+		// converter (which needs poppler on the server).
+		inkjet := slices.Contains(p.Spec().Formats, printer.FormatESCPR)
+		if !slices.Contains(p.Spec().Formats, printer.FormatPDF) && !inkjet {
 			if !slices.Contains(p.Spec().Formats, printer.FormatPCL) {
 				writeErr(w, http.StatusConflict, "not_supported_by_printer",
 					fmt.Sprintf("the test page is PDF or PCL and this printer takes %v", p.Spec().Formats))

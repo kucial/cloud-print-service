@@ -241,6 +241,7 @@ from it, and are learned from the printer where it can say.
 | ESC/POS receipt printers (Epson TM, Xprinter, …) | `escpos9100` | 9100 | DLE EOT | ESC/POS |
 | office printers with IPP (most network laser/inkjet) | `ipp` | 631 | IPP printer state and the job's own state | what the printer reports (PDF, JPEG, URF, …) |
 | office printers on JetDirect | `pdl9100` | 9100 | PJL | what PJL reports (PCL, PostScript) |
+| Epson inkjets without IPP (EcoTank L-series, Expression) | `escpr9100` | 9100 | reachability only | ESC/P-R (CPS renders PDF/PNG/JPEG to it, in colour at 360 dpi, on A4) |
 
 ```json
 { "printer_id": "wh1-desk-01", "name": "Front desk", "driver": "escpos9100",

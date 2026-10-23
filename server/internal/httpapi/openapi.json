@@ -1038,7 +1038,8 @@
                 "pcl",
                 "postscript",
                 "pwg",
-                "urf"
+                "urf",
+              "escpr"
               ]
             }
           },
@@ -2264,6 +2265,7 @@
               "escpos9100",
               "ipp",
               "pdl9100",
+              "escpr9100",
               "mock"
             ]
           },
@@ -2517,7 +2519,8 @@
               "pcl",
               "postscript",
               "pwg",
-              "urf"
+              "urf",
+              "escpr"
             ],
             "default": "zpl",
             "description": "What the payload is. `zpl` when omitted, so existing clients are unaffected.\nPDF, PNG and JPEG are converted for printers that do not take them as is.\n"

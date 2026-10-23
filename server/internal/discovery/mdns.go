@@ -123,6 +123,22 @@ func (p MDNS) Scan(ctx context.Context) ([]Found, error) {
 				probeCtx, pcancel := context.WithTimeout(ctx, identifyTimeout)
 				identifyPJL(prCtx{ctx: probeCtx, host: f.Host, port: f.Port}, &f, p.Logf)
 				pcancel()
+			} else if id := txtDeviceID(e.Text); p.Identify && f.Host != "" && isRawService(normType) && advertisesESCPR(id) {
+				// An Epson inkjet: it answers nothing on 9100 and may print what it does
+				// not understand, so its own advertisement is all there is to go on.
+				f.Model, f.Vendor = id.Model, id.Manufacturer
+				f.Detail["identified"] = "true"
+				f.Detail["identified_from"] = "txt"
+				f.Detail["driver"] = printer.DriverESCPR
+				f.Detail["kind"] = string(printer.KindDocument)
+				if len(id.Commands) == 0 {
+					f.Detail["driver_source"] = "maker: Epson inkjets that list no languages take ESC/P-R"
+				}
+			} else if p.Identify && f.Host != "" && !id.MayBeZebra() {
+				// Some other office printer: ~HI would come out of it as a page.
+				f.Model, f.Vendor = id.Model, id.Manufacturer
+				f.Detail["identified"] = "false"
+				f.Detail["identify_error"] = "advertised as " + strings.TrimSpace(id.Manufacturer+" "+id.Model) + ", not a label printer; not probed with ~HI"
 			} else if p.Identify && f.Host != "" {
 				probeCtx, pcancel := context.WithTimeout(ctx, identifyTimeout)
 				id, ierr := identify(prCtx{ctx: probeCtx, host: f.Host, port: f.Port}, p.Logf)
@@ -384,6 +400,41 @@ func identify(p prCtx, logf func(string, ...any)) (identity, error) {
 		logf("mdns: %s:%d identified as %s (serial %s)", p.host, p.port, id.Model, id.Serial)
 	}
 	return id, nil
+}
+
+// txtDeviceID reads the IEEE 1284 fields Bonjour printers copy into their TXT record
+// (usb_MFG, usb_MDL, usb_CMD), falling back to the make in "ty" ("EPSON L355 Series").
+func txtDeviceID(txt map[string]string) printer.DeviceID {
+	get := func(key string) string {
+		for k, v := range txt {
+			if strings.EqualFold(k, key) {
+				return v
+			}
+		}
+		return ""
+	}
+	mfg, mdl := get("usb_MFG"), get("usb_MDL")
+	if ty := strings.Fields(get("ty")); mfg == "" && len(ty) > 0 {
+		mfg = ty[0]
+		if mdl == "" {
+			mdl = strings.Join(ty[1:], " ")
+		}
+	}
+	return printer.ParseDeviceID("MFG:" + mfg + ";MDL:" + mdl + ";CMD:" + get("usb_CMD") + ";")
+}
+
+// advertisesESCPR reports whether a raw-port printer takes ESC/P-R: it says so in its
+// command set, or it is an Epson that lists none, which on the network is an inkjet
+// (Epson's lasers advertise PostScript or PCL and are taken by the PJL branch first).
+func advertisesESCPR(id printer.DeviceID) bool {
+	if id.Profile().Driver == printer.DriverESCPR {
+		return true
+	}
+	return len(id.Commands) == 0 && strings.EqualFold(strings.TrimSpace(id.Manufacturer), "EPSON")
+}
+
+func isRawService(t string) bool {
+	return strings.HasPrefix(t, "_pdl-datastream._tcp.")
 }
 
 // advertisesOfficePDL reports whether a printer's TXT "pdl" key lists an office

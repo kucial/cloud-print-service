@@ -35,6 +35,7 @@ any test.
 | M6 | Real USB (printer-class driver) | **built** | pure Go via `usbprint.sys` (Windows) / `usblp` (Linux); opt-in libusb on macOS (`-tags usb_libusb`). Verified end to end on a real GK888t over libusb; Windows/Linux paths unit-tested only |
 | M7 | Harden: runbook, agent-loss recovery, metrics polish | **done** | [RUNBOOK.md](RUNBOOK.md); `FailOnAgentLost` + panel Agents/Discovery views; metrics for scans/adoptions; agent-loss e2e test |
 | M8 | Receipt (ESC/POS) and office (IPP, PCL/PostScript) printers | **done against virtual printers** | drivers `escpos9100`, `ipp`, `pdl9100`; agent classifies USB printers by device id; PDF/PNG/JPEG converted per printer (poppler in Docker); `vprint -language escpos|ipp|pdl`. No real receipt or office printer tried yet (§5) |
+| M9 | Epson inkjets (ESC/P-R) | **done on a real Epson L355 over Wi-Fi** | driver `escpr9100` (raw 9100, never queried: status is reachability); `pkg/escpr` encodes colour raster at 360 dpi on A4, black ink only for grey jobs; PDF/PNG/JPEG converted to it; discovery identifies Epsons from their TXT record and sends `~HI` only to printers that may be Zebras; the agent serves ESC/P-R USB printers and probes no other maker's printer. Verified: encoder test page and a colour PNG through the job API (adopted from discovery). Not tried: PDF on this printer (needs poppler), the USB path on real hardware |
 
 ---
 
@@ -79,7 +80,7 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | `cps` | done | server: fleet registry, dispatch queue, status poller, REST API, embedded panel, ZPL preview, discovery, agent surface, PDF/image conversion |
 | `cpsctl` | done | admin CLI: tokens, printers, **agents**, **discover** |
 | `vprint` | done | virtual network printer: real ZPL, `^HS`/`~HI`/`~JA`, renders every label, gallery, fault injection, `-mdns` advertise; `-language escpos|ipp|pdl` for receipt and office printers |
-| `cps-agent` | done (TCP share + USB) | edge agent: discover, forward, register, heartbeat, status push; label, receipt and office printers; `-tags gui` builds `cps-agent-gui.exe` (tray icon + local setup/status/settings page) |
+| `cps-agent` | done (TCP share + USB) | edge agent: discover, forward, register, heartbeat, status push; label, receipt, office and Epson inkjet printers; `-tags gui` builds `cps-agent-gui.exe` (tray icon + local setup/status/settings page) |
 | `demo-web` | done | reference WMS integration (open source, meant to be read) |
 | `zplpng` | done | dev tool: file/stdin → PNG/SVG/PDF |
 
@@ -97,6 +98,8 @@ CI (`.github/workflows/ci.yml`): gofmt, vet, `CGO_ENABLED=0` build of all five b
 | Agent finds printers only at start | no hot-plug rescan; with none found the process exits and the service manager (or, in the desktop app, its supervisor) restarts it after 30s | periodic rescan inside `Run` |
 | Desktop agent not yet run on Windows | `cps-agent-gui.exe` is cross-built and its panel and supervisor are unit-tested; end-to-end run only on macOS (setup, settings change, print through `vprint`). Tray, Start at login and the firewall prompt are untested on Windows | run the release zip on the packing PC |
 | **No real receipt or office printer tried** | ESC/POS, IPP and PJL are implemented to the specs and tested against `vprint`; the USB device-id table uses representative ids, not captures | print to one Epson/Xprinter and one office printer; capture their device ids, `DLE EOT` and IPP attributes as test data |
+| An ESC/P-R job reports printed after the settle window | the inkjet answers nothing on 9100, so a paper jam or empty ink tank is invisible to CPS; the job says "printed" like other printers with no status | read status from Epson's SNMP or its web page, if it proves to matter |
+| ESC/P-R prints A4 only, at normal quality | one paper size and quality are built in | add Letter/A5 and draft/high as printer settings when asked |
 | An IPP job holds the printer's queue while followed | the per-printer worker waits for the job's outcome (up to `track_timeout`, 10 min) before the next job | send while following, if office printers prove slow |
 | Document preview has no panel button | `POST /api/v1/admin/printers/{id}/preview` returns the converted first page as a PNG; the panel's Preview tab is still ZPL-only | add a document upload to the Preview tab |
 | PDF to an IPP printer without PDF | only single-page PDFs go as JPEG; URF/PWG raster is not produced | add a PWG raster encoder if such printers turn up |

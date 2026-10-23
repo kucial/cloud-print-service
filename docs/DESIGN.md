@@ -145,6 +145,7 @@ Both default from the driver and are learned from the printer where it can say.
 | `zebra9100` | label | raw 9100, two sockets | `~HS` | busy → idle after the send |
 | `escpos9100` | receipt | raw 9100, two sockets | `DLE EOT 1/2/4` | idle after a settle window (ESC/POS has no "printing" bit) |
 | `pdl9100` | document | raw 9100, two sockets | `@PJL INFO STATUS` | busy → idle, or settle when the printer has no PJL |
+| `escpr9100` | document | raw 9100 | none: only whether the port opens (an Epson inkjet answers nothing there, and may print what it does not understand) | settle window |
 | `ipp` | document | IPP over HTTP (631) | `printer-state` + `-reasons` | **the printer's own job record** (`job-state` completed / aborted / canceled) |
 
 The core `Driver` interface above is what every printer has. What only some have is an optional

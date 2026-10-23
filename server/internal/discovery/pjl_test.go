@@ -35,3 +35,24 @@ func TestOfficePrinterIsIdentifiedWithoutPrinting(t *testing.T) {
 		t.Fatalf("identification printed %d page(s)", vp.LabelCount())
 	}
 }
+
+// What the user's Epson L355 advertises on _pdl-datastream: maker and model, no
+// command set. It must be taken as ESC/P-R from the TXT alone, never probed; an HP
+// that says nothing of its languages must not be sent ~HI either.
+func TestTXTIdentifiesInkjetsWithoutProbing(t *testing.T) {
+	l355 := map[string]string{"pdl": "raw", "ty": "EPSON L355 Series", "usb_MDL": "L355 Series", "usb_MFG": "EPSON"}
+	id := txtDeviceID(l355)
+	if id.Manufacturer != "EPSON" || id.Model != "L355 Series" || !advertisesESCPR(id) {
+		t.Fatalf("L355 TXT read as %+v (escpr %v)", id, advertisesESCPR(id))
+	}
+	hp := txtDeviceID(map[string]string{"pdl": "raw", "ty": "HP LaserJet 1020"})
+	if hp.Manufacturer != "HP" || hp.Model != "LaserJet 1020" || advertisesESCPR(hp) || hp.MayBeZebra() {
+		t.Fatalf("HP TXT read as %+v: must be neither ESC/P-R nor probed", hp)
+	}
+	if zebra := txtDeviceID(map[string]string{"ty": "Zebra ZD421"}); !zebra.MayBeZebra() {
+		t.Fatal("a Zebra must still be asked with ~HI")
+	}
+	if bare := txtDeviceID(map[string]string{"pdl": "raw"}); !bare.MayBeZebra() || advertisesESCPR(bare) {
+		t.Fatal("a printer that says nothing is still asked with ~HI, as before")
+	}
+}

@@ -72,6 +72,11 @@ func (d DeviceID) Profile() Profile {
 	case d.has("ESC/POS", "ESCPOS", "ESC_POS") || receiptModel.MatchString(d.Model):
 		return Profile{Driver: DriverESCPOS, Kind: KindReceipt, Formats: []Format{FormatESCPOS}}
 	}
+	// Epson inkjets: host-rendered raster only, whatever else they list (ESC/P2 is
+	// for text and old drivers).
+	if strings.Contains(mfg, "EPSON") && d.has("ESCPR") {
+		return Profile{Driver: DriverESCPR, Kind: KindDocument, Formats: []Format{FormatESCPR}}
+	}
 	var formats []Format
 	if d.has("PCL") { // PCL, PCL5, PCL6, PCLXL; not PCL3GUI-only inkjets, see below
 		formats = append(formats, FormatPCL)
@@ -97,6 +102,34 @@ func onlyPCL3GUI(cmds []string) bool {
 		}
 		if c == "POSTSCRIPT" || c == "PDF" {
 			return false
+		}
+	}
+	return true
+}
+
+// officeMakers make office and inkjet printers. One of theirs that does not list ZPL or
+// EPL in its command set is not a Zebra.
+var officeMakers = []string{"EPSON", "CANON", "HP", "HEWLETT", "BROTHER", "SAMSUNG", "XEROX",
+	"LEXMARK", "KYOCERA", "RICOH", "KONICA", "MINOLTA", "OKI", "SHARP", "PANTUM", "DELL", "TOSHIBA"}
+
+// MayBeZebra reports whether a printer that Profile does not recognise is still worth
+// asking with the Zebra `~HI`. Asking is not free: a printer that does not speak ZPL can
+// print the command as text. So only a printer that says too little to rule it out is
+// asked: one with no command set, and no maker or a maker of label printers.
+func (d DeviceID) MayBeZebra() bool {
+	if d.has("ZPL", "EPL") || strings.Contains(strings.ToUpper(d.Manufacturer), "ZEBRA") {
+		return true
+	}
+	if len(d.Commands) > 0 {
+		return false // it lists its languages, and Zebra's are not among them
+	}
+	for _, w := range strings.FieldsFunc(strings.ToUpper(d.Manufacturer), func(r rune) bool {
+		return r < 'A' || r > 'Z'
+	}) {
+		for _, m := range officeMakers {
+			if w == m {
+				return false
+			}
 		}
 	}
 	return true
