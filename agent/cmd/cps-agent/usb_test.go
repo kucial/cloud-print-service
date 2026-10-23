@@ -18,7 +18,8 @@ type fakePrinter struct {
 	mu      sync.Mutex
 	pending []byte // reply bytes not yet read
 	labels  strings.Builder
-	stale   []byte // a late reply left over from an earlier query
+	wire    strings.Builder // everything written, queries included, in order
+	stale   []byte          // a late reply left over from an earlier query
 	opens   int
 }
 
@@ -43,6 +44,7 @@ func (f *fakePrinter) open(string) (usbPort, error) {
 func (f *fakePort) Write(b []byte, _ time.Duration) (int, error) {
 	f.p.mu.Lock()
 	defer f.p.mu.Unlock()
+	f.p.wire.Write(b)
 	switch s := string(b); {
 	case strings.HasPrefix(s, printer.CmdHostID):
 		f.p.pending = append(f.p.pending, realHI...)

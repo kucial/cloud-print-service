@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -89,6 +90,9 @@ type localPrinter struct {
 	sink    Sink
 	ln      net.Listener
 	status  agentapi.Status
+	// job is held by a connection while it is inside a label, so that a host query from
+	// another connection cannot reach the printer between two pieces of it.
+	job sync.Mutex
 }
 
 // query answers a host command (`^HS`, `~HI`) on the printer's control connection and
@@ -211,16 +215,28 @@ func (a *agent) acceptLoop(ctx context.Context, p *localPrinter) {
 
 func (a *agent) serveConn(ctx context.Context, p *localPrinter, conn net.Conn) {
 	defer conn.Close()
+	var label labelState
+	defer label.release(p)
 	buf := make([]byte, 32<<10)
 	for {
-		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+		wait := 5 * time.Minute
+		if label.held {
+			wait = labelIdle
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(wait))
 		n, err := conn.Read(buf)
 		if n > 0 {
-			if !a.handle(ctx, p, conn, buf[:n]) {
+			if !a.handle(ctx, p, conn, buf[:n], &label) {
 				return
 			}
 		}
 		if err != nil {
+			var ne net.Error
+			if label.held && errors.As(err, &ne) && ne.Timeout() {
+				// The sender paused inside what looked like a label: not ZPL, or no ^XZ.
+				label.release(p)
+				continue
+			}
 			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
 				a.log.Debug("connection closed", "printer_id", p.PrinterID, "err", err)
 			}
@@ -234,11 +250,21 @@ func (a *agent) serveConn(ctx context.Context, p *localPrinter, conn net.Conn) {
 // The agent must be *transparent in both directions*: the server's driver sends `^HS` on
 // its status socket and expects a reply. A write-only forwarder would leave every job
 // stuck in `sending`, because confirmation could never observe a non-printing state.
-func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chunk []byte) bool {
+func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chunk []byte, label *labelState) bool {
 	trimmed := strings.TrimLeft(string(chunk), " \r\n\t")
 	switch {
 	case printer.IsHostQuery(trimmed): // ~HS, ~HI, ^HH (and ^HS from older servers)
+		// The server asks for status on its own connection right after sending a job,
+		// while the agent may still be passing the label on in pieces. A query between
+		// two pieces lands inside the label (in a ^GF graphic, the printer then drops
+		// the whole label without an error), so it waits for the label to end.
+		if !label.held {
+			p.job.Lock()
+		}
 		reply, err := p.query(ctx, string(chunk))
+		if !label.held {
+			p.job.Unlock()
+		}
 		if err != nil {
 			a.log.Warn("host query failed", "printer_id", p.PrinterID, "err", err)
 			return false
@@ -257,6 +283,7 @@ func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chun
 
 	default:
 		// Label data: straight through, no buffering, no interpretation.
+		label.hold(p)
 		wctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		_, err := p.sink.Write(wctx, chunk)
 		cancel()
@@ -265,8 +292,46 @@ func (a *agent) handle(ctx context.Context, p *localPrinter, conn net.Conn, chun
 			a.log.Warn("write to printer failed", "printer_id", p.PrinterID, "err", err)
 			return false
 		}
+		if label.ended(chunk) {
+			label.release(p)
+		}
 		return true
 	}
+}
+
+// labelIdle releases a printer held for a label the sender stopped sending: data that
+// is not ZPL (receipt and office printers) has no ^XZ to end on, and the server keeps
+// its print connection open between jobs.
+var labelIdle = 500 * time.Millisecond
+
+// labelState is one connection's place in its stream of label data.
+type labelState struct {
+	held bool
+	tail string // the last non-blank bytes written, to spot a ^XZ split across reads
+}
+
+func (l *labelState) hold(p *localPrinter) {
+	if !l.held {
+		p.job.Lock()
+		l.held = true
+	}
+}
+
+func (l *labelState) release(p *localPrinter) {
+	if l.held {
+		p.job.Unlock()
+		l.held = false
+	}
+	l.tail = ""
+}
+
+// ended reports whether the data written so far ends a ZPL label: ^XZ, then only blanks.
+func (l *labelState) ended(chunk []byte) bool {
+	if t := bytes.TrimRight(chunk, " \r\n\t"); len(t) > 0 {
+		l.tail += string(t[max(0, len(t)-3):])
+		l.tail = l.tail[max(0, len(l.tail)-3):]
+	}
+	return strings.EqualFold(l.tail, "^XZ")
 }
 
 // registerAndHeartbeat tells the server what we serve, then keeps it informed.
