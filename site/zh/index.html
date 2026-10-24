@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>云打印服务 Cloud Print Service</title>
+<meta name="description" content="在 ERP/WMS 与仓库里每一台打印机之间，只需一套 API：标签机、小票机、办公打印机，网络或 USB 皆可。自托管，单个程序即可运行。">
+<link rel="alternate" hreflang="en" href="../">
+<link rel="alternate" hreflang="zh-Hans" href="./">
+<link rel="alternate" hreflang="x-default" href="../">
+<link rel="stylesheet" href="../style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f6feb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9V2h12v7'/%3E%3Crect x='2' y='9' width='20' height='9' rx='2'/%3E%3Cpath d='M6 14h12v8H6z'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7"/><rect x="2" y="9" width="20" height="9" rx="2"/><path d="M6 14h12v8H6z"/></svg>
+      云打印服务
+    </a>
+    <nav class="nav">
+      <a href="#use-cases">使用场景</a>
+      <a href="#how">工作原理</a>
+      <a href="#quick-start">快速部署</a>
+      <a href="#printers">支持的打印机</a>
+      <a href="https://github.com/OWNER/cloud-print-service">GitHub</a>
+    </nav>
+    <div class="lang" role="navigation" aria-label="语言">
+      <a href="../" hreflang="en" lang="en" data-lang="en">EN</a>
+      <span aria-current="true">中文</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<div class="wrap hero">
+  <p class="eyebrow">自托管打印网关</p>
+  <h1>业务系统与仓库里每一台打印机之间，只需一套 API。</h1>
+  <p class="lead">ERP 或 WMS 只需提交标签、小票或 PDF，并附上自己的单据号。云打印服务负责把它转换成打印机能识别的语言，保证只打印一次，并实时告诉你哪些打印机现在可用。支持 Zebra 标签机、小票机和办公打印机，网络连接或 USB 连接均可。</p>
+  <div class="cta">
+    <a class="btn primary" href="#quick-start">5 分钟完成部署</a>
+    <a class="btn" href="https://github.com/OWNER/cloud-print-service">在 GitHub 上查看</a>
+  </div>
+  <ul class="facts">
+    <li>一个 Go 程序 + 一个 JSON 配置</li>
+    <li>无需数据库服务（内置 SQLite）</li>
+    <li>自带运维面板</li>
+    <li>同一张标签绝不重复打印</li>
+  </ul>
+</div>
+
+<section id="use-cases">
+  <div class="wrap">
+    <h2>适用场景</h2>
+    <p class="sub">打印<em>什么</em>由业务系统决定；打印到<em>哪里</em>、<em>怎么</em>打印、到底有没有打出来，交给云打印服务。</p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></div>
+        <h3>WMS 打印快递面单</h3>
+        <p>把 ZPL（或 PDF/PNG）发到任意兼容 Zebra 的标签机。每个任务都带上订单号或包裹号，超时重发、系统重试都不会多打一张。</p>
+        <span class="tag">zebra9100 · ZPL</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2h14v20l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg></div>
+        <h3>前台打印小票</h3>
+        <p>在 Epson TM、芯烨（Xprinter）等 58/80 mm 小票机上打印 ESC/POS 小票。缺纸、开盖等状态会实时反馈。</p>
+        <span class="tag">escpos9100 · ESC/POS</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></div>
+        <h3>发票与装箱单</h3>
+        <p>把 PDF、PNG 或 JPEG 发到办公激光或喷墨打印机。服务会按打印机的能力转换格式：IPP、PCL/PostScript，或 Epson 墨仓式喷墨用的 ESC/P-R，页面有颜色时按彩色打印。</p>
+        <span class="tag">ipp · pdl9100 · escpr9100</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="20" r="2"/><path d="M10 18V3M7 6l3-3 3 3M10 14l6-3V8M10 11 5 9V7"/><rect x="14.5" y="5.5" width="3" height="3"/><circle cx="5" cy="6" r="1.5"/></svg></div>
+        <h3>打包电脑上的 USB 打印机</h3>
+        <p>打印机插在 Windows/Linux 电脑上，或插在华硕路由器、AiMesh 节点上，在那台设备上运行 <code>cps-agent</code>，它就会像网络打印机一样加入设备列表。原厂驱动无需卸载。</p>
+        <span class="tag">cps-agent · USB</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></div>
+        <h3>全部打印机一目了然</h3>
+        <p>一次调用即可拿到每台打印机的状态、纸张与碳带、排队数量，以及一个直观的 <code>usable</code>（是否可用）。<code>/ui/</code> 运维面板实时显示同样的信息，还能管理任务、令牌，预览 ZPL。</p>
+        <span class="tag">GET /api/v1/printers/status</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg></div>
+        <h3>打印机未到，先完成对接</h3>
+        <p><code>vprint</code> 是一台虚拟打印机，在真实端口上说真实的 ZPL、ESC/POS、IPP 或 PJL。每张标签都会渲染成 PNG，还能模拟缺纸、离线、打印中途断开等故障。</p>
+        <span class="tag">vprint · 测试替身</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>整体架构</h2>
+    <p class="sub">仓库局域网内部署一台服务器。网络打印机由服务器直接连接；USB 打印机通过它所连接设备上的小型代理程序接入。</p>
+
+    <div class="diagram">
+      <p class="hint">左右滑动查看完整架构图 →</p>
+      <svg viewBox="0 0 980 516" role="img" aria-labelledby="infra-title infra-desc">
+        <title id="infra-title">云打印服务架构</title>
+        <desc id="infra-desc">业务系统和运维人员通过 HTTP 调用 cps 服务端。服务端通过 9100 或 631 端口向网络打印机发送任务，并通过 mDNS 发现打印机。打包电脑或路由器上的 cps-agent 向服务端注册；服务端主动连接代理，访问其 USB 打印机。</desc>
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker>
+        </defs>
+
+        <rect class="box" x="20" y="40" width="200" height="96" rx="10"/>
+        <text class="t" x="36" y="70">业务系统</text>
+        <text class="ts" x="36" y="94">ERP · WMS · OMS</text>
+        <text class="tm" x="36" y="118">Bearer 令牌</text>
+
+        <rect class="box" x="20" y="176" width="200" height="96" rx="10"/>
+        <text class="t" x="36" y="206">运维人员</text>
+        <text class="ts" x="36" y="230">浏览器 /ui/ · cpsctl</text>
+        <text class="tm" x="36" y="254">管理员密钥</text>
+
+        <rect class="core" x="320" y="24" width="280" height="320" rx="12"/>
+        <text class="ta" x="336" y="54">cps 服务端</text>
+        <text class="ts" x="336" y="74">单个程序 · config.json</text>
+        <rect class="inner" x="336" y="88" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="106" style="font-size:14px">REST API · 运维面板</text>
+        <text class="tm" x="348" y="124">:8080  /api/v1  /ui/</text>
+        <rect class="inner" x="336" y="136" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="154" style="font-size:14px">派发队列</text>
+        <text class="ts" x="348" y="172">按 external_id 幂等</text>
+        <rect class="inner" x="336" y="184" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="202" style="font-size:14px">状态轮询</text>
+        <text class="ts" x="348" y="220">每台打印机一个 usable 标志</text>
+        <rect class="inner" x="336" y="232" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="250" style="font-size:14px">格式转换</text>
+        <text class="ts" x="348" y="268">PDF · PNG · JPEG → 打印机语言</text>
+        <rect class="inner" x="336" y="280" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="298" style="font-size:14px">SQLite  cps.db</text>
+        <text class="ts" x="348" y="316">任务 · 令牌 · 代理</text>
+
+        <rect class="box" x="700" y="24" width="260" height="200" rx="10"/>
+        <text class="t" x="716" y="54">网络打印机</text>
+        <text class="ts" x="716" y="84">标签 · Zebra / ZPL</text><text class="tm" x="944" y="84" text-anchor="end">:9100</text>
+        <text class="ts" x="716" y="112">小票 · ESC/POS</text><text class="tm" x="944" y="112" text-anchor="end">:9100</text>
+        <text class="ts" x="716" y="140">办公 · IPP</text><text class="tm" x="944" y="140" text-anchor="end">:631</text>
+        <text class="ts" x="716" y="168">办公 · PCL / PostScript</text><text class="tm" x="944" y="168" text-anchor="end">:9100</text>
+        <text class="ts" x="716" y="196">喷墨 · Epson ESC/P-R</text><text class="tm" x="944" y="196" text-anchor="end">:9100</text>
+
+        <rect class="box" x="430" y="400" width="250" height="96" rx="10"/>
+        <text class="t" x="446" y="430">cps-agent 代理</text>
+        <text class="ts" x="446" y="454">打包电脑 · 华硕路由器</text>
+        <text class="tm" x="446" y="478">Windows · Linux · Asuswrt</text>
+
+        <rect class="box" x="760" y="400" width="200" height="96" rx="10"/>
+        <text class="t" x="776" y="430">USB 打印机</text>
+        <text class="ts" x="776" y="454">标签 · 小票 · 办公</text>
+        <text class="tm" x="776" y="478">插在代理设备上</text>
+
+        <path class="edge" d="M220 88 H316" marker-end="url(#ah)"/>
+        <text class="lbl" x="268" y="80" text-anchor="middle">任务 · 状态</text>
+        <path class="edge" d="M220 224 H316" marker-end="url(#ah)"/>
+        <text class="lbl" x="268" y="216" text-anchor="middle">管理</text>
+
+        <path class="edge" d="M600 100 H696" marker-end="url(#ah)"/>
+        <text class="lbl" x="648" y="92" text-anchor="middle">打印 · 状态</text>
+
+        <path class="edge dash" d="M600 300 H830 V228" marker-end="url(#ah)"/>
+        <text class="lbl" x="715" y="292" text-anchor="middle">mDNS 自动发现 · 5353/udp</text>
+
+        <path class="edge" d="M500 344 V396" marker-end="url(#ah)"/>
+        <text class="lbl" x="492" y="376" text-anchor="end">主动连接 :19100+</text>
+        <path class="edge" d="M600 400 V348" marker-end="url(#ah)"/>
+        <text class="lbl" x="608" y="376">注册 · 心跳 :8080</text>
+
+        <path class="edge" d="M680 448 H756" marker-end="url(#ah)"/>
+        <text class="lbl" x="718" y="440" text-anchor="middle">USB</text>
+      </svg>
+    </div>
+
+    <h3 style="margin-top:36px">一个打印任务的生命周期</h3>
+    <div class="flow">
+      <div class="step"><b>提交</b>调用 <code>POST /api/v1/jobs</code> 并带上 <code>external_id</code>。同一个单据号再次提交，返回的仍是原来那个任务。</div>
+      <div class="step"><b>排队</b>每台打印机有自己的队列，服务重启也不会丢。打印机不可用（<code>usable</code> 为否）时任务会暂存等待，不会丢失。</div>
+      <div class="step"><b>发送</b>需要时先转换格式，再把数据写入打印机，只写一次。数据一旦发出，服务绝不会自行重发。</div>
+      <div class="step"><b>结果</b>
+        <span class="end">
+          <span><span class="pill ok">printed</span> 打印机确认已打印</span>
+          <span><span class="pill warn">sent_unknown</span> 已发出但未获确认，由人工判断，杜绝重复打印</span>
+          <span><span class="pill bad">failed</span> 未打印，并附上原因</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quick-start">
+  <div class="wrap">
+    <h2>快速部署</h2>
+    <p class="sub">适用于与打印机处在同一局域网的 Linux 服务器。需要 Docker，或用 Go 1.26 以上版本从源码构建。大约五分钟。</p>
+
+    <ol class="steps">
+      <li>
+        <h3>编写配置</h3>
+        <p>用 <code>openssl rand -hex 24</code> 生成管理员密钥，并填入网络打印机。其余配置项都有可用的默认值。</p>
+<pre><code><span class="c">// config.json</span>
+{
+  "addr": ":8080",
+  "api_keys": {
+    "粘贴你的管理员密钥": { "client_id": "ops", "role": "admin" }
+  },
+  "printers": [
+    { "printer_id": "wh1-pack-01", "name": "1 号打包台", "site": "wh1",
+      "driver": "zebra9100", "host": "192.168.10.21", "port": 9100, "enabled": true }
+  ],
+  "discovery": { "enabled": true, "site": "wh1" }
+}</code></pre>
+      </li>
+
+      <li>
+        <h3>启动服务端</h3>
+        <p>一个容器就够了。数据卷保存任务、令牌和代理凭证。<code>--network host</code> 让自动发现能收到打印机的 mDNS 广播；不需要自动发现时，用 <code>-p 8080:8080</code> 即可。</p>
+<pre><code>git clone https://github.com/OWNER/cloud-print-service.git
+cd cloud-print-service
+docker build -f server/Dockerfile -t cps .
+chmod 644 config.json
+docker run -d --name cps --restart unless-stopped --network host \
+  -v "$PWD/config.json:/etc/cps/config.json:ro" \
+  -v cps-data:/var/lib/cps \
+  cps</code></pre>
+        <details class="alt">
+          <summary>不用 Docker：直接编译程序</summary>
+<pre><code>go build -o cps    ./server/cmd/cps
+go build -o cpsctl ./server/cmd/cpsctl
+sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei   <span class="c"># PDF 转换所需</span>
+./cps -config config.json</code></pre>
+          <p>systemd 服务、Caddy/nginx 反向代理 HTTPS 等内容见<a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>。</p>
+        </details>
+      </li>
+
+      <li>
+        <h3>检查运行状态</h3>
+        <p>打开 <code>http://&lt;服务器&gt;:8080/ui/</code>，用管理员密钥登录。自动发现的打印机会出现在 <b>Discovery</b> 页，确认后即可纳管。命令行检查：</p>
+<pre><code>curl http://&lt;服务器&gt;:8080/healthz                       <span class="c"># 200 OK</span>
+<span class="c"># 镜像里自带管理命令行，后续步骤都使用这个别名</span>
+alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KEY=&lt;管理员密钥&gt; cps cpsctl'
+cpsctl printers                                         <span class="c"># 每台打印机是否可用，不可用的原因</span></code></pre>
+      </li>
+
+      <li>
+        <h3>为业务系统签发令牌</h3>
+        <p>每个系统一个独立令牌。令牌只显示一次，服务端只保存其哈希，可随时轮换或吊销。</p>
+<pre><code>cpsctl token issue --client-id wms --ttl 365d</code></pre>
+      </li>
+
+      <li>
+        <h3>打印</h3>
+        <p>ZPL 可以直接以文本提交，其他格式用 base64 提交。<code>external_id</code> 填你自己的单据号。</p>
+<pre><code>curl -X POST http://&lt;服务器&gt;:8080/api/v1/jobs \
+  -H "Authorization: Bearer $WMS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"printer_id":"wh1-pack-01","external_id":"SO-10042-label",
+       "zpl":"^XA^FO50,50^A0N,50,50^FDHello CPS^FS^XZ"}'
+
+<span class="c"># 把 PDF 发到办公打印机：打印机不支持 PDF 时由服务自动转换</span>
+curl -X POST http://&lt;服务器&gt;:8080/api/v1/jobs \
+  -H "Authorization: Bearer $WMS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"printer_id":"hq-office-01","external_id":"INV-2026-0042","format":"pdf",
+       "payload_base64":"'"$(base64 &lt; invoice.pdf | tr -d '\n')"'"}'
+
+curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;服务器&gt;:8080/api/v1/jobs/&lt;job_id&gt;</code></pre>
+        <p>完整 API 文档可在你的服务器上访问 <code>http://&lt;服务器&gt;:8080/docs/</code> 查看。</p>
+      </li>
+
+      <li>
+        <h3>接入 USB 打印机（可选）</h3>
+        <p>先在服务端生成一次性注册令牌，再在连着打印机的电脑或路由器上启动代理。约 30 秒后，打印机就会出现在面板里。</p>
+<pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
+        <p>从发布页获取 <code>cps-agent</code>。Windows 上可以运行桌面版 <code>cps-agent-gui.exe</code>（填入服务器地址和令牌），也可以安装为系统服务：</p>
+<pre><code><span class="c">:: Windows，以管理员身份打开命令提示符</span>
+set CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080
+cps-agent.exe -enroll &lt;令牌&gt; -id pc7 -site wh1 -install
+
+<span class="c"># Linux</span>
+CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080 cps-agent -enroll &lt;令牌&gt; -id pc7 -site wh1 \
+  -config /etc/cps-agent/agent.json</code></pre>
+        <p>华硕路由器 / AiMesh 节点：使用 koolshare 软件中心插件，或通过 SSH 安装 <code>/jffs</code> 软件包。各平台的详细步骤见<a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md#5-install-the-agent-usb-printers">安装指南</a>。</p>
+      </li>
+    </ol>
+
+    <div class="callout"><b>手头还没有打印机？</b>运行 <code>go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render</code>，再用 <code>server/config.example.json</code> 启动服务端。打印出的标签会以图片形式显示在 <code>http://localhost:19200</code>。</div>
+
+    <h3 style="margin-top:36px">网络端口</h3>
+    <div class="table">
+      <table>
+        <tr><th>来源</th><th>目标</th><th>端口</th><th>用途</th></tr>
+        <tr><td>业务系统、浏览器</td><td>服务端</td><td><code>8080</code></td><td>API 和运维面板</td></tr>
+        <tr><td>服务端</td><td>网络打印机</td><td><code>9100</code> / <code>631</code></td><td>打印数据与状态（RAW / IPP）</td></tr>
+        <tr><td>服务端</td><td>代理电脑</td><td><code>19100+</code></td><td>每台 USB 打印机一个端口，需在防火墙放行</td></tr>
+        <tr><td>代理电脑</td><td>服务端</td><td><code>8080</code></td><td>注册和心跳</td></tr>
+        <tr><td>服务端</td><td>局域网组播</td><td><code>5353/udp</code></td><td>可选的 mDNS 自动发现</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="printers">
+  <div class="wrap">
+    <h2>支持的打印机</h2>
+    <p class="sub"><code>driver</code> 决定服务如何与打印机通信。所有打印机都可以接收 PDF、PNG 和 JPEG，打印机不能直接打印时由服务自动转换。</p>
+    <div class="table">
+      <table>
+        <tr><th>打印机</th><th><code>driver</code></th><th>状态来源</th><th>可直接打印</th></tr>
+        <tr><td>Zebra 及兼容 ZPL 的标签机</td><td><code>zebra9100</code></td><td>状态查询指令，含纸张与碳带</td><td>ZPL</td></tr>
+        <tr><td>ESC/POS 小票机（Epson TM、芯烨等）</td><td><code>escpos9100</code></td><td>实时状态</td><td>ESC/POS</td></tr>
+        <tr><td>支持 IPP 的办公打印机（多数网络激光/喷墨机）</td><td><code>ipp</code></td><td>打印机状态及该任务自身的记录</td><td>以打印机上报为准（PDF、JPEG、URF…）</td></tr>
+        <tr><td>JetDirect 办公打印机</td><td><code>pdl9100</code></td><td>PJL</td><td>PCL、PostScript</td></tr>
+        <tr><td>不支持 IPP 的 Epson 喷墨机（墨仓式 L 系列）</td><td><code>escpr9100</code></td><td>仅能检测是否在线</td><td>ESC/P-R，彩色，A4</td></tr>
+        <tr><td>以上任意一种的 USB 版本</td><td>经 <code>cps-agent</code></td><td>同上，按 USB 设备 ID 自动识别</td><td>同上</td></tr>
+      </table>
+    </div>
+    <p class="alt" style="margin-top:14px">不支持：只能依靠厂商电脑驱动工作的“主机型”打印机，例如佳能 CAPT 激光机（LBP 系列）和部分低端 GDI 机型。选购时请确认规格表里有 IPP/AirPrint、PCL 或 PostScript。各类打印机的验证情况见 <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>。</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/DESIGN.md">设计与 API 约定</a>
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/RUNBOOK.md">运维手册</a>
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">进展状态</a>
+      <a href="https://github.com/OWNER/cloud-print-service">源代码</a>
+    </div>
+    <p>详细文档目前为英文。云打印服务只负责打印文档，不负责排版，内容始终由你的业务系统决定。</p>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll("[data-lang]").forEach(function (a) {
+    a.addEventListener("click", function () { try { localStorage.setItem("cps-lang", a.dataset.lang); } catch (e) {} });
+  });
+</script>
+</body>
+</html>

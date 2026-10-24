@@ -6,6 +6,7 @@ receipt printers (ESC/POS) and office printers (IPP, PCL/PostScript).
 
 > Design, state machine, API contract and failure policy: **[docs/DESIGN.md](docs/DESIGN.md)**
 > What is built, verified and still missing: **[docs/STATUS.md](docs/STATUS.md)**
+> Project page (use cases, quick deploy, architecture; English / 简体中文): **[site/](site/index.html)**, published to GitHub Pages by `.github/workflows/pages.yml`
 
 ```
  ERP / WMS ──token──▶ ┌───────────────────────────────┐ ──ZPL :9100──▶ label printers

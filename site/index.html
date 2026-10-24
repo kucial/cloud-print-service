@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloud Print Service</title>
+<meta name="description" content="One API between your ERP/WMS and every warehouse printer: label, receipt and office printers, on the network or on USB. Self-hosted, one binary.">
+<link rel="alternate" hreflang="en" href="./">
+<link rel="alternate" hreflang="zh-Hans" href="zh/">
+<link rel="alternate" hreflang="x-default" href="./">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f6feb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9V2h12v7'/%3E%3Crect x='2' y='9' width='20' height='9' rx='2'/%3E%3Cpath d='M6 14h12v8H6z'/%3E%3C/svg%3E">
+<script>
+  // First visit from a Chinese-language browser: offer the zh-Hans page. A choice made
+  // with the language switch is remembered and always wins.
+  try {
+    if (!localStorage.getItem("cps-lang") && /^zh/i.test(navigator.language || "")) location.replace("zh/" + location.hash);
+  } catch (e) {}
+</script>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V2h12v7"/><rect x="2" y="9" width="20" height="9" rx="2"/><path d="M6 14h12v8H6z"/></svg>
+      Cloud Print Service
+    </a>
+    <nav class="nav">
+      <a href="#use-cases">Use cases</a>
+      <a href="#how">How it works</a>
+      <a href="#quick-start">Quick start</a>
+      <a href="#printers">Printers</a>
+      <a href="https://github.com/OWNER/cloud-print-service">GitHub</a>
+    </nav>
+    <div class="lang" role="navigation" aria-label="Language">
+      <span aria-current="true">EN</span>
+      <a href="zh/" hreflang="zh-Hans" lang="zh-Hans" data-lang="zh-Hans">中文</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<div class="wrap hero">
+  <p class="eyebrow">Self-hosted print gateway</p>
+  <h1>One API between your business systems and every printer in the warehouse.</h1>
+  <p class="lead">Your ERP or WMS sends a label, receipt or PDF with its own document id. Cloud Print Service turns it into the printer's language, delivers it once and only once, and tells you which printers are ready right now: Zebra label printers, receipt printers, office printers, on the network or on USB.</p>
+  <div class="cta">
+    <a class="btn primary" href="#quick-start">Deploy in 5 minutes</a>
+    <a class="btn" href="https://github.com/OWNER/cloud-print-service">View on GitHub</a>
+  </div>
+  <ul class="facts">
+    <li>One Go binary + one JSON file</li>
+    <li>No database server (SQLite inside)</li>
+    <li>Operator panel built in</li>
+    <li>Never prints the same label twice</li>
+  </ul>
+</div>
+
+<section id="use-cases">
+  <div class="wrap">
+    <h2>What it is for</h2>
+    <p class="sub">Your business systems decide <em>what</em> to print. Cloud Print Service handles <em>where</em> and <em>how</em>, and whether it actually printed.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></div>
+        <h3>Shipping labels from the WMS</h3>
+        <p>Send ZPL (or a PDF/PNG) to any Zebra-compatible label printer. Each job carries your order or parcel id. Resending it never makes a second label, even after a timeout or retry.</p>
+        <span class="tag">zebra9100 · ZPL</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2h14v20l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg></div>
+        <h3>Receipts at the counter</h3>
+        <p>Print ESC/POS receipts on 58 or 80 mm printers from Epson TM, Xprinter and others. Paper-out and cover-open are reported back to you.</p>
+        <span class="tag">escpos9100 · ESC/POS</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></div>
+        <h3>Invoices and packing lists</h3>
+        <p>Send a PDF, PNG or JPEG to an office laser or inkjet. CPS converts it for the printer: IPP, PCL/PostScript, or Epson ESC/P-R for EcoTank inkjets, in colour when the page has colour.</p>
+        <span class="tag">ipp · pdl9100 · escpr9100</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="20" r="2"/><path d="M10 18V3M7 6l3-3 3 3M10 14l6-3V8M10 11 5 9V7"/><rect x="14.5" y="5.5" width="3" height="3"/><circle cx="5" cy="6" r="1.5"/></svg></div>
+        <h3>USB printers on packing PCs</h3>
+        <p>Plug a printer into a Windows or Linux PC, or into an ASUS router or AiMesh node, and run <code>cps-agent</code> there. The printer joins the fleet like a network printer. Its vendor driver can stay installed.</p>
+        <span class="tag">cps-agent · USB</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></div>
+        <h3>See the whole fleet at a glance</h3>
+        <p>One call returns every printer's state, paper and ribbon, queue depth and a plain <code>usable</code> yes/no. The live operator panel at <code>/ui/</code> shows the same view, plus jobs, tokens and a ZPL preview.</p>
+        <span class="tag">GET /api/v1/printers/status</span>
+      </div>
+      <div class="card">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg></div>
+        <h3>Integrate before the printers arrive</h3>
+        <p><code>vprint</code> is a virtual printer that speaks real ZPL, ESC/POS, IPP or PJL on a real socket. It renders every label to a PNG and can fake paper-out, offline or a crash mid-print.</p>
+        <span class="tag">vprint · test double</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it fits together</h2>
+    <p class="sub">One server on the warehouse LAN. Network printers are reached directly. USB printers are reached through a small agent on the machine they are plugged into.</p>
+
+    <div class="diagram">
+      <p class="hint">Scroll sideways to see the whole chart →</p>
+      <svg viewBox="0 0 980 516" role="img" aria-labelledby="infra-title infra-desc">
+        <title id="infra-title">Cloud Print Service infrastructure</title>
+        <desc id="infra-desc">Business systems and operators call the cps server over HTTP. The server prints to network printers on port 9100 or 631 and finds them over mDNS. A cps-agent on a packing PC or router registers with the server; the server dials the agent to reach its USB printers.</desc>
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker>
+        </defs>
+
+        <!-- clients -->
+        <rect class="box" x="20" y="40" width="200" height="96" rx="10"/>
+        <text class="t" x="36" y="70">Business systems</text>
+        <text class="ts" x="36" y="94">ERP · WMS · OMS</text>
+        <text class="tm" x="36" y="118">Bearer token</text>
+
+        <rect class="box" x="20" y="176" width="200" height="96" rx="10"/>
+        <text class="t" x="36" y="206">Operators</text>
+        <text class="ts" x="36" y="230">browser /ui/ · cpsctl</text>
+        <text class="tm" x="36" y="254">admin key</text>
+
+        <!-- server -->
+        <rect class="core" x="320" y="24" width="280" height="320" rx="12"/>
+        <text class="ta" x="336" y="54">cps server</text>
+        <text class="ts" x="336" y="74">one binary · config.json</text>
+        <rect class="inner" x="336" y="88" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="106" style="font-size:14px">REST API · operator panel</text>
+        <text class="tm" x="348" y="124">:8080  /api/v1  /ui/</text>
+        <rect class="inner" x="336" y="136" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="154" style="font-size:14px">Dispatch queue</text>
+        <text class="ts" x="348" y="172">idempotent per external_id</text>
+        <rect class="inner" x="336" y="184" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="202" style="font-size:14px">Status poller</text>
+        <text class="ts" x="348" y="220">a usable flag for every printer</text>
+        <rect class="inner" x="336" y="232" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="250" style="font-size:14px">Converter</text>
+        <text class="ts" x="348" y="268">PDF · PNG · JPEG → printer language</text>
+        <rect class="inner" x="336" y="280" width="248" height="44" rx="6"/>
+        <text class="t" x="348" y="298" style="font-size:14px">SQLite  cps.db</text>
+        <text class="ts" x="348" y="316">jobs · tokens · agents</text>
+
+        <!-- network printers -->
+        <rect class="box" x="700" y="24" width="260" height="200" rx="10"/>
+        <text class="t" x="716" y="54">Network printers</text>
+        <text class="ts" x="716" y="84">Label · Zebra / ZPL</text><text class="tm" x="944" y="84" text-anchor="end">:9100</text>
+        <text class="ts" x="716" y="112">Receipt · ESC/POS</text><text class="tm" x="944" y="112" text-anchor="end">:9100</text>
+        <text class="ts" x="716" y="140">Office · IPP</text><text class="tm" x="944" y="140" text-anchor="end">:631</text>
+        <text class="ts" x="716" y="168">Office · PCL / PostScript</text><text class="tm" x="944" y="168" text-anchor="end">:9100</text>
+        <text class="ts" x="716" y="196">Inkjet · Epson ESC/P-R</text><text class="tm" x="944" y="196" text-anchor="end">:9100</text>
+
+        <!-- agent and USB -->
+        <rect class="box" x="430" y="400" width="250" height="96" rx="10"/>
+        <text class="t" x="446" y="430">cps-agent</text>
+        <text class="ts" x="446" y="454">packing PC · ASUS router</text>
+        <text class="tm" x="446" y="478">Windows · Linux · Asuswrt</text>
+
+        <rect class="box" x="760" y="400" width="200" height="96" rx="10"/>
+        <text class="t" x="776" y="430">USB printers</text>
+        <text class="ts" x="776" y="454">label · receipt · office</text>
+        <text class="tm" x="776" y="478">plugged into the agent</text>
+
+        <!-- edges -->
+        <path class="edge" d="M220 88 H316" marker-end="url(#ah)"/>
+        <text class="lbl" x="268" y="80" text-anchor="middle">jobs · status</text>
+        <path class="edge" d="M220 224 H316" marker-end="url(#ah)"/>
+        <text class="lbl" x="268" y="216" text-anchor="middle">manage</text>
+
+        <path class="edge" d="M600 100 H696" marker-end="url(#ah)"/>
+        <text class="lbl" x="648" y="92" text-anchor="middle">print · status</text>
+
+        <path class="edge dash" d="M600 300 H830 V228" marker-end="url(#ah)"/>
+        <text class="lbl" x="715" y="292" text-anchor="middle">mDNS discovery · 5353/udp</text>
+
+        <path class="edge" d="M500 344 V396" marker-end="url(#ah)"/>
+        <text class="lbl" x="492" y="376" text-anchor="end">dials :19100+</text>
+        <path class="edge" d="M600 400 V348" marker-end="url(#ah)"/>
+        <text class="lbl" x="608" y="376">registers · heartbeat :8080</text>
+
+        <path class="edge" d="M680 448 H756" marker-end="url(#ah)"/>
+        <text class="lbl" x="718" y="440" text-anchor="middle">USB</text>
+      </svg>
+    </div>
+
+    <h3 style="margin-top:36px">The life of a job</h3>
+    <div class="flow">
+      <div class="step"><b>Submit</b><code>POST /api/v1/jobs</code> with your <code>external_id</code>. Sending the same id again returns the same job.</div>
+      <div class="step"><b>Queue</b>Jobs wait in a per-printer queue that survives restarts. A printer that is not <code>usable</code> holds its jobs and doesn't lose them.</div>
+      <div class="step"><b>Send</b>CPS converts the document if needed and writes it to the printer once. Once the bytes have left, it never retries on its own.</div>
+      <div class="step"><b>Result</b>
+        <span class="end">
+          <span><span class="pill ok">printed</span> the printer confirmed it</span>
+          <span><span class="pill warn">sent_unknown</span> sent, not confirmed: a person decides, so nothing prints twice</span>
+          <span><span class="pill bad">failed</span> it did not print; the reason is given</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quick-start">
+  <div class="wrap">
+    <h2>Quick start</h2>
+    <p class="sub">For a Linux machine on the same LAN as the printers. You need Docker, or Go 1.26+ to build from source. About five minutes.</p>
+
+    <ol class="steps">
+      <li>
+        <h3>Write a config</h3>
+        <p>Generate an admin key with <code>openssl rand -hex 24</code> and list your network printers. Everything else has a working default.</p>
+<pre><code><span class="c">// config.json</span>
+{
+  "addr": ":8080",
+  "api_keys": {
+    "PASTE-YOUR-ADMIN-KEY": { "client_id": "ops", "role": "admin" }
+  },
+  "printers": [
+    { "printer_id": "wh1-pack-01", "name": "Packing station 1", "site": "wh1",
+      "driver": "zebra9100", "host": "192.168.10.21", "port": 9100, "enabled": true }
+  ],
+  "discovery": { "enabled": true, "site": "wh1" }
+}</code></pre>
+      </li>
+
+      <li>
+        <h3>Start the server</h3>
+        <p>One container. The volume holds jobs, tokens and agent credentials. <code>--network host</code> lets discovery see the printers' mDNS; without discovery, <code>-p 8080:8080</code> is enough.</p>
+<pre><code>git clone https://github.com/OWNER/cloud-print-service.git
+cd cloud-print-service
+docker build -f server/Dockerfile -t cps .
+chmod 644 config.json
+docker run -d --name cps --restart unless-stopped --network host \
+  -v "$PWD/config.json:/etc/cps/config.json:ro" \
+  -v cps-data:/var/lib/cps \
+  cps</code></pre>
+        <details class="alt">
+          <summary>Without Docker: build the binary</summary>
+<pre><code>go build -o cps    ./server/cmd/cps
+go build -o cpsctl ./server/cmd/cpsctl
+sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei   <span class="c"># PDF conversion</span>
+./cps -config config.json</code></pre>
+          <p>For a systemd service and HTTPS behind Caddy or nginx, see the <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">install guide</a>.</p>
+        </details>
+      </li>
+
+      <li>
+        <h3>Check it</h3>
+        <p>Open <code>http://&lt;server&gt;:8080/ui/</code> and log in with the admin key. Printers found by discovery wait under <b>Discovery</b> for you to adopt them. From a shell:</p>
+<pre><code>curl http://&lt;server&gt;:8080/healthz                       <span class="c"># 200 OK</span>
+<span class="c"># the admin CLI ships in the image; the steps below use this alias</span>
+alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KEY=&lt;admin-key&gt; cps cpsctl'
+cpsctl printers                                         <span class="c"># each printer, usable or why not</span></code></pre>
+      </li>
+
+      <li>
+        <h3>Give your business system a token</h3>
+        <p>Each system gets its own token. It is shown once and stored hashed, and it can be rotated or revoked at any time.</p>
+<pre><code>cpsctl token issue --client-id wms --ttl 365d</code></pre>
+      </li>
+
+      <li>
+        <h3>Print</h3>
+        <p>Send ZPL as text, or any other format as base64. Use your own document id as <code>external_id</code>.</p>
+<pre><code>curl -X POST http://&lt;server&gt;:8080/api/v1/jobs \
+  -H "Authorization: Bearer $WMS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"printer_id":"wh1-pack-01","external_id":"SO-10042-label",
+       "zpl":"^XA^FO50,50^A0N,50,50^FDHello CPS^FS^XZ"}'
+
+<span class="c"># a PDF to an office printer: CPS converts it if the printer can't take PDF</span>
+curl -X POST http://&lt;server&gt;:8080/api/v1/jobs \
+  -H "Authorization: Bearer $WMS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"printer_id":"hq-office-01","external_id":"INV-2026-0042","format":"pdf",
+       "payload_base64":"'"$(base64 &lt; invoice.pdf | tr -d '\n')"'"}'
+
+curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;server&gt;:8080/api/v1/jobs/&lt;job_id&gt;</code></pre>
+        <p>The full API is browsable at <code>http://&lt;server&gt;:8080/docs/</code> on your server.</p>
+      </li>
+
+      <li>
+        <h3>Add USB printers (optional)</h3>
+        <p>Make a one-time enrollment token on the server, then start the agent on the PC or router with that printer. The printer appears in the panel within about 30 seconds.</p>
+<pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
+        <p>On the PC, take <code>cps-agent</code> from the release: on Windows, either <code>cps-agent-gui.exe</code> (enter the server address and token) or a service:</p>
+<pre><code><span class="c">:: Windows, Administrator command prompt</span>
+set CPS_AGENT_SERVER=http://&lt;server&gt;:8080
+cps-agent.exe -enroll &lt;token&gt; -id pc7 -site wh1 -install
+
+<span class="c"># Linux</span>
+CPS_AGENT_SERVER=http://&lt;server&gt;:8080 cps-agent -enroll &lt;token&gt; -id pc7 -site wh1 \
+  -config /etc/cps-agent/agent.json</code></pre>
+        <p>On an ASUS router or AiMesh node, use the koolshare plugin or the <code>/jffs</code> package over SSH. The steps for each are in the <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md#5-install-the-agent-usb-printers">install guide</a>.</p>
+      </li>
+    </ol>
+
+    <div class="callout"><b>No printers yet?</b> Run <code>go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render</code> and start the server with <code>server/config.example.json</code>. The labels you print show up as images at <code>http://localhost:19200</code>.</div>
+
+    <h3 style="margin-top:36px">Network ports</h3>
+    <div class="table">
+      <table>
+        <tr><th>From</th><th>To</th><th>Port</th><th>Why</th></tr>
+        <tr><td>business systems, browsers</td><td>server</td><td><code>8080</code></td><td>API and panel</td></tr>
+        <tr><td>server</td><td>network printers</td><td><code>9100</code> / <code>631</code></td><td>print data and status (raw / IPP)</td></tr>
+        <tr><td>server</td><td>agent PCs</td><td><code>19100+</code></td><td>one port per USB printer; allow it in the PC's firewall</td></tr>
+        <tr><td>agent PCs</td><td>server</td><td><code>8080</code></td><td>registration and heartbeats</td></tr>
+        <tr><td>server</td><td>LAN multicast</td><td><code>5353/udp</code></td><td>optional mDNS discovery</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="printers">
+  <div class="wrap">
+    <h2>Supported printers</h2>
+    <p class="sub">The <code>driver</code> tells CPS how to talk to a printer. Every printer also takes PDF, PNG and JPEG: CPS converts them when the printer can't print them directly.</p>
+    <div class="table">
+      <table>
+        <tr><th>Printer</th><th><code>driver</code></th><th>Status from</th><th>Prints directly</th></tr>
+        <tr><td>Zebra and ZPL label printers</td><td><code>zebra9100</code></td><td>printer status query, paper and ribbon</td><td>ZPL</td></tr>
+        <tr><td>ESC/POS receipt printers (Epson TM, Xprinter…)</td><td><code>escpos9100</code></td><td>real-time status</td><td>ESC/POS</td></tr>
+        <tr><td>Office printers with IPP (most network lasers and inkjets)</td><td><code>ipp</code></td><td>printer state and the job's own record</td><td>what the printer reports (PDF, JPEG, URF…)</td></tr>
+        <tr><td>Office printers on JetDirect</td><td><code>pdl9100</code></td><td>PJL</td><td>PCL, PostScript</td></tr>
+        <tr><td>Epson inkjets without IPP (EcoTank L-series)</td><td><code>escpr9100</code></td><td>reachability only</td><td>ESC/P-R, colour, A4</td></tr>
+        <tr><td>Any of the above on USB</td><td>via <code>cps-agent</code></td><td>as above, detected from the USB device id</td><td>as above</td></tr>
+      </table>
+    </div>
+    <p class="alt" style="margin-top:14px">Not supported: "host-based" printers that only work with their maker's PC driver, such as Canon CAPT lasers (LBP series) and some low-end GDI models. Look for IPP/AirPrint, PCL or PostScript in the spec sheet. Status of each printer family: <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>.</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">Install guide</a>
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/DESIGN.md">Design &amp; API contract</a>
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/RUNBOOK.md">Runbook</a>
+      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">Status</a>
+      <a href="https://github.com/OWNER/cloud-print-service">Source</a>
+    </div>
+    <p>Cloud Print Service prints documents; it does not lay them out. Your business system stays in charge of the content.</p>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll("[data-lang]").forEach(function (a) {
+    a.addEventListener("click", function () { try { localStorage.setItem("cps-lang", a.dataset.lang); } catch (e) {} });
+  });
+</script>
+</body>
+</html>
