@@ -1,0 +1,158 @@
+# Cloud Print Service (CPS): integration and deployment guide for agents
+
+> One file with what an AI agent needs to integrate a business system with CPS, or to deploy it. The authoritative API contract is the OpenAPI spec served by every CPS server at `/openapi.yaml` (source: https://raw.githubusercontent.com/kucial/cloud-print-service/main/server/internal/httpapi/openapi.yaml). When this file and the spec disagree, the spec wins.
+
+## 1. What CPS is (and is not)
+
+- A print gateway on the warehouse LAN. Business systems own the content (they render ZPL, or produce a PDF/PNG); CPS owns fleet visibility and safe dispatch.
+- It does not lay out documents or templates. Send it a finished label or document.
+- Components:
+  - `cps`: the server. HTTP API, operator panel at `/ui/`, per-printer queues, status polling, document conversion, SQLite store (`cps.db`).
+  - `cpsctl`: admin CLI (tokens, agents, printers, diagnostics). Env: `CPSCTL_URL`, `CPSCTL_ADMIN_KEY`.
+  - `cps-agent`: runs on a PC or ASUS router that has USB printers; makes them reachable by the server.
+  - `vprint`: virtual printer for tests (real ZPL/ESC/POS/IPP/PJL sockets, renders labels to PNG, fault injection).
+
+## 2. Auth
+
+- Every request: `Authorization: Bearer <token>`.
+- Two roles: `client` (business systems: print, read status, own jobs) and `admin` (everything, including tokens, agents, discovery, previews).
+- Admin bootstrap keys live in the server config (`api_keys`). Business systems should get issued tokens: `cpsctl token issue --client-id wms --ttl 365d` (secret shown once; stored hashed; `cpsctl token rotate|revoke <token-id>`).
+- Jobs are scoped to the calling client. Another client's `job_id` returns 404.
+
+## 3. Choosing a printer
+
+`GET /api/v1/printers/status` returns the whole fleet in one call (`?ids=a,b,c` to narrow). Per printer:
+
+- `printer_id`, `name`, `site`, `driver`, `kind`, `formats`, `enabled`
+- `usable`: true when enabled, online and not in an error or consumable-out state. This is the field to branch on.
+- `queue_depth`
+- `status.state`: `idle|printing|busy|media_low|media_out|ribbon_out|head_error|error|offline|disabled|unknown`; `status.detail`, `status.observed_at`, `status.stale`
+
+Other reads: `GET /api/v1/printers` (`?site=&usable=`), `GET /api/v1/printers/{printer_id}`, `GET /api/v1/printers/{printer_id}/jobs`.
+
+By default a job for a printer that is not usable is accepted and waits in its queue. With `reject_when_not_usable: true` in the server config, submission fails with 409 `printer_not_usable` instead.
+
+## 4. Submitting a job
+
+`POST /api/v1/jobs` (JSON):
+
+| field | required | notes |
+|---|---|---|
+| `printer_id` | yes | |
+| `external_id` | yes | your business document id; the idempotency key (or send header `Idempotency-Key`) |
+| `zpl` | one of | ZPL as text |
+| `payload_base64` | one of | any format, base64 |
+| `format` | no | `zpl` (default), `escpos`, `pdf`, `png`, `jpeg`, `pcl`, `postscript`, `pwg`, `urf`, `escpr` |
+| `copies` | no | 1..`max_copies` (default limit 1000). ZPL: applied as `^PQ`; IPP: job attribute; others: sent that many times |
+| `page_copies` | no | ZPL only: per-label copy counts, e.g. `[4, 1]` |
+| `priority` | no | `normal` (default) or `high` |
+| `biz_ref`, `meta` | no | free text and string map, returned on reads |
+
+Responses: `202` queued; `200` replay (same client + `external_id` + same payload: returns the original job, `replayed: true`); `409 idempotency_conflict` (same `external_id`, different payload or copies).
+
+```bash
+curl -X POST "$CPS/api/v1/jobs" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"printer_id":"wh1-pack-01","external_id":"SO-10042-label","zpl":"^XA^FO50,50^A0N,50,50^FDHello^FS^XZ"}'
+# → 202 {"job_id":"…","state":"queued","printer_id":"wh1-pack-01","external_id":"SO-10042-label","replayed":false,"links":{"self":"/api/v1/jobs/…"}}
+```
+
+PDF/PNG/JPEG are converted for printers that do not take them directly (raster for label, receipt and inkjet printers, PCL/PostScript for JetDirect lasers). A format that cannot reach the printer returns 422 `format_not_supported`.
+
+Variants:
+- `POST /api/v1/jobs/raw?printer_id=…&external_id=…&format=pdf`: the document as the request body, no base64. The format may also come from `Content-Type` (`application/pdf`, `image/png`, `image/jpeg`).
+- `POST /api/v1/jobs/batch`: several jobs, each accepted or rejected on its own.
+
+Payload limit: `max_payload_bytes`, 32 MB by default.
+
+## 5. Job lifecycle
+
+```
+queued → sending → printed        printer confirmed it
+                 → sent_unknown   bytes reached the printer, no confirmation
+                 → failed         did not print (error before any byte was sent, or the printer reported the job failed)
+queued → cancelled                POST /api/v1/jobs/{job_id}/cancel, only before sending
+```
+
+Rules an integration must follow:
+
+1. Retrying the same request with the same `external_id` is always safe; it never prints twice.
+2. `failed`: safe to resubmit (a new `external_id`, or fix the cause first). `last_error` and `status_message` say why.
+3. `sent_unknown`: do not resubmit automatically. CPS cannot tell "printed, ack lost" from "did not print". Surface it to a person; after they look at the printer, `POST /api/v1/jobs/{job_id}/resolve` with `{"resolution":"printed"}` or `{"resolution":"failed"}`.
+4. `printed` with `status_message` "Sent; the printer cannot confirm printing": the printer has no status channel (e.g. Epson ESC/P-R inkjets); all bytes were delivered and the printer stayed reachable.
+
+Read state: `GET /api/v1/jobs/{job_id}` (fields include `state`, `state_detail`, `status_message`, `attempts`, `last_error`, `created_at`, `sent_at`, `finished_at`). Bulk: `GET /api/v1/jobs/status`. List: `GET /api/v1/jobs?printer_id=&state=&external_id=&limit=&cursor=`.
+
+Live updates (optional; polling is enough): `GET /api/v1/events?topics=printer.status,job.state` is a Server-Sent Events stream with `Authorization` header (browser `EventSource` cannot send it; use `fetch` and read the stream).
+
+## 6. Errors
+
+Envelope: `{"error":{"code":"…","reason":"…","message":"…","details":{…}}}`. Branch on `code`, and on `reason` for 422.
+
+| HTTP | code | meaning / action |
+|---|---|---|
+| 401 | `unauthorized` | missing or bad token |
+| 403 | `forbidden` | admin route with a client token |
+| 404 | `printer_not_found`, `job_not_found` | |
+| 409 | `idempotency_conflict` | same `external_id`, different payload: use a new id only if it is really a new document |
+| 409 | `printer_disabled` | an operator disabled the printer |
+| 409 | `printer_not_usable` | only with `reject_when_not_usable`; pick another printer |
+| 422 | `invalid_request` + `reason` | `missing_payload`, `duplicate_payload`, `invalid_base64`, `missing_printer_id`, `missing_external_id`, `invalid_copies`, `copies_conflict`, `invalid_format`, `format_not_supported`, `document_unreadable`, `pdf_conversion_unavailable`, `payload_too_large`, … |
+| 429 | `rate_limited` | per-client token bucket; back off |
+| 503 | `queue_full` | backpressure; honour `Retry-After` |
+
+## 7. Printer drivers
+
+| printer | `driver` | port | status | prints directly |
+|---|---|---|---|---|
+| Zebra / ZPL label | `zebra9100` | 9100 | `~HS` | ZPL |
+| ESC/POS receipt (Epson TM, Xprinter) | `escpos9100` | 9100 | DLE EOT | ESC/POS |
+| office printer with IPP | `ipp` | 631 | IPP printer and job state | what the printer reports (PDF, JPEG, URF, PWG…) |
+| office printer on JetDirect | `pdl9100` | 9100 | PJL | PCL, PostScript |
+| Epson inkjet without IPP (EcoTank L-series) | `escpr9100` | 9100 | reachability only | ESC/P-R (A4, 360 dpi) |
+| any of the above on USB | via `cps-agent` | agent dials 19100+ | as above | as above |
+
+Not supported: host-based printers that need the maker's PC driver (Canon CAPT LBP lasers, GDI-only models).
+
+## 8. Deploying the server
+
+Needs: a Linux host on the printers' LAN; Docker, or Go 1.26+.
+
+```json
+{
+  "addr": ":8080",
+  "api_keys": { "<openssl rand -hex 24>": { "client_id": "ops", "role": "admin" } },
+  "printers": [
+    { "printer_id": "wh1-pack-01", "name": "Packing station 1", "site": "wh1",
+      "driver": "zebra9100", "host": "192.168.10.21", "port": 9100, "enabled": true }
+  ],
+  "discovery": { "enabled": true, "site": "wh1" }
+}
+```
+
+```bash
+git clone https://github.com/kucial/cloud-print-service.git && cd cloud-print-service
+docker build -f server/Dockerfile -t cps .
+chmod 644 config.json      # the container runs as uid 10001
+docker run -d --name cps --restart unless-stopped --network host \
+  -v "$PWD/config.json:/etc/cps/config.json:ro" -v cps-data:/var/lib/cps cps
+curl http://localhost:8080/healthz      # 200
+```
+
+- Without Docker: `go build -o cps ./server/cmd/cps && go build -o cpsctl ./server/cmd/cpsctl`, then `./cps -config config.json`. Install `poppler-utils` (and fonts) for PDF conversion; the Docker image includes them.
+- Config lookup: `-config <path>`, then `$CPS_CONFIG`, then `./config.json`. Data: `$CPS_DATA_PATH` or `data_path`, default `cps.db`. `store_driver: memory` keeps nothing (tests only).
+- `--network host` is only needed for mDNS discovery; otherwise `-p 8080:8080`.
+- HTTPS: put a reverse proxy in front; it must not buffer `/api/v1/events` (Caddy `flush_interval -1`, nginx `proxy_buffering off`).
+- Network: clients → server 8080; server → printers 9100/631; server → agents 19100+; agents → server 8080; mDNS 5353/udp.
+
+USB printers: on the server `cpsctl agent enroll --id pc7 --site wh1 --ttl 24h` (one-time token); on the PC `CPS_AGENT_SERVER=http://<server>:8080 cps-agent -enroll <token> -id pc7 -site wh1` (Windows: add `-install` for a service, or use `cps-agent-gui.exe`). ASUS routers: koolshare plugin or the `/jffs` package (see INSTALL.md §5).
+
+Checks: `cpsctl status`, `cpsctl printers` (each printer, usable or why not), `cpsctl diag <printer_id>`, `cpsctl test <printer_id>`.
+
+## 9. Testing without hardware
+
+```bash
+go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render -render-dir /tmp/labels   # printers on :19100+, gallery on :19200
+cp server/config.example.json config.json && go run ./server/cmd/cps -config config.json
+```
+
+The example config points `sim-pack-01` at the virtual printer. Fault injection: `POST http://localhost:19200/control` with `{"state":"media_out"}`, `{"offline":true}`, `{"close_on_print":true}`, `{"state":"always_printing"}` (jobs end `sent_unknown`).

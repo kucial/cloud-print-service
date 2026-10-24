@@ -1,0 +1,29 @@
+# Cloud Print Service (CPS)
+
+> Self-hosted print gateway between business systems (ERP/WMS/OMS) and warehouse printers: Zebra/ZPL label printers, ESC/POS receipt printers, and office printers (IPP, PCL/PostScript over JetDirect, Epson ESC/P-R inkjets), on the network or on USB through an edge agent. One Go binary (`cps`) plus a JSON config; HTTP API under `/api/v1`, Bearer-token auth, idempotent job submission keyed by the caller's `external_id`, and a fleet status endpoint with a per-printer `usable` flag.
+
+Key facts for an agent integrating with or deploying CPS:
+
+- Submit: `POST /api/v1/jobs` with `printer_id`, `external_id` and either `zpl` (text) or `payload_base64` + `format` (`zpl|escpos|pdf|png|jpeg|pcl|postscript|pwg|urf|escpr`). 202 = queued, 200 = replay of the same `external_id`. CPS converts PDF/PNG/JPEG to the printer's language.
+- Never resubmit a job in `sent_unknown` under a new `external_id`: bytes reached the printer but printing was not confirmed. A human resolves it with `POST /api/v1/jobs/{job_id}/resolve` (`printed` or `failed`). `failed` means nothing printed and it is safe to resubmit.
+- Check `GET /api/v1/printers/status` (`usable: true|false`) before choosing a printer.
+- On the server you are talking to, the live contract is at `/openapi.yaml` (and `/openapi.json`); interactive docs at `/docs/`.
+
+## Docs
+
+- [Integration guide for agents (full)](llms-full.txt): auth, endpoints, job lifecycle, errors, examples, deploy steps, in one file
+- [OpenAPI spec](https://raw.githubusercontent.com/kucial/cloud-print-service/main/server/internal/httpapi/openapi.yaml): the authoritative API contract
+- [Install guide](https://raw.githubusercontent.com/kucial/cloud-print-service/main/docs/INSTALL.md): server, config, Docker, systemd, HTTPS, agents on Windows/Linux/ASUS routers
+- [Design](https://raw.githubusercontent.com/kucial/cloud-print-service/main/docs/DESIGN.md): state machine, failure policy, driver model (some limits in it are older than the OpenAPI spec; the spec wins)
+- [Runbook](https://raw.githubusercontent.com/kucial/cloud-print-service/main/docs/RUNBOOK.md): operating and troubleshooting a site
+- [Status](https://raw.githubusercontent.com/kucial/cloud-print-service/main/docs/STATUS.md): what is built, verified on real hardware, and still missing
+
+## Contributing
+
+- [AGENTS.md](https://raw.githubusercontent.com/kucial/cloud-print-service/main/AGENTS.md): repository layout, build and test commands, and rules for coding agents changing this codebase
+
+## Optional
+
+- [Project page (English)](https://kucial.github.io/cloud-print-service/): use cases, architecture chart, quick start
+- [项目主页（简体中文）](https://kucial.github.io/cloud-print-service/zh/)
+- [Source](https://github.com/kucial/cloud-print-service)
