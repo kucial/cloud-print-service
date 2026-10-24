@@ -9,6 +9,7 @@
 <link rel="alternate" hreflang="zh-Hans" href="zh/">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="stylesheet" href="style.css">
+<link rel="alternate" type="text/plain" title="llms.txt" href="llms.txt">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f6feb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9V2h12v7'/%3E%3Crect x='2' y='9' width='20' height='9' rx='2'/%3E%3Cpath d='M6 14h12v8H6z'/%3E%3C/svg%3E">
 <script>
   // First visit from a Chinese-language browser: offer the zh-Hans page. A choice made
@@ -31,6 +32,7 @@
       <a href="#how">How it works</a>
       <a href="#quick-start">Quick start</a>
       <a href="#printers">Printers</a>
+      <a href="#ai-agents">For AI agents</a>
       <a href="https://github.com/kucial/cloud-print-service">GitHub</a>
     </nav>
     <div class="lang" role="navigation" aria-label="Language">
@@ -331,6 +333,29 @@ CPS_AGENT_SERVER=http://&lt;server&gt;:8080 cps-agent -enroll &lt;token&gt; -id 
       </table>
     </div>
     <p class="alt" style="margin-top:14px">Not supported: "host-based" printers that only work with their maker's PC driver, such as Canon CAPT lasers (LBP series) and some low-end GDI models. Look for IPP/AirPrint, PCL or PostScript in the spec sheet. Status of each printer family: <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>.</p>
+  </div>
+</section>
+
+<section id="ai-agents">
+  <div class="wrap">
+    <h2>For AI agents</h2>
+    <p class="sub">Point a coding agent (Claude, Cursor, Copilot…) at these plain-text files. With them it can wire a business system to CPS or deploy it, without reading the whole repository.</p>
+    <div class="grid">
+      <a class="card" href="llms.txt">
+        <h3><code>llms.txt</code></h3>
+        <p>A short index of the docs in the standard llms.txt format, plus the four rules an integration must not break.</p>
+      </a>
+      <a class="card" href="llms-full.txt">
+        <h3><code>llms-full.txt</code></h3>
+        <p>The whole integration guide in one file: auth, endpoints, job lifecycle, error codes, printer drivers, deployment.</p>
+      </a>
+      <a class="card" href="https://github.com/kucial/cloud-print-service/blob/main/AGENTS.md">
+        <h3><code>AGENTS.md</code></h3>
+        <p>For agents changing this codebase: layout, the checks CI runs, and the rules that keep labels from printing twice.</p>
+      </a>
+    </div>
+<pre><code><span class="c"># e.g. in Claude Code</span>
+Read https://kucial.github.io/cloud-print-service/llms-full.txt and add label printing to our WMS through CPS.</code></pre>
   </div>
 </section>
 

@@ -9,6 +9,7 @@
 <link rel="alternate" hreflang="zh-Hans" href="./">
 <link rel="alternate" hreflang="x-default" href="../">
 <link rel="stylesheet" href="../style.css">
+<link rel="alternate" type="text/plain" title="llms.txt" href="../llms.txt">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f6feb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9V2h12v7'/%3E%3Crect x='2' y='9' width='20' height='9' rx='2'/%3E%3Cpath d='M6 14h12v8H6z'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -24,6 +25,7 @@
       <a href="#how">工作原理</a>
       <a href="#quick-start">快速部署</a>
       <a href="#printers">支持的打印机</a>
+      <a href="#ai-agents">AI 智能体</a>
       <a href="https://github.com/kucial/cloud-print-service">GitHub</a>
     </nav>
     <div class="lang" role="navigation" aria-label="语言">
@@ -319,6 +321,29 @@ CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080 cps-agent -enroll &lt;令牌&gt; 
       </table>
     </div>
     <p class="alt" style="margin-top:14px">不支持：只能依靠厂商电脑驱动工作的“主机型”打印机，例如佳能 CAPT 激光机（LBP 系列）和部分低端 GDI 机型。选购时请确认规格表里有 IPP/AirPrint、PCL 或 PostScript。各类打印机的验证情况见 <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>。</p>
+  </div>
+</section>
+
+<section id="ai-agents">
+  <div class="wrap">
+    <h2>供 AI 智能体使用</h2>
+    <p class="sub">把这些纯文本文件交给编程智能体（Claude、Cursor、Copilot 等），它无需通读整个仓库，就能把业务系统接入云打印服务或完成部署。</p>
+    <div class="grid">
+      <a class="card" href="../llms.txt">
+        <h3><code>llms.txt</code></h3>
+        <p>按 llms.txt 标准格式整理的文档索引，以及集成时必须遵守的四条规则。</p>
+      </a>
+      <a class="card" href="../llms-full.txt">
+        <h3><code>llms-full.txt</code></h3>
+        <p>完整的集成指南，一个文件讲清：认证、接口、任务生命周期、错误码、打印机驱动、部署。</p>
+      </a>
+      <a class="card" href="https://github.com/kucial/cloud-print-service/blob/main/AGENTS.md">
+        <h3><code>AGENTS.md</code></h3>
+        <p>面向修改本仓库代码的智能体：目录结构、CI 检查项，以及杜绝重复打印的规则。</p>
+      </a>
+    </div>
+<pre><code><span class="c"># 例如在 Claude Code 中</span>
+阅读 https://kucial.github.io/cloud-print-service/llms-full.txt，通过 CPS 为我们的 WMS 加上标签打印。</code></pre>
   </div>
 </section>
 

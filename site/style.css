@@ -116,6 +116,10 @@ h3 { font-size: 18px; margin: 0 0 6px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
 .card p { margin: 0; color: var(--muted); font-size: 15px; }
 .card .icon { width: 36px; height: 36px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; margin-bottom: 12px; }
+a.card { display: block; color: inherit; transition: border-color .15s; }
+a.card:hover { text-decoration: none; border-color: var(--accent); }
+a.card h3 code { color: var(--accent); background: none; padding: 0; font-size: 17px; }
+#ai-agents pre { margin-top: 16px; white-space: pre-wrap; }
 .card .tag { display: inline-block; margin-top: 12px; font: 12px var(--mono); color: var(--muted); background: var(--surface-2); padding: 2px 8px; border-radius: 4px; }
 
 /* diagram */
