@@ -60,6 +60,14 @@ To restore, stop the server, put the backup in place as `cps.db` (removing any
 
 ## 2. Install the server
 
+### Download
+
+Each GitHub release (<https://github.com/kucial/cloud-print-service/releases>, tags `v*`)
+has `cps-<version>-<os>-<arch>` archives with `cps`, `cpsctl` and `config.example.json`, for
+Linux, macOS and Windows, plus `SHA256SUMS`. The server image is
+`ghcr.io/kucial/cloud-print-service:<version>` (or `:latest`), for linux/amd64 and
+linux/arm64; use it in place of `docker build` below. Or build it yourself:
+
 ### Build
 
 The server is built from source (Go 1.26 or newer). From the repository root:
@@ -282,9 +290,11 @@ The API is described at `http://<server>:8080/docs/` (OpenAPI at `/openapi.yaml`
 
 ## 5. Install the agent (USB printers)
 
-Get `cps-agent` from the CI build: a tag like `agent-v0.2.0` publishes a release with
-Windows and Linux archives and `SHA256SUMS`; a manual run of the `release-agent` workflow
-leaves the same files as a workflow artifact.
+Get `cps-agent` from a release: on GitHub, every `v*` release carries
+`cps-agent-<version>-<os>-<arch>` archives for Windows and Linux and the two ASUS router
+packages, with `SHA256SUMS`. On the Gitea mirror, a tag like `agent-v0.2.0` publishes the
+agent files the same way. A manual run of either release workflow leaves the files as a
+workflow artifact. All of them are built by `packaging/release.sh`.
 
 The agent serves label, receipt and office printers. It tells them apart by the
 printer's USB device id (maker, model, command set): a Zebra is confirmed with `~HI`, a

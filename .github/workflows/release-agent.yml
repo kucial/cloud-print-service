@@ -1,6 +1,6 @@
 name: release-agent
 
-# Builds cps-agent for packing PCs. Push a tag like `agent-v0.2.0` to publish a Gitea
+# Builds cps-agent for packing PCs (packaging/release.sh). Push a tag like `agent-v0.2.0` to publish a Gitea
 # release; run it manually to get the same files as a workflow artifact only.
 #
 # The release is created through the Gitea API with the job token. If that token lacks
@@ -20,6 +20,8 @@ env:
 jobs:
   release:
     name: build and publish
+    # Gitea only: on GitHub, release.yml publishes (tags v*) through GitHub's own API.
+    if: github.server_url != 'https://github.com'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,58 +41,7 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           command -v zip >/dev/null || { apt-get update -qq && apt-get install -y -qq zip >/dev/null; }
 
-          mkdir -p dist
-          for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
-            goos="${target%/*}"; goarch="${target#*/}"
-            ext=""; [[ "$goos" == windows ]] && ext=".exe"
-            name="cps-agent-${version}-${goos}-${goarch}"
-            mkdir -p "dist/$name"
-            GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build -trimpath \
-              -ldflags="-s -w -X main.version=${version}" \
-              -o "dist/$name/cps-agent${ext}" ./agent/cmd/cps-agent
-            gui=()
-            if [[ "$goos" == windows ]]; then
-              # Desktop build: tray icon and a local page for the server address and token.
-              GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build -trimpath -tags gui \
-                -ldflags="-H=windowsgui -s -w -X main.version=${version}" \
-                -o "dist/$name/cps-agent-gui.exe" ./agent/cmd/cps-agent
-              gui=(
-                "Desktop (no command line): double-click cps-agent-gui.exe, enter the server" \
-                "address and a one-time token in the page that opens. A tray icon shows the" \
-                "status; right-click it for Start at login. Use either this or the service below," \
-                "not both." \
-                "" \
-                "Service:"
-              )
-            fi
-            printf '%s\n' \
-              "cps-agent ${version} (${goos}/${goarch})" \
-              "" \
-              ${gui[@]+"${gui[@]}"} \
-              "1. On the server:  cpsctl agent enroll --site <site> --id <pc-name>   -> one-time token" \
-              "2. On this PC, from an elevated prompt:" \
-              "     set CPS_AGENT_SERVER=http://<server>:8080" \
-              "     cps-agent.exe -enroll <token> -site <site> -install" \
-              "   Config and credential: %ProgramData%\\cps-agent\\agent.json" \
-              "   Log:                   %ProgramData%\\cps-agent\\agent.log" \
-              "3. Remove:         cps-agent.exe -uninstall" \
-              > "dist/$name/README.txt"
-            if [[ "$goos" == windows ]]; then
-              (cd dist && zip -qr "$name.zip" "$name")
-            else
-              tar -C dist -czf "dist/$name.tar.gz" "$name"
-            fi
-            rm -rf "dist/$name"
-          done
-          # Koolshare software center package for ASUS routers. The installer takes the
-          # module name from the file name up to the first "-", so the version can follow.
-          packaging/koolshare/build.sh "$version"
-          mv dist/cpsagent.tar.gz "dist/cpsagent-${version}.tar.gz"
-          # The same agent for ASUS routers and AiMesh nodes without koolshare.
-          packaging/asuswrt/build.sh "$version"
-          mv dist/cps-agent-asuswrt.tar.gz "dist/cps-agent-${version}-asuswrt.tar.gz"
-          (cd dist && sha256sum * > SHA256SUMS)
-          ls -l dist
+          packaging/release.sh "$version"
 
       - uses: actions/upload-artifact@v4
         with:
