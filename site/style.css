@@ -152,8 +152,9 @@ svg .lblbg { fill: var(--surface); }
 .steps > li::before {
   counter-increment: qs; content: counter(qs);
   width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
-  display: grid; place-items: center; font-weight: 700; font-size: 15px; grid-row: span 3;
+  display: grid; place-items: center; font-weight: 700; font-size: 15px; grid-row: 1;
 }
+.steps > li > * { grid-column: 2; }
 .steps p { margin: 0 0 10px; color: var(--muted); }
 pre {
   margin: 0 0 10px; background: var(--code-bg); color: var(--code-text);
