@@ -7,6 +7,7 @@ import {
   Candidate,
   TokenItem,
   IssuedTokenResponse,
+  AgentEnrollResponse,
   JobAttempt,
   RenderPreviewMeta,
 } from './types';
@@ -178,6 +179,8 @@ export const api = {
   rotateToken: (id: string) =>
     request<IssuedTokenResponse>(`/admin/tokens/${id}/rotate`, { method: 'POST' }),
   revokeToken: (id: string) => request(`/admin/tokens/${id}`, { method: 'DELETE' }),
+  enrollAgent: (body: { agent_id: string; site?: string; ttl?: string }) =>
+    request<AgentEnrollResponse>('/admin/agents/enroll', { method: 'POST', body }),
 
   renderPreview: async (body: {
     zpl: string;

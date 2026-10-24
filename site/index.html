@@ -269,7 +269,7 @@ cpsctl printers                                         <span class="c"># each p
 
       <li>
         <h3>Give your business system a token</h3>
-        <p>Each system gets its own token. It is shown once and stored hashed, and it can be rotated or revoked at any time.</p>
+        <p>Each system gets its own token. It is shown once and stored hashed, and it can be rotated or revoked at any time. Issue it in the panel under <b>Tokens</b>, or from a shell:</p>
 <pre><code>cpsctl token issue --client-id wms --ttl 365d</code></pre>
       </li>
 
@@ -293,7 +293,7 @@ curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;server&gt;:8080/api/v1/job
 
       <li>
         <h3>Add USB printers (optional)</h3>
-        <p>Make a one-time enrollment token on the server, then start the agent on the PC or router with that printer. The printer appears in the panel within about 30 seconds.</p>
+        <p>Make a one-time enrollment token, then start the agent on the PC or router with that printer. The printer appears in the panel within about 30 seconds. In the panel, <b>Agents → Enroll agent</b> makes the token and shows the exact command for each kind of host. From a shell:</p>
 <pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
         <p>On the PC, take <code>cps-agent</code> from the release: on Windows, either <code>cps-agent-gui.exe</code> (enter the server address and token) or a service:</p>
 <pre><code><span class="c">:: Windows, Administrator command prompt</span>

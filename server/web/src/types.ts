@@ -163,6 +163,15 @@ export interface TokenItem {
   uses: number;
 }
 
+export interface AgentEnrollResponse {
+  token: string;
+  agent_id: string;
+  prefix: string;
+  expires?: string;
+  enroll: string;
+  warning?: string;
+}
+
 export interface IssuedTokenResponse {
   id: string;
   client_id: string;

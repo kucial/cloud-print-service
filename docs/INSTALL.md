@@ -272,7 +272,8 @@ from it, and are learned from the printer where it can say.
 
 ## 4. Credentials for business systems
 
-Issue each business system its own token, and give it to that system once:
+Issue each business system its own token, and give it to that system once, in the panel
+under **Tokens** or with `cpsctl`:
 
 ```bash
 cpsctl token issue --client-id wms --ttl 365d     # the secret is shown once
@@ -302,7 +303,8 @@ receipt printer (ESC/POS) and an office printer (PCL/PostScript) are asked in th
 language. Each appears on the server with its driver, kind and formats. Host-based
 inkjets that need a vendor driver to render pages cannot be served.
 
-On the server side, each agent needs a one-time enrollment token:
+On the server side, each agent needs a one-time enrollment token. In the panel, **Agents →
+Enroll agent** makes one and shows the command for each kind of host; or with `cpsctl`:
 
 ```bash
 cpsctl agent enroll --id pc7 --site wh1 --ttl 24h    # usable once

@@ -257,7 +257,7 @@ cpsctl printers                                         <span class="c"># 每台
 
       <li>
         <h3>为业务系统签发令牌</h3>
-        <p>每个系统一个独立令牌。令牌只显示一次，服务端只保存其哈希，可随时轮换或吊销。</p>
+        <p>每个系统一个独立令牌。令牌只显示一次，服务端只保存其哈希，可随时轮换或吊销。可在面板的 <b>访问令牌</b> 页签中签发，也可用命令行：</p>
 <pre><code>cpsctl token issue --client-id wms --ttl 365d</code></pre>
       </li>
 
@@ -281,7 +281,7 @@ curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;服务器&gt;:8080/api/v1/
 
       <li>
         <h3>接入 USB 打印机（可选）</h3>
-        <p>先在服务端生成一次性注册令牌，再在连着打印机的电脑或路由器上启动代理。约 30 秒后，打印机就会出现在面板里。</p>
+        <p>先生成一次性注册令牌，再在连着打印机的电脑或路由器上启动代理。约 30 秒后，打印机就会出现在面板里。在面板中点击 <b>边缘节点 → 注册代理</b>，即可生成令牌，并给出各类设备可直接粘贴的命令。命令行方式：</p>
 <pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
         <p>从发布页获取 <code>cps-agent</code>。Windows 上可以运行桌面版 <code>cps-agent-gui.exe</code>（填入服务器地址和令牌），也可以安装为系统服务：</p>
 <pre><code><span class="c">:: Windows，以管理员身份打开命令提示符</span>
