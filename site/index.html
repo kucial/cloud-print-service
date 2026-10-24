@@ -31,7 +31,7 @@
       <a href="#how">How it works</a>
       <a href="#quick-start">Quick start</a>
       <a href="#printers">Printers</a>
-      <a href="https://github.com/OWNER/cloud-print-service">GitHub</a>
+      <a href="https://github.com/kucial/cloud-print-service">GitHub</a>
     </nav>
     <div class="lang" role="navigation" aria-label="Language">
       <span aria-current="true">EN</span>
@@ -48,7 +48,7 @@
   <p class="lead">Your ERP or WMS sends a label, receipt or PDF with its own document id. Cloud Print Service turns it into the printer's language, delivers it once and only once, and tells you which printers are ready right now: Zebra label printers, receipt printers, office printers, on the network or on USB.</p>
   <div class="cta">
     <a class="btn primary" href="#quick-start">Deploy in 5 minutes</a>
-    <a class="btn" href="https://github.com/OWNER/cloud-print-service">View on GitHub</a>
+    <a class="btn" href="https://github.com/kucial/cloud-print-service">View on GitHub</a>
   </div>
   <ul class="facts">
     <li>One Go binary + one JSON file</li>
@@ -232,7 +232,7 @@
       <li>
         <h3>Start the server</h3>
         <p>One container. The volume holds jobs, tokens and agent credentials. <code>--network host</code> lets discovery see the printers' mDNS; without discovery, <code>-p 8080:8080</code> is enough.</p>
-<pre><code>git clone https://github.com/OWNER/cloud-print-service.git
+<pre><code>git clone https://github.com/kucial/cloud-print-service.git
 cd cloud-print-service
 docker build -f server/Dockerfile -t cps .
 chmod 644 config.json
@@ -246,7 +246,7 @@ docker run -d --name cps --restart unless-stopped --network host \
 go build -o cpsctl ./server/cmd/cpsctl
 sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei   <span class="c"># PDF conversion</span>
 ./cps -config config.json</code></pre>
-          <p>For a systemd service and HTTPS behind Caddy or nginx, see the <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">install guide</a>.</p>
+          <p>For a systemd service and HTTPS behind Caddy or nginx, see the <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">install guide</a>.</p>
         </details>
       </li>
 
@@ -295,7 +295,7 @@ cps-agent.exe -enroll &lt;token&gt; -id pc7 -site wh1 -install
 <span class="c"># Linux</span>
 CPS_AGENT_SERVER=http://&lt;server&gt;:8080 cps-agent -enroll &lt;token&gt; -id pc7 -site wh1 \
   -config /etc/cps-agent/agent.json</code></pre>
-        <p>On an ASUS router or AiMesh node, use the koolshare plugin or the <code>/jffs</code> package over SSH. The steps for each are in the <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md#5-install-the-agent-usb-printers">install guide</a>.</p>
+        <p>On an ASUS router or AiMesh node, use the koolshare plugin or the <code>/jffs</code> package over SSH. The steps for each are in the <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md#5-install-the-agent-usb-printers">install guide</a>.</p>
       </li>
     </ol>
 
@@ -330,7 +330,7 @@ CPS_AGENT_SERVER=http://&lt;server&gt;:8080 cps-agent -enroll &lt;token&gt; -id 
         <tr><td>Any of the above on USB</td><td>via <code>cps-agent</code></td><td>as above, detected from the USB device id</td><td>as above</td></tr>
       </table>
     </div>
-    <p class="alt" style="margin-top:14px">Not supported: "host-based" printers that only work with their maker's PC driver, such as Canon CAPT lasers (LBP series) and some low-end GDI models. Look for IPP/AirPrint, PCL or PostScript in the spec sheet. Status of each printer family: <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>.</p>
+    <p class="alt" style="margin-top:14px">Not supported: "host-based" printers that only work with their maker's PC driver, such as Canon CAPT lasers (LBP series) and some low-end GDI models. Look for IPP/AirPrint, PCL or PostScript in the spec sheet. Status of each printer family: <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>.</p>
   </div>
 </section>
 
@@ -339,11 +339,11 @@ CPS_AGENT_SERVER=http://&lt;server&gt;:8080 cps-agent -enroll &lt;token&gt; -id 
 <footer>
   <div class="wrap">
     <div class="links">
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">Install guide</a>
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/DESIGN.md">Design &amp; API contract</a>
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/RUNBOOK.md">Runbook</a>
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">Status</a>
-      <a href="https://github.com/OWNER/cloud-print-service">Source</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">Install guide</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/DESIGN.md">Design &amp; API contract</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/RUNBOOK.md">Runbook</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/STATUS.md">Status</a>
+      <a href="https://github.com/kucial/cloud-print-service">Source</a>
     </div>
     <p>Cloud Print Service prints documents; it does not lay them out. Your business system stays in charge of the content.</p>
   </div>

@@ -24,7 +24,7 @@
       <a href="#how">工作原理</a>
       <a href="#quick-start">快速部署</a>
       <a href="#printers">支持的打印机</a>
-      <a href="https://github.com/OWNER/cloud-print-service">GitHub</a>
+      <a href="https://github.com/kucial/cloud-print-service">GitHub</a>
     </nav>
     <div class="lang" role="navigation" aria-label="语言">
       <a href="../" hreflang="en" lang="en" data-lang="en">EN</a>
@@ -41,7 +41,7 @@
   <p class="lead">ERP 或 WMS 只需提交标签、小票或 PDF，并附上自己的单据号。云打印服务负责把它转换成打印机能识别的语言，保证只打印一次，并实时告诉你哪些打印机现在可用。支持 Zebra 标签机、小票机和办公打印机，网络连接或 USB 连接均可。</p>
   <div class="cta">
     <a class="btn primary" href="#quick-start">5 分钟完成部署</a>
-    <a class="btn" href="https://github.com/OWNER/cloud-print-service">在 GitHub 上查看</a>
+    <a class="btn" href="https://github.com/kucial/cloud-print-service">在 GitHub 上查看</a>
   </div>
   <ul class="facts">
     <li>一个 Go 程序 + 一个 JSON 配置</li>
@@ -220,7 +220,7 @@
       <li>
         <h3>启动服务端</h3>
         <p>一个容器就够了。数据卷保存任务、令牌和代理凭证。<code>--network host</code> 让自动发现能收到打印机的 mDNS 广播；不需要自动发现时，用 <code>-p 8080:8080</code> 即可。</p>
-<pre><code>git clone https://github.com/OWNER/cloud-print-service.git
+<pre><code>git clone https://github.com/kucial/cloud-print-service.git
 cd cloud-print-service
 docker build -f server/Dockerfile -t cps .
 chmod 644 config.json
@@ -234,7 +234,7 @@ docker run -d --name cps --restart unless-stopped --network host \
 go build -o cpsctl ./server/cmd/cpsctl
 sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei   <span class="c"># PDF 转换所需</span>
 ./cps -config config.json</code></pre>
-          <p>systemd 服务、Caddy/nginx 反向代理 HTTPS 等内容见<a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>。</p>
+          <p>systemd 服务、Caddy/nginx 反向代理 HTTPS 等内容见<a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>。</p>
         </details>
       </li>
 
@@ -283,7 +283,7 @@ cps-agent.exe -enroll &lt;令牌&gt; -id pc7 -site wh1 -install
 <span class="c"># Linux</span>
 CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080 cps-agent -enroll &lt;令牌&gt; -id pc7 -site wh1 \
   -config /etc/cps-agent/agent.json</code></pre>
-        <p>华硕路由器 / AiMesh 节点：使用 koolshare 软件中心插件，或通过 SSH 安装 <code>/jffs</code> 软件包。各平台的详细步骤见<a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md#5-install-the-agent-usb-printers">安装指南</a>。</p>
+        <p>华硕路由器 / AiMesh 节点：使用 koolshare 软件中心插件，或通过 SSH 安装 <code>/jffs</code> 软件包。各平台的详细步骤见<a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md#5-install-the-agent-usb-printers">安装指南</a>。</p>
       </li>
     </ol>
 
@@ -318,7 +318,7 @@ CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080 cps-agent -enroll &lt;令牌&gt; 
         <tr><td>以上任意一种的 USB 版本</td><td>经 <code>cps-agent</code></td><td>同上，按 USB 设备 ID 自动识别</td><td>同上</td></tr>
       </table>
     </div>
-    <p class="alt" style="margin-top:14px">不支持：只能依靠厂商电脑驱动工作的“主机型”打印机，例如佳能 CAPT 激光机（LBP 系列）和部分低端 GDI 机型。选购时请确认规格表里有 IPP/AirPrint、PCL 或 PostScript。各类打印机的验证情况见 <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>。</p>
+    <p class="alt" style="margin-top:14px">不支持：只能依靠厂商电脑驱动工作的“主机型”打印机，例如佳能 CAPT 激光机（LBP 系列）和部分低端 GDI 机型。选购时请确认规格表里有 IPP/AirPrint、PCL 或 PostScript。各类打印机的验证情况见 <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/STATUS.md">STATUS.md</a>。</p>
   </div>
 </section>
 
@@ -327,11 +327,11 @@ CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080 cps-agent -enroll &lt;令牌&gt; 
 <footer>
   <div class="wrap">
     <div class="links">
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/DESIGN.md">设计与 API 约定</a>
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/RUNBOOK.md">运维手册</a>
-      <a href="https://github.com/OWNER/cloud-print-service/blob/main/docs/STATUS.md">进展状态</a>
-      <a href="https://github.com/OWNER/cloud-print-service">源代码</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/DESIGN.md">设计与 API 约定</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/RUNBOOK.md">运维手册</a>
+      <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/STATUS.md">进展状态</a>
+      <a href="https://github.com/kucial/cloud-print-service">源代码</a>
     </div>
     <p>详细文档目前为英文。云打印服务只负责打印文档，不负责排版，内容始终由你的业务系统决定。</p>
   </div>
