@@ -58,6 +58,12 @@
     <li>Operator panel built in</li>
     <li>Never prints the same label twice</li>
   </ul>
+  <div class="llm-hint">
+    <span class="badge">AI</span>
+    <span>Building with an AI agent? Hand it <a href="llms-full.txt"><code>llms-full.txt</code></a>: the whole API and deployment in one file.</span>
+    <button type="button" class="copy" data-copy="https://kucial.github.io/cloud-print-service/llms-full.txt" data-done="Copied">Copy link</button>
+    <a class="more" href="#ai-agents">More →</a>
+  </div>
 </div>
 
 <section id="use-cases">
@@ -378,6 +384,12 @@ Read https://kucial.github.io/cloud-print-service/llms-full.txt and add label pr
 <script>
   document.querySelectorAll("[data-lang]").forEach(function (a) {
     a.addEventListener("click", function () { try { localStorage.setItem("cps-lang", a.dataset.lang); } catch (e) {} });
+  });
+  document.querySelectorAll("[data-copy]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var done = function () { var t = b.textContent; b.textContent = b.dataset.done; setTimeout(function () { b.textContent = t; }, 1500); };
+      try { navigator.clipboard.writeText(b.dataset.copy).then(done, function () {}); } catch (e) {}
+    });
   });
 </script>
 </body>

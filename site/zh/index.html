@@ -51,6 +51,12 @@
     <li>自带运维面板</li>
     <li>同一张标签绝不重复打印</li>
   </ul>
+  <div class="llm-hint">
+    <span class="badge">AI</span>
+    <span>用 AI 智能体开发集成？把 <a href="../llms-full.txt"><code>llms-full.txt</code></a> 交给它：完整的 API 与部署说明都在这一个文件里。</span>
+    <button type="button" class="copy" data-copy="https://kucial.github.io/cloud-print-service/llms-full.txt" data-done="已复制">复制链接</button>
+    <a class="more" href="#ai-agents">了解更多 →</a>
+  </div>
 </div>
 
 <section id="use-cases">
@@ -366,6 +372,12 @@ CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080 cps-agent -enroll &lt;令牌&gt; 
 <script>
   document.querySelectorAll("[data-lang]").forEach(function (a) {
     a.addEventListener("click", function () { try { localStorage.setItem("cps-lang", a.dataset.lang); } catch (e) {} });
+  });
+  document.querySelectorAll("[data-copy]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var done = function () { var t = b.textContent; b.textContent = b.dataset.done; setTimeout(function () { b.textContent = t; }, 1500); };
+      try { navigator.clipboard.writeText(b.dataset.copy).then(done, function () {}); } catch (e) {}
+    });
   });
 </script>
 </body>

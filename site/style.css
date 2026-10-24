@@ -104,6 +104,18 @@ code { font-family: var(--mono); font-size: 0.9em; background: var(--surface-2);
 .btn:hover { text-decoration: none; border-color: var(--muted); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 32px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 14px; }
+.llm-hint {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  margin-top: 24px; padding: 10px 14px; max-width: 46em;
+  background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius);
+  font-size: 14px; color: var(--muted);
+}
+.llm-hint > span:not(.badge) { flex: 1 1 18em; }
+.llm-hint .badge { font: 700 11px var(--mono); letter-spacing: .05em; color: var(--accent-text); background: var(--accent); padding: 2px 7px; border-radius: 4px; }
+.llm-hint code { color: var(--accent); }
+.llm-hint .copy { font: inherit; font-size: 13px; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.llm-hint .copy:hover { border-color: var(--muted); }
+.llm-hint .more { font-size: 13px; white-space: nowrap; }
 .facts li::before { content: "✓ "; color: var(--ok); font-weight: 700; }
 
 /* sections */
