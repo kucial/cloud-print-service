@@ -527,6 +527,23 @@ func TestAgentRegistersAndServesAPrinter(t *testing.T) {
 		t.Fatal("enroll returned no token")
 	}
 
+	// cps-agent -enroll first trades the operator's token for a replacement on this same
+	// endpoint. That spends the operator's token: a second agent cannot reuse it.
+	{
+		_, out := f.do("POST", "/api/v1/admin/agents/enroll", opsKey,
+			map[string]any{"agent_id": "pc9", "site": "wh1", "ttl": "1h"})
+		operatorToken, _ := out["token"].(string)
+		code, out := f.do("POST", "/api/v1/admin/agents/enroll", operatorToken,
+			map[string]any{"agent_id": "pc9", "site": "wh1"})
+		if code != http.StatusCreated || out["token"] == "" || out["token"] == operatorToken {
+			t.Fatalf("agent's enroll with the operator token: %d %v", code, out)
+		}
+		if code, out := f.do("POST", "/api/v1/admin/agents/enroll", operatorToken,
+			map[string]any{"agent_id": "pc10"}); code != http.StatusUnauthorized {
+			t.Fatalf("a used enrollment token must not enroll another agent, got %d %v", code, out)
+		}
+	}
+
 	// A client credential may not enroll an agent.
 	code, _ = f.do("POST", "/api/v1/admin/agents/enroll", f.issuedClientKey(t, "wms"),
 		map[string]any{"agent_id": "pc7"})

@@ -174,6 +174,16 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
 		return
 	}
+	// cps-agent -enroll calls this with the operator's bootstrap token and registers with
+	// the replacement. Spend the caller's token here, or it would stay valid until it
+	// expires and could enroll any number of agents.
+	if cl := ClientFrom(r.Context()); cl.Kind == token.KindAgentBootstrap && cl.TokenID != "" {
+		if _, err := s.tokens.Revoke(r.Context(), cl.TokenID); err != nil {
+			s.tokens.Revoke(r.Context(), t.ID)
+			writeErr(w, http.StatusInternalServerError, "token_failed", "could not spend the enrollment token: "+err.Error())
+			return
+		}
+	}
 	s.log.Info("agent credential issued", "agent_id", agentID, "site", body.Site, "token_id", t.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"token":    secret,
