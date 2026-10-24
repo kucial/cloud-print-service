@@ -63,7 +63,7 @@ To restore, stop the server, put the backup in place as `cps.db` (removing any
 ### Download
 
 Each GitHub release (<https://github.com/kucial/cloud-print-service/releases>, tags `v*`)
-has `cps-<version>-<os>-<arch>` archives with `cps`, `cpsctl` and `config.example.json`, for
+has `cps-server-<version>-<os>-<arch>` archives with `cps`, `cpsctl` and `config.example.json`, for
 Linux, macOS and Windows, plus `SHA256SUMS`. The server image is
 `ghcr.io/kucial/cloud-print-service:<version>` (or `:latest`), for linux/amd64 and
 linux/arm64; use it in place of `docker build` below. Or build it yourself:
@@ -422,10 +422,10 @@ hnd/axhnd/axhnd.675x platform, such as the TUF-AX3000 or RT-AX86U, the agent ins
 from the software center and is configured on its own page. It serves the USB printer
 plugged into the router.
 
-1. Get `cpsagent-<version>.tar.gz` from the release, or build it yourself:
+1. Get `cpsagent-<version>-koolshare.tar.gz` from the release, or build it yourself:
    `packaging/koolshare/build.sh` writes `dist/cpsagent.tar.gz`. Don't rename the file,
-   except to change the part after the first `-`: the software center takes the plugin
-   name from it.
+   except after the first `-`: the software center takes the plugin name (`cpsagent`)
+   from the part before it.
 2. Software Center → Offline install: upload the file and install.
 3. Open **Cloud Print Agent** in the software center. Fill in the server URL and the
    enrollment token, plus the agent ID (default: the router's host name) and the site,

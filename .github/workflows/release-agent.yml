@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           auth=(-H "Authorization: token $TOKEN")
           body=$(jq -n --arg tag "$GITHUB_REF_NAME" --arg name "cps-agent $VERSION" \
-            --arg body "cps-agent $VERSION for Windows and Linux, and cpsagent-*.tar.gz for koolshare ASUS routers. Install steps are in each archive's README.txt and docs/INSTALL.md; verify with SHA256SUMS." \
+            --arg body "cps-agent $VERSION for Windows and Linux, cps-agent-*-asuswrt.tar.gz and cpsagent-*-koolshare.tar.gz for ASUS routers. Install steps are in each archive's README.txt and docs/INSTALL.md; verify with SHA256SUMS." \
             '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
           id=$(curl -fsS "${auth[@]}" -H 'Content-Type: application/json' \
             -X POST "$API/releases" -d "$body" | jq -r .id)

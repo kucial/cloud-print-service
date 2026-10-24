@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds the release files into dist/: cps-agent for Windows and Linux, the two ASUS router
-# packages, and with --server also cps + cpsctl archives; then SHA256SUMS over all of them.
+# Builds the release files into dist/, all named <component>-<version>-<platform>:
+#   cps-agent-<v>-{windows,linux}-{amd64,arm64}, cps-agent-<v>-asuswrt, cpsagent-<v>-koolshare,
+#   and with --server cps-server-<v>-<os>-<arch> (cps + cpsctl); then SHA256SUMS over them.
 # Used by .github/workflows/release.yml (GitHub) and release-agent.yml (Gitea).
 #
 #   packaging/release.sh <version> [--server]
@@ -64,10 +65,11 @@ for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
 	archive "$name" "$goos"
 done
 
-# Koolshare software center package for ASUS routers. The installer takes the module name
-# from the file name up to the first "-", so the version can follow.
+# Koolshare software center package for ASUS routers. The software center takes the plugin
+# name from the file name up to the first "-", so this one must start with "cpsagent-"
+# (the installed plugin's name), not "cps-agent-".
 "$root/packaging/koolshare/build.sh" "$version"
-mv "$dist/cpsagent.tar.gz" "$dist/cpsagent-${version}.tar.gz"
+mv "$dist/cpsagent.tar.gz" "$dist/cpsagent-${version}-koolshare.tar.gz"
 # The same agent for ASUS routers and AiMesh nodes without koolshare.
 "$root/packaging/asuswrt/build.sh" "$version"
 mv "$dist/cps-agent-asuswrt.tar.gz" "$dist/cps-agent-${version}-asuswrt.tar.gz"
@@ -76,7 +78,7 @@ if $server; then
 	for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
 		goos="${target%/*}"; goarch="${target#*/}"
 		ext=""; [[ "$goos" == windows ]] && ext=".exe"
-		name="cps-${version}-${goos}-${goarch}"
+		name="cps-server-${version}-${goos}-${goarch}"
 		mkdir -p "$dist/$name"
 		for b in cps cpsctl; do
 			GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build -C "$root" -trimpath -ldflags="-s -w" \

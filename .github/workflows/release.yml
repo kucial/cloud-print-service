@@ -1,8 +1,8 @@
 name: release
 
 # GitHub releases. Push a tag like `v0.3.0` and this publishes:
-#   - a GitHub release with cps + cpsctl (Linux, macOS, Windows), cps-agent (Windows, Linux),
-#     the two ASUS router packages and SHA256SUMS (built by packaging/release.sh);
+#   - a GitHub release with cps-server-* (cps + cpsctl for Linux, macOS, Windows), cps-agent-*
+#     (Windows, Linux, ASUS routers), cpsagent-*-koolshare and SHA256SUMS (packaging/release.sh);
 #   - the server image ghcr.io/kucial/cloud-print-service:<version> and :latest
 #     (linux/amd64 and linux/arm64).
 # A manual run builds the same files as a workflow artifact and publishes nothing.
@@ -62,8 +62,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "Cloud Print Service $VERSION" \
             --generate-notes ${prerelease[@]+"${prerelease[@]}"} \
-            --notes "Server: \`cps-$VERSION-<os>-<arch>\` (cps + cpsctl), or \`docker pull ghcr.io/${GITHUB_REPOSITORY,,}:${VERSION#v}\`.
-          USB agent: \`cps-agent-$VERSION-<os>-<arch>\`; ASUS routers: \`cpsagent-$VERSION.tar.gz\` (koolshare) or \`cps-agent-$VERSION-asuswrt.tar.gz\`.
+            --notes "Server: \`cps-server-$VERSION-<os>-<arch>\` (cps + cpsctl), or \`docker pull ghcr.io/${GITHUB_REPOSITORY,,}:${VERSION#v}\`.
+          USB agent: \`cps-agent-$VERSION-<os>-<arch>\`; ASUS routers: \`cps-agent-$VERSION-asuswrt.tar.gz\`, or \`cpsagent-$VERSION-koolshare.tar.gz\` for the koolshare software center.
           Install guide: docs/INSTALL.md. Verify downloads with SHA256SUMS."
 
   image:
