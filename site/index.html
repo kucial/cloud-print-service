@@ -252,8 +252,8 @@ alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KE
         <details class="alt">
           <summary>Without Docker: download the binary</summary>
 <pre><code>V=$(basename "$(curl -sLo /dev/null -w '%{url_effective}' https://github.com/kucial/cloud-print-service/releases/latest)")
-curl -LO https://github.com/kucial/cloud-print-service/releases/download/$V/cps-$V-linux-amd64.tar.gz
-tar -xzf cps-$V-linux-amd64.tar.gz && cd cps-$V-linux-amd64     <span class="c"># cps, cpsctl, config.example.json</span>
+curl -LO https://github.com/kucial/cloud-print-service/releases/download/$V/cps-server-$V-linux-amd64.tar.gz
+tar -xzf cps-server-$V-linux-amd64.tar.gz && cd cps-server-$V-linux-amd64     <span class="c"># cps, cpsctl, config.example.json</span>
 sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei  <span class="c"># PDF conversion</span>
 ./cps -config /path/to/config.json
 
@@ -298,7 +298,7 @@ curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;server&gt;:8080/api/v1/job
         <h3>Add USB printers (optional)</h3>
         <p>Make a one-time enrollment token, then start the agent on the PC or router with that printer. The printer appears in the panel within about 30 seconds. In the panel, <b>Agents → Enroll agent</b> makes the token and shows the exact command for each kind of host. From a shell:</p>
 <pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
-        <p>Download the agent for that machine from the <a href="https://github.com/kucial/cloud-print-service/releases/latest">latest release</a>: <code>cps-agent-&lt;version&gt;-windows-amd64.zip</code>, <code>…-linux-amd64.tar.gz</code> (also arm64), or for ASUS routers <code>cpsagent-&lt;version&gt;.tar.gz</code> (koolshare) / <code>cps-agent-&lt;version&gt;-asuswrt.tar.gz</code>. On Windows, run <code>cps-agent-gui.exe</code> (enter the server address and token) or install the service:</p>
+        <p>Download the agent for that machine from the <a href="https://github.com/kucial/cloud-print-service/releases/latest">latest release</a>: <code>cps-agent-&lt;version&gt;-windows-amd64.zip</code>, <code>…-linux-amd64.tar.gz</code> (also arm64), or for ASUS routers <code>cps-agent-&lt;version&gt;-asuswrt.tar.gz</code> or, for the koolshare software center, <code>cpsagent-&lt;version&gt;-koolshare.tar.gz</code>. On Windows, run <code>cps-agent-gui.exe</code> (enter the server address and token) or install the service:</p>
 <pre><code><span class="c">:: Windows, Administrator command prompt</span>
 set CPS_AGENT_SERVER=http://&lt;server&gt;:8080
 cps-agent.exe -enroll &lt;token&gt; -id pc7 -site wh1 -install

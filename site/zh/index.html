@@ -240,8 +240,8 @@ alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KE
         <details class="alt">
           <summary>不用 Docker：下载可执行文件</summary>
 <pre><code>V=$(basename "$(curl -sLo /dev/null -w '%{url_effective}' https://github.com/kucial/cloud-print-service/releases/latest)")
-curl -LO https://github.com/kucial/cloud-print-service/releases/download/$V/cps-$V-linux-amd64.tar.gz
-tar -xzf cps-$V-linux-amd64.tar.gz && cd cps-$V-linux-amd64     <span class="c"># cps、cpsctl、config.example.json</span>
+curl -LO https://github.com/kucial/cloud-print-service/releases/download/$V/cps-server-$V-linux-amd64.tar.gz
+tar -xzf cps-server-$V-linux-amd64.tar.gz && cd cps-server-$V-linux-amd64     <span class="c"># cps、cpsctl、config.example.json</span>
 sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei  <span class="c"># PDF 转换所需</span>
 ./cps -config /path/to/config.json
 
@@ -286,7 +286,7 @@ curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;服务器&gt;:8080/api/v1/
         <h3>接入 USB 打印机（可选）</h3>
         <p>先生成一次性注册令牌，再在连着打印机的电脑或路由器上启动代理。约 30 秒后，打印机就会出现在面板里。在面板中点击 <b>边缘节点 → 注册代理</b>，即可生成令牌，并给出各类设备可直接粘贴的命令。命令行方式：</p>
 <pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
-        <p>从<a href="https://github.com/kucial/cloud-print-service/releases/latest">最新发布版本</a>下载对应设备的代理：<code>cps-agent-&lt;版本&gt;-windows-amd64.zip</code>、<code>…-linux-amd64.tar.gz</code>（另有 arm64），华硕路由器用 <code>cpsagent-&lt;版本&gt;.tar.gz</code>（koolshare）或 <code>cps-agent-&lt;版本&gt;-asuswrt.tar.gz</code>。Windows 上可以运行桌面版 <code>cps-agent-gui.exe</code>（填入服务器地址和令牌），也可以安装为系统服务：</p>
+        <p>从<a href="https://github.com/kucial/cloud-print-service/releases/latest">最新发布版本</a>下载对应设备的代理：<code>cps-agent-&lt;版本&gt;-windows-amd64.zip</code>、<code>…-linux-amd64.tar.gz</code>（另有 arm64），华硕路由器用 <code>cps-agent-&lt;版本&gt;-asuswrt.tar.gz</code>，koolshare 软件中心则用 <code>cpsagent-&lt;版本&gt;-koolshare.tar.gz</code>。Windows 上可以运行桌面版 <code>cps-agent-gui.exe</code>（填入服务器地址和令牌），也可以安装为系统服务：</p>
 <pre><code><span class="c">:: Windows，以管理员身份打开命令提示符</span>
 set CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080
 cps-agent.exe -enroll &lt;令牌&gt; -id pc7 -site wh1 -install
