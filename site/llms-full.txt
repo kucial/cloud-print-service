@@ -115,7 +115,7 @@ Not supported: host-based printers that need the maker's PC driver (Canon CAPT L
 
 ## 8. Deploying the server
 
-Needs: a Linux host on the printers' LAN; Docker, or Go 1.26+.
+Needs: a Linux host on the printers' LAN, and Docker or nothing else (a single binary). Releases: https://github.com/kucial/cloud-print-service/releases (tags `v*`).
 
 ```json
 {
@@ -130,21 +130,21 @@ Needs: a Linux host on the printers' LAN; Docker, or Go 1.26+.
 ```
 
 ```bash
-git clone https://github.com/kucial/cloud-print-service.git && cd cloud-print-service
-docker build -f server/Dockerfile -t cps .
 chmod 644 config.json      # the container runs as uid 10001
 docker run -d --name cps --restart unless-stopped --network host \
-  -v "$PWD/config.json:/etc/cps/config.json:ro" -v cps-data:/var/lib/cps cps
+  -v "$PWD/config.json:/etc/cps/config.json:ro" -v cps-data:/var/lib/cps \
+  ghcr.io/kucial/cloud-print-service:latest      # pin a version (e.g. :0.1.0) in production
 curl http://localhost:8080/healthz      # 200
+alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KEY=<admin-key> cps cpsctl'
 ```
 
-- Without Docker: `go build -o cps ./server/cmd/cps && go build -o cpsctl ./server/cmd/cpsctl`, then `./cps -config config.json`. Install `poppler-utils` (and fonts) for PDF conversion; the Docker image includes them.
+- Without Docker: download `cps-<version>-<os>-<arch>` (linux/darwin amd64+arm64, windows amd64) from the release; it holds `cps`, `cpsctl` and `config.example.json`. Run `./cps -config config.json`. Install `poppler-utils` (and fonts) for PDF conversion; the image includes them. Latest version: `V=$(basename "$(curl -sLo /dev/null -w '%{url_effective}' https://github.com/kucial/cloud-print-service/releases/latest)")`, then `https://github.com/kucial/cloud-print-service/releases/download/$V/cps-$V-linux-amd64.tar.gz`. Building from source (`go build ./server/cmd/cps`) needs Go 1.26+.
 - Config lookup: `-config <path>`, then `$CPS_CONFIG`, then `./config.json`. Data: `$CPS_DATA_PATH` or `data_path`, default `cps.db`. `store_driver: memory` keeps nothing (tests only).
 - `--network host` is only needed for mDNS discovery; otherwise `-p 8080:8080`.
 - HTTPS: put a reverse proxy in front; it must not buffer `/api/v1/events` (Caddy `flush_interval -1`, nginx `proxy_buffering off`).
 - Network: clients → server 8080; server → printers 9100/631; server → agents 19100+; agents → server 8080; mDNS 5353/udp.
 
-USB printers: on the server `cpsctl agent enroll --id pc7 --site wh1 --ttl 24h` (one-time token); on the PC `CPS_AGENT_SERVER=http://<server>:8080 cps-agent -enroll <token> -id pc7 -site wh1` (Windows: add `-install` for a service, or use `cps-agent-gui.exe`). ASUS routers: koolshare plugin or the `/jffs` package (see INSTALL.md §5).
+USB printers: download `cps-agent-<version>-<os>-<arch>` (Windows zip, Linux tar.gz) or the ASUS router packages (`cpsagent-<version>.tar.gz` for koolshare, `cps-agent-<version>-asuswrt.tar.gz`) from the release. On the server `cpsctl agent enroll --id pc7 --site wh1 --ttl 24h`, or the panel's Agents → Enroll agent (one-time token); on the PC `CPS_AGENT_SERVER=http://<server>:8080 cps-agent -enroll <token> -id pc7 -site wh1` (Windows: add `-install` for a service, or use `cps-agent-gui.exe`). ASUS routers: koolshare plugin or the `/jffs` package (see INSTALL.md §5).
 
 Checks: `cpsctl status`, `cpsctl printers` (each printer, usable or why not), `cpsctl diag <printer_id>`, `cpsctl test <printer_id>`.
 

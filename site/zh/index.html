@@ -205,7 +205,7 @@
 <section id="quick-start">
   <div class="wrap">
     <h2>快速部署</h2>
-    <p class="sub">适用于与打印机处在同一局域网的 Linux 服务器。需要 Docker，或用 Go 1.26 以上版本从源码构建。大约五分钟。</p>
+    <p class="sub">适用于与打印机处在同一局域网的 Linux 服务器。所需文件都来自<a href="https://github.com/kucial/cloud-print-service/releases/latest">最新发布版本</a>：容器镜像或单个可执行文件，无需自行编译。大约五分钟。</p>
 
     <ol class="steps">
       <li>
@@ -227,38 +227,41 @@
 
       <li>
         <h3>启动服务端</h3>
-        <p>一个容器就够了。数据卷保存任务、令牌和代理凭证。<code>--network host</code> 让自动发现能收到打印机的 mDNS 广播；不需要自动发现时，用 <code>-p 8080:8080</code> 即可。</p>
-<pre><code>git clone https://github.com/kucial/cloud-print-service.git
-cd cloud-print-service
-docker build -f server/Dockerfile -t cps .
-chmod 644 config.json
+        <p>使用已发布的镜像运行一个容器即可（支持 linux/amd64 和 arm64，已内置 PDF 转换工具和字体）。数据卷保存任务、令牌和代理凭证。<code>--network host</code> 让自动发现能收到打印机的 mDNS 广播；不需要自动发现时，用 <code>-p 8080:8080</code> 即可。</p>
+<pre><code>chmod 644 config.json        <span class="c"># 容器以非 root 用户运行</span>
 docker run -d --name cps --restart unless-stopped --network host \
   -v "$PWD/config.json:/etc/cps/config.json:ro" \
   -v cps-data:/var/lib/cps \
-  cps</code></pre>
+  ghcr.io/kucial/cloud-print-service:latest
+
+<span class="c"># 镜像里自带管理命令行，后续步骤都通过这个别名使用</span>
+alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KEY=&lt;管理员密钥&gt; cps cpsctl'</code></pre>
+        <p class="alt">生产环境请固定版本号，不要用 <code>latest</code>，例如 <code>:0.1.0</code>。</p>
         <details class="alt">
-          <summary>不用 Docker：直接编译程序</summary>
-<pre><code>go build -o cps    ./server/cmd/cps
-go build -o cpsctl ./server/cmd/cpsctl
-sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei   <span class="c"># PDF 转换所需</span>
-./cps -config config.json</code></pre>
-          <p>systemd 服务、Caddy/nginx 反向代理 HTTPS 等内容见<a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>。</p>
+          <summary>不用 Docker：下载可执行文件</summary>
+<pre><code>V=$(basename "$(curl -sLo /dev/null -w '%{url_effective}' https://github.com/kucial/cloud-print-service/releases/latest)")
+curl -LO https://github.com/kucial/cloud-print-service/releases/download/$V/cps-$V-linux-amd64.tar.gz
+tar -xzf cps-$V-linux-amd64.tar.gz && cd cps-$V-linux-amd64     <span class="c"># cps、cpsctl、config.example.json</span>
+sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei  <span class="c"># PDF 转换所需</span>
+./cps -config /path/to/config.json
+
+export CPSCTL_URL=http://127.0.0.1:8080 CPSCTL_ADMIN_KEY=&lt;管理员密钥&gt;   <span class="c"># 供 ./cpsctl 使用</span></code></pre>
+          <p>同一发布版本中还有 <code>linux-arm64</code>、<code>darwin-*</code>、<code>windows-amd64</code> 的压缩包，以及 <code>SHA256SUMS</code> 校验文件。systemd 服务、Caddy/nginx 反向代理 HTTPS 等内容见<a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">安装指南</a>。</p>
         </details>
       </li>
 
       <li>
         <h3>检查运行状态</h3>
         <p>打开 <code>http://&lt;服务器&gt;:8080/ui/</code>，用管理员密钥登录。自动发现的打印机会出现在 <b>Discovery</b> 页，确认后即可纳管。命令行检查：</p>
-<pre><code>curl http://&lt;服务器&gt;:8080/healthz                       <span class="c"># 200 OK</span>
-<span class="c"># 镜像里自带管理命令行，后续步骤都使用这个别名</span>
-alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KEY=&lt;管理员密钥&gt; cps cpsctl'
-cpsctl printers                                         <span class="c"># 每台打印机是否可用，不可用的原因</span></code></pre>
+<pre><code>curl http://&lt;服务器&gt;:8080/healthz      <span class="c"># 200 OK</span>
+cpsctl printers                        <span class="c"># 每台打印机是否可用，不可用的原因</span></code></pre>
       </li>
 
       <li>
         <h3>为业务系统签发令牌</h3>
         <p>每个系统一个独立令牌。令牌只显示一次，服务端只保存其哈希，可随时轮换或吊销。可在面板的 <b>访问令牌</b> 页签中签发，也可用命令行：</p>
-<pre><code>cpsctl token issue --client-id wms --ttl 365d</code></pre>
+<pre><code>cpsctl token issue --client-id wms --ttl 365d
+export WMS_TOKEN=cps_live_…            <span class="c"># 上一步输出的令牌，下面会用到</span></code></pre>
       </li>
 
       <li>
@@ -269,7 +272,7 @@ cpsctl printers                                         <span class="c"># 每台
   -d '{"printer_id":"wh1-pack-01","external_id":"SO-10042-label",
        "zpl":"^XA^FO50,50^A0N,50,50^FDHello CPS^FS^XZ"}'
 
-<span class="c"># 把 PDF 发到办公打印机：打印机不支持 PDF 时由服务自动转换</span>
+<span class="c"># 发送 PDF：打印机不支持 PDF 时由服务自动转换（此处为办公打印机 "hq-office-01"）</span>
 curl -X POST http://&lt;服务器&gt;:8080/api/v1/jobs \
   -H "Authorization: Bearer $WMS_TOKEN" -H "Content-Type: application/json" \
   -d '{"printer_id":"hq-office-01","external_id":"INV-2026-0042","format":"pdf",
@@ -283,7 +286,7 @@ curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;服务器&gt;:8080/api/v1/
         <h3>接入 USB 打印机（可选）</h3>
         <p>先生成一次性注册令牌，再在连着打印机的电脑或路由器上启动代理。约 30 秒后，打印机就会出现在面板里。在面板中点击 <b>边缘节点 → 注册代理</b>，即可生成令牌，并给出各类设备可直接粘贴的命令。命令行方式：</p>
 <pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
-        <p>从发布页获取 <code>cps-agent</code>。Windows 上可以运行桌面版 <code>cps-agent-gui.exe</code>（填入服务器地址和令牌），也可以安装为系统服务：</p>
+        <p>从<a href="https://github.com/kucial/cloud-print-service/releases/latest">最新发布版本</a>下载对应设备的代理：<code>cps-agent-&lt;版本&gt;-windows-amd64.zip</code>、<code>…-linux-amd64.tar.gz</code>（另有 arm64），华硕路由器用 <code>cpsagent-&lt;版本&gt;.tar.gz</code>（koolshare）或 <code>cps-agent-&lt;版本&gt;-asuswrt.tar.gz</code>。Windows 上可以运行桌面版 <code>cps-agent-gui.exe</code>（填入服务器地址和令牌），也可以安装为系统服务：</p>
 <pre><code><span class="c">:: Windows，以管理员身份打开命令提示符</span>
 set CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080
 cps-agent.exe -enroll &lt;令牌&gt; -id pc7 -site wh1 -install
@@ -295,7 +298,7 @@ CPS_AGENT_SERVER=http://&lt;服务器&gt;:8080 cps-agent -enroll &lt;令牌&gt; 
       </li>
     </ol>
 
-    <div class="callout"><b>手头还没有打印机？</b>运行 <code>go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render</code>，再用 <code>server/config.example.json</code> 启动服务端。打印出的标签会以图片形式显示在 <code>http://localhost:19200</code>。</div>
+    <div class="callout"><b>手头还没有打印机？</b>在仓库源码目录中（需要 Go）运行 <code>go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render</code> 启动两台虚拟标签机，再用发布包里的 <code>config.example.json</code> 启动服务端。打印出的标签会以图片形式显示在 <code>http://localhost:19200</code>。</div>
 
     <h3 style="margin-top:36px">网络端口</h3>
     <div class="table">

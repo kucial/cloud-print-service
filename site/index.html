@@ -217,7 +217,7 @@
 <section id="quick-start">
   <div class="wrap">
     <h2>Quick start</h2>
-    <p class="sub">For a Linux machine on the same LAN as the printers. You need Docker, or Go 1.26+ to build from source. About five minutes.</p>
+    <p class="sub">For a Linux machine on the same LAN as the printers. Everything comes from the <a href="https://github.com/kucial/cloud-print-service/releases/latest">latest release</a>: a container image, or a single binary. Nothing to build. About five minutes.</p>
 
     <ol class="steps">
       <li>
@@ -239,38 +239,41 @@
 
       <li>
         <h3>Start the server</h3>
-        <p>One container. The volume holds jobs, tokens and agent credentials. <code>--network host</code> lets discovery see the printers' mDNS; without discovery, <code>-p 8080:8080</code> is enough.</p>
-<pre><code>git clone https://github.com/kucial/cloud-print-service.git
-cd cloud-print-service
-docker build -f server/Dockerfile -t cps .
-chmod 644 config.json
+        <p>One container from the published image (linux/amd64 and arm64; PDF tools and fonts included). The volume holds jobs, tokens and agent credentials. <code>--network host</code> lets discovery see the printers' mDNS; without discovery, <code>-p 8080:8080</code> is enough.</p>
+<pre><code>chmod 644 config.json        <span class="c"># the container runs as a non-root user</span>
 docker run -d --name cps --restart unless-stopped --network host \
   -v "$PWD/config.json:/etc/cps/config.json:ro" \
   -v cps-data:/var/lib/cps \
-  cps</code></pre>
+  ghcr.io/kucial/cloud-print-service:latest
+
+<span class="c"># the admin CLI is in the image; the steps below use it through this alias</span>
+alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KEY=&lt;admin-key&gt; cps cpsctl'</code></pre>
+        <p class="alt">For production, pin a version instead of <code>latest</code>, e.g. <code>:0.1.0</code>.</p>
         <details class="alt">
-          <summary>Without Docker: build the binary</summary>
-<pre><code>go build -o cps    ./server/cmd/cps
-go build -o cpsctl ./server/cmd/cpsctl
-sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei   <span class="c"># PDF conversion</span>
-./cps -config config.json</code></pre>
-          <p>For a systemd service and HTTPS behind Caddy or nginx, see the <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">install guide</a>.</p>
+          <summary>Without Docker: download the binary</summary>
+<pre><code>V=$(basename "$(curl -sLo /dev/null -w '%{url_effective}' https://github.com/kucial/cloud-print-service/releases/latest)")
+curl -LO https://github.com/kucial/cloud-print-service/releases/download/$V/cps-$V-linux-amd64.tar.gz
+tar -xzf cps-$V-linux-amd64.tar.gz && cd cps-$V-linux-amd64     <span class="c"># cps, cpsctl, config.example.json</span>
+sudo apt install poppler-utils fonts-liberation fonts-wqy-zenhei  <span class="c"># PDF conversion</span>
+./cps -config /path/to/config.json
+
+export CPSCTL_URL=http://127.0.0.1:8080 CPSCTL_ADMIN_KEY=&lt;admin-key&gt;   <span class="c"># for ./cpsctl</span></code></pre>
+          <p>Archives for <code>linux-arm64</code>, <code>darwin-*</code> and <code>windows-amd64</code> are on the same release, with <code>SHA256SUMS</code>. For a systemd service and HTTPS behind Caddy or nginx, see the <a href="https://github.com/kucial/cloud-print-service/blob/main/docs/INSTALL.md">install guide</a>.</p>
         </details>
       </li>
 
       <li>
         <h3>Check it</h3>
         <p>Open <code>http://&lt;server&gt;:8080/ui/</code> and log in with the admin key. Printers found by discovery wait under <b>Discovery</b> for you to adopt them. From a shell:</p>
-<pre><code>curl http://&lt;server&gt;:8080/healthz                       <span class="c"># 200 OK</span>
-<span class="c"># the admin CLI ships in the image; the steps below use this alias</span>
-alias cpsctl='docker exec -e CPSCTL_URL=http://127.0.0.1:8080 -e CPSCTL_ADMIN_KEY=&lt;admin-key&gt; cps cpsctl'
-cpsctl printers                                         <span class="c"># each printer, usable or why not</span></code></pre>
+<pre><code>curl http://&lt;server&gt;:8080/healthz      <span class="c"># 200 OK</span>
+cpsctl printers                        <span class="c"># each printer, usable or why not</span></code></pre>
       </li>
 
       <li>
         <h3>Give your business system a token</h3>
         <p>Each system gets its own token. It is shown once and stored hashed, and it can be rotated or revoked at any time. Issue it in the panel under <b>Tokens</b>, or from a shell:</p>
-<pre><code>cpsctl token issue --client-id wms --ttl 365d</code></pre>
+<pre><code>cpsctl token issue --client-id wms --ttl 365d
+export WMS_TOKEN=cps_live_…            <span class="c"># the secret it printed, used below</span></code></pre>
       </li>
 
       <li>
@@ -281,7 +284,7 @@ cpsctl printers                                         <span class="c"># each p
   -d '{"printer_id":"wh1-pack-01","external_id":"SO-10042-label",
        "zpl":"^XA^FO50,50^A0N,50,50^FDHello CPS^FS^XZ"}'
 
-<span class="c"># a PDF to an office printer: CPS converts it if the printer can't take PDF</span>
+<span class="c"># a PDF: CPS converts it for printers that can't print PDF (here an office printer "hq-office-01")</span>
 curl -X POST http://&lt;server&gt;:8080/api/v1/jobs \
   -H "Authorization: Bearer $WMS_TOKEN" -H "Content-Type: application/json" \
   -d '{"printer_id":"hq-office-01","external_id":"INV-2026-0042","format":"pdf",
@@ -295,7 +298,7 @@ curl -H "Authorization: Bearer $WMS_TOKEN" http://&lt;server&gt;:8080/api/v1/job
         <h3>Add USB printers (optional)</h3>
         <p>Make a one-time enrollment token, then start the agent on the PC or router with that printer. The printer appears in the panel within about 30 seconds. In the panel, <b>Agents → Enroll agent</b> makes the token and shows the exact command for each kind of host. From a shell:</p>
 <pre><code>cpsctl agent enroll --id pc7 --site wh1 --ttl 24h</code></pre>
-        <p>On the PC, take <code>cps-agent</code> from the release: on Windows, either <code>cps-agent-gui.exe</code> (enter the server address and token) or a service:</p>
+        <p>Download the agent for that machine from the <a href="https://github.com/kucial/cloud-print-service/releases/latest">latest release</a>: <code>cps-agent-&lt;version&gt;-windows-amd64.zip</code>, <code>…-linux-amd64.tar.gz</code> (also arm64), or for ASUS routers <code>cpsagent-&lt;version&gt;.tar.gz</code> (koolshare) / <code>cps-agent-&lt;version&gt;-asuswrt.tar.gz</code>. On Windows, run <code>cps-agent-gui.exe</code> (enter the server address and token) or install the service:</p>
 <pre><code><span class="c">:: Windows, Administrator command prompt</span>
 set CPS_AGENT_SERVER=http://&lt;server&gt;:8080
 cps-agent.exe -enroll &lt;token&gt; -id pc7 -site wh1 -install
@@ -307,7 +310,7 @@ CPS_AGENT_SERVER=http://&lt;server&gt;:8080 cps-agent -enroll &lt;token&gt; -id 
       </li>
     </ol>
 
-    <div class="callout"><b>No printers yet?</b> Run <code>go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render</code> and start the server with <code>server/config.example.json</code>. The labels you print show up as images at <code>http://localhost:19200</code>.</div>
+    <div class="callout"><b>No printers yet?</b> In a checkout of the repository (needs Go), run <code>go run ./vprint/cmd/vprint -count 2 -id wh1-pack -render</code> for two virtual label printers, and start the server with the <code>config.example.json</code> that comes in the release archive. The labels you print show up as images at <code>http://localhost:19200</code>.</div>
 
     <h3 style="margin-top:36px">Network ports</h3>
     <div class="table">
